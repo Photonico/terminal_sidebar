@@ -29,6 +29,7 @@ export interface SessionManagerOptions {
   onOutput(id: string, data: string): void;
   onState(info: SessionInfo): void;
   factory?: PtyFactory;
+  platform?: NodeJS.Platform;
 }
 
 interface Session {
@@ -90,6 +91,12 @@ export class SessionManager implements Disposable {
         session.info = { id: profile.id, status: 'exited', exitCode: event.exitCode };
         this.clearSubscriptions(session);
         this.emitState(session);
+        // node-pty's Windows backend retains its ConPTY worker after natural exit
+        // until kill() releases the native resources. POSIX kill() sends a signal
+        // to a numeric PID, so never call it after a POSIX process has exited.
+        if ((this.options.platform ?? process.platform) === 'win32') {
+          try { pty.kill(); } catch { /* Preserve the natural exit result if cleanup races. */ }
+        }
       }));
       if (this.isRunning(session, generation)) {
         this.emitState(session);

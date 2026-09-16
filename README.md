@@ -8,7 +8,7 @@ Requires VS Code **1.106 or later**, when [Secondary Side Bar contributions beca
 
 ## Quick start
 
-1. Install the VSIX matching your extension host's operating system and architecture using **Extensions: Install from VSIX…**. For development, run `npm ci` in this repository, open it in VS Code, and press **F5**.
+1. Install **Terminal Sidebar** by **Luke Niu** (`ConAntares.terminal-sidebar`) from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=ConAntares.terminal-sidebar). For a local build, install the matching VSIX using **Extensions: Install from VSIX…**. For development, run `npm ci` in this repository, open it in VS Code, and press **F5**.
 2. Run **Terminal Sidebar: Configure Sidebars** from the Command Palette.
 3. Add profiles, enter a tab name and startup command, then save. Leave the shell blank to use your configured VS Code default shell when available, with a system-shell fallback.
 4. Open a profile tab to start its terminal. Terminals run only in trusted workspaces.

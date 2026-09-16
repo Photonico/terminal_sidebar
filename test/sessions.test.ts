@@ -30,7 +30,7 @@ class FakePty implements PtyProcess {
 }
 
 const profile: Profile = { id: 'one', name: 'One', command: 'printf hello', shell: '' };
-function harness() {
+function harness(platform: NodeJS.Platform = process.platform, onState?: (info: SessionInfo) => void) {
   const processes: FakePty[] = [];
   const states: SessionInfo[] = [];
   const outputs: Array<[string, string]> = [];
@@ -38,7 +38,8 @@ function harness() {
   const manager = new SessionManager({
     resolve: () => ({ file: '/bin/sh', args: [], env: { TERM: 'xterm-256color' }, cwd: '/tmp' }),
     onOutput: (id, data) => outputs.push([id, data]),
-    onState: (state) => states.push(state),
+    onState: (state) => { states.push(state); onState?.(state); },
+    platform,
     factory: { spawn: (_file, _args, options) => {
       spawns.push(options);
       const pty = new FakePty(); processes.push(pty); return pty;
@@ -111,6 +112,69 @@ test('invalid dimensions are clamped and I/O races do not crash the extension ho
   h.manager.dispose();
   assert.equal(h.manager.start(profile, 80, 24).status, 'error');
   assert.equal(h.processes.length, 1);
+});
+
+test('Windows natural exit releases PTY resources once after publishing its original exit code', () => {
+  const h = harness('win32');
+  h.manager.start(profile, 80, 24);
+  const pty = h.processes[0];
+  let cleanupCalls = 0;
+  let stateAtCleanup: SessionInfo | undefined;
+  let disposedAtCleanup = 0;
+  pty.kill = () => {
+    cleanupCalls++;
+    stateAtCleanup = h.states.at(-1);
+    disposedAtCleanup = pty.disposedListeners;
+    pty.data('late cleanup output');
+    pty.exit(99);
+  };
+  pty.exit(7);
+  assert.equal(cleanupCalls, 1);
+  assert.deepEqual(stateAtCleanup, { id: 'one', status: 'exited', exitCode: 7 });
+  assert.equal(disposedAtCleanup, 2);
+  assert.deepEqual(h.manager.get('one'), stateAtCleanup);
+  assert.deepEqual(h.outputs, []);
+  assert.equal(h.states.length, 2, 'cleanup cannot publish another exit');
+  h.manager.remove('one');
+  h.manager.dispose();
+  assert.equal(cleanupCalls, 1, 'later removal does not release the same PTY twice');
+});
+
+test('Windows natural-exit cleanup cannot kill a replacement started by an exit observer', () => {
+  let restartOnExit = false;
+  const h = harness('win32', state => {
+    if (restartOnExit && state.status === 'exited') {
+      restartOnExit = false;
+      h.manager.start(profile, 80, 24);
+    }
+  });
+  h.manager.start(profile, 80, 24);
+  const first = h.processes[0];
+  first.kill = () => { first.killed = true; first.data('stale'); first.exit(99); };
+  restartOnExit = true;
+  first.exit(7);
+  assert.equal(h.processes.length, 2);
+  assert.ok(first.killed);
+  assert.equal(h.processes[1].killed, false);
+  assert.deepEqual(h.manager.get('one'), { id: 'one', status: 'running' });
+  assert.deepEqual(h.states.map(state => [state.status, state.exitCode]), [['running', undefined], ['exited', 7], ['running', undefined]]);
+  assert.deepEqual(h.outputs, []);
+  h.manager.dispose();
+});
+
+test('cleanup failures preserve natural exits, and POSIX exited processes are never signalled', () => {
+  const windows = harness('win32');
+  windows.manager.start(profile, 80, 24);
+  windows.processes[0].kill = () => { throw new Error('native resource already released'); };
+  assert.doesNotThrow(() => windows.processes[0].exit(7));
+  assert.deepEqual(windows.manager.get('one'), { id: 'one', status: 'exited', exitCode: 7 });
+  windows.manager.dispose();
+
+  const posix = harness('linux');
+  posix.manager.start(profile, 80, 24);
+  posix.processes[0].exit(7);
+  posix.manager.dispose();
+  assert.equal(posix.processes[0].killed, false, 'a recycled POSIX PID must not receive a signal');
 });
 
 test('output is delivered synchronously in bounded chunks without host scrollback storage', () => {
