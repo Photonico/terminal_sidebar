@@ -1,0 +1,170 @@
+{
+  "name": "terminal-sidebar",
+  "displayName": "Terminal Sidebar",
+  "description": "Independent sidebar terminals with named tabs, startup commands, and your choice of shell.",
+  "version": "0.1.0",
+  "publisher": "Photonico",
+  "author": "Lu Niu (Photonico)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Photonico/terminal_sidebar.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Photonico/terminal_sidebar/issues"
+  },
+  "homepage": "https://github.com/Photonico/terminal_sidebar#readme",
+  "icon": "assets/logo.png",
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "terminal",
+    "sidebar",
+    "shell",
+    "cli",
+    "pty"
+  ],
+  "engines": {
+    "vscode": "^1.106.0",
+    "node": ">=22"
+  },
+  "main": "./dist/extension.js",
+  "extensionKind": [
+    "workspace"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Profiles can be configured, but terminals only run in trusted workspaces."
+    },
+    "virtualWorkspaces": {
+      "supported": false,
+      "description": "A local or remote Node.js extension host is required to run shell processes."
+    }
+  },
+  "contributes": {
+    "viewsContainers": {
+      "secondarySidebar": [
+        {
+          "id": "terminalSidebar",
+          "title": "Terminal Sidebar",
+          "icon": "assets/logo.svg"
+        }
+      ]
+    },
+    "views": {
+      "terminalSidebar": [
+        {
+          "id": "terminalSidebar.terminals",
+          "name": "Terminals",
+          "type": "webview"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "terminalSidebar.open",
+        "title": "Open",
+        "category": "Terminal Sidebar",
+        "icon": "$(terminal)"
+      },
+      {
+        "command": "terminalSidebar.configure",
+        "title": "Configure Sidebars",
+        "category": "Terminal Sidebar",
+        "icon": "$(settings-gear)"
+      },
+      {
+        "command": "terminalSidebar.restart",
+        "title": "Restart Active Terminal",
+        "category": "Terminal Sidebar",
+        "icon": "$(refresh)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "terminalSidebar.configure",
+          "when": "view == terminalSidebar.terminals",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Terminal Sidebar",
+      "properties": {
+        "terminalSidebar.profiles": {
+          "type": "array",
+          "scope": "application",
+          "markdownDescription": "Named sidebar terminals. Use **Terminal Sidebar: Configure Sidebars** for the visual editor. These user settings can follow VS Code Settings Sync. Keep API keys and passwords out of commands.",
+          "default": [
+            {
+              "id": "default",
+              "name": "Terminal",
+              "command": "",
+              "shell": ""
+            }
+          ],
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "name"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,64}$",
+                "description": "Stable unique ID. The visual editor creates this automatically."
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80,
+                "description": "Displayed terminal tab name."
+              },
+              "command": {
+                "type": "string",
+                "default": "",
+                "maxLength": 8192,
+                "description": "Command to run once when this terminal starts. Blank opens an interactive shell."
+              },
+              "shell": {
+                "type": "string",
+                "default": "",
+                "maxLength": 1024,
+                "description": "Optional shell executable: powershell, cmd, bash, zsh, fish, or an executable path. Blank uses the VS Code default shell, then the system default. Do not include arguments."
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "watch": "node scripts/build.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "pretest": "node scripts/prepare-pty.mjs",
+    "test": "node --import tsx --test test/*.test.ts",
+    "check": "npm run typecheck && npm test && npm run build",
+    "vscode:prepublish": "npm run check",
+    "package": "node scripts/package.mjs"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
+    "node-pty": "1.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.3",
+    "@types/vscode": "1.106.0",
+    "@vscode/vsce": "4.0.0",
+    "esbuild": "0.28.2",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3"
+  }
+}

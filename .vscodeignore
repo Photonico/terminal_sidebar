@@ -1,0 +1,12 @@
+**
+!package.json
+!README.md
+!LICENSE
+!CHANGELOG.md
+!assets/logo.png
+!assets/logo.svg
+!dist/extension.js
+!dist/webview.js
+!dist/webview.css
+!dist/*.LICENSE
+!dist/node-pty/**
