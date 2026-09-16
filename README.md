@@ -1,54 +1,83 @@
-# Terminal sidebar
+# Terminal Sidebar
 
-A VS Code extension for independent sidebar terminals. Give each terminal a name, a startup command, and an optional shell. Use it for Grok or any other installed command-line tool.
+Terminal Sidebar brings independent terminal sessions into the VS Code sidebar. Each profile defines a name, a startup command, and an optional shell. The extension starts that shell and keeps its session available while you work elsewhere in the editor. This gives command-line tools a consistent place beside the editor, while preserving the ordinary terminal panel.
 
-The extension adds one **Terminal Sidebar** container beside Chat and Codex in the Secondary Side Bar. Your profiles appear as named tabs **inside** that container. VS Code's stable extension API does not provide arbitrary, dynamically named top-level sidebar containers.
+**Version 0.2.0 is a pre-release for testing.** It requires VS Code **1.106 or later** and a desktop or remote Node.js extension host. Browser-only and virtual workspaces are unsupported.
 
-Requires VS Code **1.106 or later**, when [Secondary Side Bar contributions became stable](https://code.visualstudio.com/updates/v1_106#_view-containers-in-secondary-side-bar), and a desktop or remote Node.js extension host. Browser-only and virtual workspaces are unsupported.
+## Getting started
 
-## Quick start
+1. Install **Terminal Sidebar** by **Luke Niu** (`ConAntares.terminal-sidebar`) from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=ConAntares.terminal-sidebar), choosing the pre-release version. A matching VSIX can also be installed through **Extensions: Install from VSIX…**.
+2. Run **Terminal Sidebar: Configure Sidebars**, or select the gear in either sidebar. The configuration editor opens on the left.
+3. Add a profile, enter its name and startup command, and choose a shell if needed. Save the configuration.
+4. Select the profile in **Side Term** to start its terminal. The workspace must be trusted.
 
-1. Install **Terminal Sidebar** by **Luke Niu** (`ConAntares.terminal-sidebar`) from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=ConAntares.terminal-sidebar). For a local build, install the matching VSIX using **Extensions: Install from VSIX…**. For development, run `npm ci` in this repository, open it in VS Code, and press **F5**.
-2. Run **Terminal Sidebar: Configure Sidebars** from the Command Palette.
-3. Add profiles, enter a tab name and startup command, then save. Leave the shell blank to use your configured VS Code default shell when available, with a system-shell fallback.
-4. Open a profile tab to start its terminal. Terminals run only in trusted workspaces.
+For example, if `grok` is already installed and signed in, enter **Grok** as the name and `grok` as the command. The same arrangement applies to other command-line tools. Each tool retains responsibility for its installation, login, and credentials.
 
-For example, if a CLI named `grok` is already installed and signed in, use **Grok** as the name and `grok` as the command. Substitute the actual command for the CLI you use. The extension does not install CLIs, implement OAuth, or provide a model-provider API integration.
+After upgrading an existing installation, reload the VS Code window to load the new extension code.
 
-## Profiles
+## Profiles and shells
 
-The visual editor manages up to **32 profiles**, numbered from **#0**. Profiles are stored in the application-scoped User setting `terminalSidebar.profiles`; you can also edit it in **Preferences: Open User Settings (JSON)**:
+The configuration editor manages up to **32 profiles**, numbered from **#0**. Each profile contains:
+
+- **Name:** the displayed tab name, up to 80 characters.
+- **Command:** text sent once when the terminal starts. Leave it blank for an interactive shell.
+- **Shell:** an installed shell or an executable path. Leave it at the default to follow the configured VS Code shell, with a system-shell fallback.
+
+The shell list is detected on the machine where the extension runs. Detection checks available executables without launching them or requesting their versions. It does not change your selection. Choose **Custom** for an executable that is absent from the list; shell arguments do not belong in this field.
+
+Profiles are stored in the application-scoped User setting `terminalSidebar.profiles`. The editor creates a stable identifier for each profile. The same setting can be edited through **Preferences: Open User Settings (JSON)**:
 
 ```json
 "terminalSidebar.profiles": [
   { "id": "shell", "name": "Terminal", "command": "", "shell": "" },
-  { "id": "grok", "name": "Grok", "command": "grok", "shell": "" },
-  { "id": "bash", "name": "Bash", "command": "", "shell": "bash" }
+  { "id": "grok", "name": "Grok", "command": "grok", "shell": "" }
 ]
 ```
 
-- `id`: a stable, unique identifier using letters, numbers, underscores, or hyphens. The visual editor creates it automatically.
-- `name`: the displayed tab name, up to 80 characters.
-- `command`: text sent to the shell once when the terminal starts. Blank opens an interactive shell.
-- `shell`: an installed executable name such as `powershell`, `cmd`, `bash`, `zsh`, or `fish`, or a full executable path. Leave it blank for the default; do not put command-line arguments here.
+Commands execute as your user. Keep credentials in the command-line tool's own login or local credential storage, since profile settings may be synced. Repository and workspace settings cannot supply these profiles.
 
-Commands execute as your user. Keep passwords and API keys out of profile settings and startup commands; use the CLI's own login or local credential storage. Repository/workspace settings cannot supply these profiles, and Workspace Trust blocks terminal execution until the workspace is trusted.
+## Choosing a sidebar
 
-## Terminal behavior
+**Side Term** is available in the Activity Bar for the left sidebar and in the right Secondary Side Bar. Both views use compact, named profile tabs. Select a profile independently on either side; opening the same profile in both views shares one terminal process. The focused view determines its terminal dimensions.
 
-- Each profile has its own shell process and starts when selected. Switching tabs or hiding the sidebar keeps running processes alive.
-- **Restart Active Terminal** ends the current process and starts a fresh one. Changes to a running profile's command or shell take effect on its next restart.
-- Removing a profile stops its terminal. Reloading the VS Code window, restarting the extension host, or closing the window ends its terminal processes.
-- Terminal output is held in memory for the current session. The extension does not persist logs or transcripts or restore processes after reload; the selected tab and profile settings can be remembered. A shell or CLI may maintain its own history and files.
-- Terminals start in the first available workspace folder, or the user's home directory when no workspace folder is available.
+The outer **Side Term** title remains fixed. VS Code's stable extension API does not provide arbitrary, dynamically named sidebar containers or Command Palette entries for user profiles. Use **Terminal Sidebar: Open Profile** to choose a saved profile. Integrations can also open a profile through the generic command with its identifier and preferred side.
 
-## Across machines and remote workspaces
+For a custom keybinding, use this command and argument pair with a key of your choice:
 
-Profile settings can follow **VS Code Settings Sync** when Settings sync is enabled. Shells, CLIs, their installations, and their login credentials must be set up separately on each machine. Choose commands and executable names available on the destination; machine-specific paths may need adjustment.
+```json
+{
+  "command": "terminalSidebar.openProfile",
+  "args": { "id": "grok", "side": "right" }
+}
+```
 
-In SSH, WSL, or Dev Container workspaces, the extension runs on the **remote extension host**. Install the extension and required shell/CLI there, and choose a VSIX matching that host rather than the computer displaying VS Code.
+Here, `id` refers to the saved profile, and `side` accepts `left` or `right`. Omitting the side opens the profile on the right.
 
-## Development and packaging
+Each view provides a gear for configuration and controls for saving, undoing, redoing, and closing:
+
+- **Save** writes the configuration draft, or exports the terminal's displayed plain text when a terminal is active.
+- **Undo** and **Redo** apply to configuration edits. They do not reverse shell commands.
+- **Close** discards an open configuration draft, or stops the active terminal. It does not delete the profile.
+
+The configuration editor checks for changes made elsewhere before saving, so a stale draft cannot silently overwrite newer settings.
+
+## Session behaviour
+
+Each profile starts when selected. Switching tabs or hiding a sidebar keeps the process alive. **Restart Active Terminal** ends that process and starts a fresh one. Changes to its command or shell take effect on the next restart.
+
+Removing a profile stops its terminal. Reloading VS Code, restarting the extension host, or closing the window ends all extension terminal processes. They are not restored after reload.
+
+Terminal output is held in memory for the current session. Saving a terminal exports its displayed text; it does not create a continuous log. A shell or command-line tool may maintain its own history and files.
+
+Terminals start in the first available workspace folder, or in the user's home directory when no workspace folder is available. Workspace Trust blocks execution until the workspace is trusted.
+
+## Settings and portability
+
+Profiles can follow **VS Code Settings Sync** when Settings sync is enabled. Shells, command-line tools, and their login credentials must be set up separately on each machine. Executable names are more portable than machine-specific paths, provided that the corresponding program is installed.
+
+In SSH, WSL, and Dev Container workspaces, the extension runs on the remote extension host. Shell detection and terminal execution therefore use that host. Install the extension and the required tools there, and choose a VSIX matching its operating system and architecture.
+
+## Development
 
 Use Node.js 24 and npm:
 
@@ -57,18 +86,16 @@ npm ci
 npm run check
 ```
 
-`check` runs type checking, tests, and the production build. Press **F5** in VS Code to open the Extension Development Host. To create a package for the current machine, use its matching [VSIX target](https://code.visualstudio.com/api/working-with-extensions/publishing-extension#platformspecific-extensions), for example on Apple silicon:
+The check runs type checking, tests, and the production build. Press **F5** in VS Code to open an Extension Development Host. To package the current machine's build, use the matching [VSIX target](https://code.visualstudio.com/api/working-with-extensions/publishing-extension#platformspecific-extensions). For Apple silicon:
 
 ```sh
 npm run package -- --target darwin-arm64
 ```
 
-The terminal backend includes native code, so package on the matching operating system and architecture. CI checks and packages macOS, Ubuntu, and Windows builds, derives each VSIX target from the runner's actual platform and architecture, and uploads the VSIX as a workflow artifact. It does not publish to the Marketplace. Cross-platform CI is distinct from checking the terminal UI in VS Code on each platform.
+The terminal backend includes native code, so each package must be built on its matching operating system and architecture. CI runs checks and prepares packages on macOS, Ubuntu, and Windows. The VSIX target follows each runner's actual platform and architecture. Workflow artifacts are available for inspection; Marketplace publication is separate. These automated checks do not establish that the VS Code interface has been visually tested on every platform.
 
-## Logo
+The logo assets, font provenance, and regeneration instructions are described in [assets/README.md](assets/README.md).
 
-The vector and PNG logo assets, their font provenance, and regeneration instructions are documented in [assets/README.md](assets/README.md).
-
-## License
+## Licence
 
 [MIT](LICENSE) © 2026 Lu Niu (Photonico).

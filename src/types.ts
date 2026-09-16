@@ -20,14 +20,21 @@ export interface Appearance {
   scrollback: number;
 }
 
+export interface ShellChoice {
+  name: string;
+  path: string;
+  source: 'profile' | 'environment' | 'path' | 'system';
+}
+
 export type HostMessage =
-  | { type: 'state'; profiles: Profile[]; sessions: SessionInfo[]; trusted: boolean; appearance: Appearance; activeId?: string }
+  | { type: 'state'; profiles: Profile[]; sessions: SessionInfo[]; trusted: boolean; appearance: Appearance; activeId?: string; shells: ShellChoice[] }
   | { type: 'output'; id: string; data: string }
   | { type: 'session'; session: SessionInfo }
   | { type: 'reset'; id: string }
   | { type: 'saved'; profiles: Profile[] }
   | { type: 'error'; message: string }
   | { type: 'configure' }
+  | { type: 'action'; action: 'save' | 'undo' | 'redo' | 'close' }
   | { type: 'paste'; id: string; data: string };
 
 export type ClientMessage =
@@ -37,7 +44,13 @@ export type ClientMessage =
   | { type: 'resize'; id: string; cols: number; rows: number }
   | { type: 'restart'; id: string; cols: number; rows: number }
   | { type: 'stop'; id: string }
-  | { type: 'save'; profiles: Profile[] }
+  | { type: 'save'; profiles: Profile[]; baseProfiles: Profile[] }
+  | { type: 'selectProfile' }
+  | { type: 'configure' }
+  | { type: 'refreshShells' }
+  | { type: 'focus'; id: string }
+  | { type: 'export'; id: string; text: string }
+  | { type: 'draftState'; configuring: boolean; canUndo: boolean; canRedo: boolean }
   | { type: 'settings' }
   | { type: 'trust' }
   | { type: 'copy'; text: string }

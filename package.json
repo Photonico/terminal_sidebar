@@ -2,7 +2,7 @@
   "name": "terminal-sidebar",
   "displayName": "Terminal Sidebar",
   "description": "Independent sidebar terminals with named tabs, startup commands, and your choice of shell.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "ConAntares",
   "author": "Lu Niu (Photonico)",
   "license": "MIT",
@@ -48,7 +48,14 @@
       "secondarySidebar": [
         {
           "id": "terminalSidebar",
-          "title": "Terminal Sidebar",
+          "title": "Side Term",
+          "icon": "assets/logo.svg"
+        }
+      ],
+      "activitybar": [
+        {
+          "id": "terminalSidebarLeft",
+          "title": "Side Term",
           "icon": "assets/logo.svg"
         }
       ]
@@ -60,14 +67,33 @@
           "name": "Terminals",
           "type": "webview"
         }
+      ],
+      "terminalSidebarLeft": [
+        {
+          "id": "terminalSidebar.left",
+          "name": "Terminals",
+          "type": "webview"
+        }
       ]
     },
     "commands": [
       {
         "command": "terminalSidebar.open",
-        "title": "Open",
+        "title": "Open Right Sidebar",
         "category": "Terminal Sidebar",
         "icon": "$(terminal)"
+      },
+      {
+        "command": "terminalSidebar.openLeft",
+        "title": "Open Left Sidebar",
+        "category": "Terminal Sidebar",
+        "icon": "$(terminal)"
+      },
+      {
+        "command": "terminalSidebar.openProfile",
+        "title": "Open Profile\u2026",
+        "category": "Terminal Sidebar",
+        "icon": "$(list-selection)"
       },
       {
         "command": "terminalSidebar.configure",
@@ -80,14 +106,225 @@
         "title": "Restart Active Terminal",
         "category": "Terminal Sidebar",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "terminalSidebar.left.selectProfile",
+        "title": "Open Profile\u2026",
+        "category": "Terminal Sidebar",
+        "icon": "$(list-selection)"
+      },
+      {
+        "command": "terminalSidebar.left.save",
+        "title": "Save",
+        "category": "Terminal Sidebar",
+        "icon": "$(save)"
+      },
+      {
+        "command": "terminalSidebar.left.undo",
+        "title": "Undo Configuration Edit",
+        "category": "Terminal Sidebar",
+        "icon": "$(discard)",
+        "enablement": "terminalSidebar.left.canUndo"
+      },
+      {
+        "command": "terminalSidebar.left.redo",
+        "title": "Redo Configuration Edit",
+        "category": "Terminal Sidebar",
+        "icon": "$(redo)",
+        "enablement": "terminalSidebar.left.canRedo"
+      },
+      {
+        "command": "terminalSidebar.left.close",
+        "title": "Close",
+        "category": "Terminal Sidebar",
+        "icon": "$(close)"
+      },
+      {
+        "command": "terminalSidebar.left.configure",
+        "title": "Configure Sidebars",
+        "category": "Terminal Sidebar",
+        "icon": "$(settings-gear)"
+      },
+      {
+        "command": "terminalSidebar.left.restart",
+        "title": "Restart Terminal",
+        "category": "Terminal Sidebar",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "terminalSidebar.right.selectProfile",
+        "title": "Open Profile\u2026",
+        "category": "Terminal Sidebar",
+        "icon": "$(list-selection)"
+      },
+      {
+        "command": "terminalSidebar.right.save",
+        "title": "Save",
+        "category": "Terminal Sidebar",
+        "icon": "$(save)"
+      },
+      {
+        "command": "terminalSidebar.right.undo",
+        "title": "Undo Configuration Edit",
+        "category": "Terminal Sidebar",
+        "icon": "$(discard)",
+        "enablement": "terminalSidebar.right.canUndo"
+      },
+      {
+        "command": "terminalSidebar.right.redo",
+        "title": "Redo Configuration Edit",
+        "category": "Terminal Sidebar",
+        "icon": "$(redo)",
+        "enablement": "terminalSidebar.right.canRedo"
+      },
+      {
+        "command": "terminalSidebar.right.close",
+        "title": "Close",
+        "category": "Terminal Sidebar",
+        "icon": "$(close)"
+      },
+      {
+        "command": "terminalSidebar.right.configure",
+        "title": "Configure Sidebars",
+        "category": "Terminal Sidebar",
+        "icon": "$(settings-gear)"
+      },
+      {
+        "command": "terminalSidebar.right.restart",
+        "title": "Restart Terminal",
+        "category": "Terminal Sidebar",
+        "icon": "$(refresh)"
       }
     ],
     "menus": {
       "view/title": [
         {
-          "command": "terminalSidebar.configure",
+          "command": "terminalSidebar.left.selectProfile",
+          "when": "view == terminalSidebar.left",
+          "group": "terminal@0"
+        },
+        {
+          "command": "terminalSidebar.left.save",
+          "when": "view == terminalSidebar.left",
+          "group": "navigation@0"
+        },
+        {
+          "command": "terminalSidebar.left.undo",
+          "when": "view == terminalSidebar.left && terminalSidebar.left.configuring",
+          "group": "navigation@1"
+        },
+        {
+          "command": "terminalSidebar.left.redo",
+          "when": "view == terminalSidebar.left && terminalSidebar.left.configuring",
+          "group": "navigation@2"
+        },
+        {
+          "command": "terminalSidebar.left.close",
+          "when": "view == terminalSidebar.left",
+          "group": "navigation@3"
+        },
+        {
+          "command": "terminalSidebar.left.configure",
+          "when": "view == terminalSidebar.left",
+          "group": "navigation@4"
+        },
+        {
+          "command": "terminalSidebar.left.restart",
+          "when": "view == terminalSidebar.left",
+          "group": "terminal@1"
+        },
+        {
+          "command": "terminalSidebar.right.selectProfile",
           "when": "view == terminalSidebar.terminals",
-          "group": "navigation"
+          "group": "terminal@0"
+        },
+        {
+          "command": "terminalSidebar.right.save",
+          "when": "view == terminalSidebar.terminals",
+          "group": "navigation@0"
+        },
+        {
+          "command": "terminalSidebar.right.undo",
+          "when": "view == terminalSidebar.terminals && terminalSidebar.right.configuring",
+          "group": "navigation@1"
+        },
+        {
+          "command": "terminalSidebar.right.redo",
+          "when": "view == terminalSidebar.terminals && terminalSidebar.right.configuring",
+          "group": "navigation@2"
+        },
+        {
+          "command": "terminalSidebar.right.close",
+          "when": "view == terminalSidebar.terminals",
+          "group": "navigation@3"
+        },
+        {
+          "command": "terminalSidebar.right.configure",
+          "when": "view == terminalSidebar.terminals",
+          "group": "navigation@4"
+        },
+        {
+          "command": "terminalSidebar.right.restart",
+          "when": "view == terminalSidebar.terminals",
+          "group": "terminal@1"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "terminalSidebar.left.selectProfile",
+          "when": "false"
+        },
+        {
+          "command": "terminalSidebar.left.save",
+          "when": "false"
+        },
+        {
+          "command": "terminalSidebar.left.undo",
+          "when": "false"
+        },
+        {
+          "command": "terminalSidebar.left.redo",
+          "when": "false"
+        },
+        {
+          "command": "terminalSidebar.left.close",
+          "when": "false"
+        },
+        {
+          "command": "terminalSidebar.left.configure",
+          "when": "false"
+        },
+        {
+          "command": "terminalSidebar.left.restart",
+          "when": "false"
+        },
+        {
+          "command": "terminalSidebar.right.selectProfile",
+          "when": "false"
+        },
+        {
+          "command": "terminalSidebar.right.save",
+          "when": "false"
+        },
+        {
+          "command": "terminalSidebar.right.undo",
+          "when": "false"
+        },
+        {
+          "command": "terminalSidebar.right.redo",
+          "when": "false"
+        },
+        {
+          "command": "terminalSidebar.right.close",
+          "when": "false"
+        },
+        {
+          "command": "terminalSidebar.right.configure",
+          "when": "false"
+        },
+        {
+          "command": "terminalSidebar.right.restart",
+          "when": "false"
         }
       ]
     },
@@ -152,7 +389,7 @@
     "test": "node --import tsx --test test/*.test.ts",
     "check": "npm run typecheck && npm test && npm run build",
     "vscode:prepublish": "npm run check",
-    "package": "node scripts/package.mjs"
+    "package": "node scripts/package.mjs --pre-release"
   },
   "dependencies": {
     "@xterm/addon-fit": "0.11.0",

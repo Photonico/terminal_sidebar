@@ -34,12 +34,14 @@ export function isClientMessage(value: unknown): value is ClientMessage {
   const size = Number.isInteger(m.cols) && Number.isInteger(m.rows)
     && Number(m.cols) > 0 && Number(m.cols) <= 1000 && Number(m.rows) > 0 && Number(m.rows) <= 1000;
   switch (m.type) {
-    case 'ready': case 'settings': case 'trust': return true;
+    case 'ready': case 'settings': case 'trust': case 'selectProfile': case 'configure': case 'refreshShells': return true;
     case 'activate': case 'restart': case 'resize': return id && size;
     case 'input': return id && typeof m.data === 'string' && m.data.length <= 1024 * 1024;
-    case 'stop': case 'paste': return id;
+    case 'stop': case 'paste': case 'focus': return id;
+    case 'export': return id && typeof m.text === 'string' && m.text.length <= 1024 * 1024;
+    case 'draftState': return typeof m.configuring === 'boolean' && typeof m.canUndo === 'boolean' && typeof m.canRedo === 'boolean';
     case 'copy': return typeof m.text === 'string' && m.text.length <= 1024 * 1024;
-    case 'save': return Array.isArray(m.profiles) && m.profiles.length <= 32;
+    case 'save': return Array.isArray(m.profiles) && m.profiles.length <= 32 && Array.isArray(m.baseProfiles) && m.baseProfiles.length <= 32;
     default: return false;
   }
 }
