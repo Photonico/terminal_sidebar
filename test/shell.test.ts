@@ -2,10 +2,22 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, chmodSync, rmSync } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { test } from 'node:test';
+import { test, type TestContext } from 'node:test';
 import { resolveShell } from '../src/shell';
 
-function fixture(t: { after(fn: () => void): void }, names: string[]): string {
+function fixture(t: TestContext, names: string[]): string {
+  if (process.platform === 'win32') {
+    // These tests exercise the POSIX resolver, so do not feed it host Windows paths.
+    // Keep their PATH, argument, and environment assertions active on Windows CI.
+    const directory = '/terminal-sidebar-shell-fixture';
+    const present = new Set(names.map(name => path.posix.join(directory, name)));
+    const fs = require('node:fs') as typeof import('node:fs');
+    t.mock.method(fs, 'accessSync', (candidate: string) => {
+      if (!present.has(candidate)) throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+    });
+    t.mock.method(fs, 'statSync', () => ({ isFile: () => true }));
+    return directory;
+  }
   const directory = mkdtempSync(path.join(os.tmpdir(), 'terminal-sidebar-shell-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   for (const name of names) {
@@ -20,7 +32,7 @@ test('known shells resolve through PATH with interactive login arguments', (t) =
   const directory = fixture(t, ['bash', 'fish', 'pwsh']);
   for (const name of ['bash', 'fish']) {
     const result = resolveShell(name, { platform: 'linux', env: { PATH: directory } });
-    assert.equal(result.file, path.join(directory, name));
+    assert.equal(result.file, path.posix.join(directory, name));
     assert.deepEqual(result.args, ['-l']);
   }
   assert.deepEqual(resolveShell('powershell', { platform: 'linux', env: { PATH: directory } }).args, ['-NoLogo']);
@@ -28,7 +40,7 @@ test('known shells resolve through PATH with interactive login arguments', (t) =
 
 test('an executable path containing spaces remains one path; shell strings are not parsed', (t) => {
   const directory = fixture(t, ['custom shell']);
-  const file = path.join(directory, 'custom shell');
+  const file = path.posix.join(directory, 'custom shell');
   assert.equal(resolveShell(file, { platform: 'linux', env: {} }).file, file);
   assert.throws(() => resolveShell(file + ' --login', { platform: 'linux', env: {} }), /do not include arguments/);
   assert.throws(() => resolveShell('bash -c echo secret', { platform: 'linux', env: { PATH: directory } }), /not found/);
@@ -46,7 +58,7 @@ test('VS Code default profile chooses an available candidate and overlays or rem
       env: { REMOVE: null, REPLACE: 'new', ADD: 'added' },
     },
   });
-  assert.equal(result.file, path.join(directory, 'custom shell'));
+  assert.equal(result.file, path.posix.join(directory, 'custom shell'));
   assert.deepEqual(result.args, ['--interactive', 'an argument with spaces']);
   assert.deepEqual(result.env, { PATH: directory, KEEP: 'yes', REPLACE: 'new', ADD: 'added' });
   assert.equal(env.REMOVE, 'private', 'the caller environment is not mutated');
@@ -57,7 +69,7 @@ test('VS Code default profile chooses an available candidate and overlays or rem
 
 test('default shell can use SHELL and non-executable files are rejected', (t) => {
   const directory = fixture(t, ['login-shell', 'not-executable']);
-  const file = path.join(directory, 'login-shell');
+  const file = path.posix.join(directory, 'login-shell');
   assert.equal(resolveShell('', { platform: 'linux', env: { SHELL: file, PATH: directory } }).file, file);
   if (process.platform !== 'win32') {
     chmodSync(path.join(directory, 'not-executable'), 0o644);

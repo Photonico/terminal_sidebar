@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
+import { stripVTControlCharacters } from 'node:util';
 import { SessionManager, type PtyProcess, type PtySpawnOptions } from '../src/sessions';
 import { resolveShell } from '../src/shell';
 import type { Profile, SessionInfo } from '../src/types';
@@ -137,31 +139,41 @@ test('spawn failures emit an error state without exposing command, environment, 
   manager.dispose();
 });
 
-test('real node-pty supports interactive input and records natural exit', { timeout: 20_000, skip: process.platform === 'win32' }, async (t) => {
+test('real node-pty supports interactive input and records natural exit', { timeout: 20_000 }, async (t) => {
+  const windows = process.platform === 'win32';
+  const shell = windows ? 'cmd' : '/bin/sh';
+  const input = `hello-${randomUUID()}`;
   let output = '';
   let sentInput = false;
   let complete!: (info: SessionInfo) => void;
   const ended = new Promise<SessionInfo>((resolve) => { complete = resolve; });
   const manager = new SessionManager({
-    resolve: () => ({ ...resolveShell('/bin/sh'), args: [], cwd: process.cwd() }),
+    resolve: () => ({ ...resolveShell(shell), args: windows ? ['/d', '/q', '/v:on'] : [], cwd: process.cwd() }),
     onOutput: (_id, data) => {
       output += data;
-      if (!sentInput && /(?:\r?\n)__TS_PTY_READY__\r?\n/.test(output)) {
+      const plainOutput = stripVTControlCharacters(output);
+      // ConPTY can redraw the current line instead of emitting a POSIX-style newline.
+      // The random input marker below is absent from the command and must come from set /p.
+      const ready = windows ? plainOutput.includes('__TS_PTY_READY__') : /(?:\r?\n)__TS_PTY_READY__\r?\n/.test(plainOutput);
+      if (!sentInput && ready) {
         sentInput = true;
         manager.resize('native', 120, 40);
-        manager.input('native', 'hello\r');
+        manager.input('native', input + '\r');
       }
     },
     onState: (state) => { if (state.status === 'error' || state.status === 'exited') complete(state); },
   });
   t.after(() => manager.dispose());
   manager.start({
-    id: 'native', name: 'Native', shell: '/bin/sh',
-    command: `stty -echo; printf '\\n__TS_PTY_READY__\\n'; IFS= read -r line; printf '\\n__TS_INPUT__:%s\\n' "$line"; exit 7`,
+    id: 'native', name: 'Native', shell,
+    command: windows
+      ? 'set "line="&echo __TS_PTY_READY__&set /p line=&echo __TS_INPUT__:!line!&exit 7'
+      : `stty -echo; printf '\\n__TS_PTY_READY__\\n'; IFS= read -r line; printf '\\n__TS_INPUT__:%s\\n' "$line"; exit 7`,
   }, 80, 24);
   const state = await ended;
   assert.equal(state.status, 'exited', state.message);
   assert.equal(state.exitCode, 7);
-  assert.match(output, /__TS_INPUT__:hello/);
+  assert.ok(sentInput, 'the native terminal requested and received interactive input');
+  assert.ok(stripVTControlCharacters(output).includes(`__TS_INPUT__:${input}`), 'the shell read and printed the actual interactive input');
   assert.equal(manager.get('native')?.status, 'exited');
 });
