@@ -117,6 +117,13 @@ Project-owned identifiers use descriptive `snake_case`, with explicit processing
 
 The logo assets, font provenance, and regeneration instructions are described in [assets/README.md](assets/README.md).
 
+## Contributors
+
+- [Lu Niu (Photonico)](https://github.com/Photonico): project design and maintenance.
+- **OpenAI Codex**: assistance with implementation, testing, and documentation.
+
+Commits with Codex contributions include `Co-authored-by: Codex <codex@openai.com>`.
+
 ## Licence
 
 [MIT](LICENSE) © 2026 Lu Niu (Photonico).
