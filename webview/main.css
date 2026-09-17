@@ -77,9 +77,13 @@ body[data-side="left"] #terminal-host { display: flex; flex-direction: column; o
 .terminal-section[data-active="true"] .section-heading::before { background: var(--vscode-modernEditorTab-activeBackground, var(--vscode-tab-activeBackground, var(--view-background))); }
 body:is(.vscode-high-contrast, .vscode-high-contrast-light) .terminal-section[data-active="true"] .section-heading { color: var(--vscode-tab-activeForeground, var(--view-foreground)); }
 body:is(.vscode-high-contrast, .vscode-high-contrast-light) .terminal-section[data-active="true"] .section-heading::before { background: var(--vscode-tab-activeBackground, var(--view-background)); outline: 1px solid var(--vscode-contrastActiveBorder, var(--vscode-contrastBorder, transparent)); outline-offset: -1px; }
-.terminal-section:not([data-active="true"]) .section-heading:hover::before { background: var(--vscode-list-hoverBackground, var(--vscode-tab-hoverBackground, #80808020)); }
+/* Editor tabs distinguish active hover from inactive hover, preserving active text. */
+.terminal-section:not([data-active="true"]) .section-heading:hover::before { background: var(--vscode-modernEditorTab-hoverBackground, var(--vscode-tab-hoverBackground, var(--vscode-sideBarSectionHeader-background, var(--view-background)))); }
+.terminal-section[data-active="true"] .section-heading:hover::before { background: var(--vscode-modernEditorTab-activeHoverBackground, var(--vscode-modernEditorTab-hoverBackground, var(--vscode-tab-hoverBackground, var(--vscode-tab-activeBackground, var(--view-background))))); }
+.terminal-section:not([data-active="true"]) .section-heading:hover { color: var(--vscode-modernEditorTab-hoverForeground, var(--vscode-tab-hoverForeground, var(--vscode-sideBarSectionHeader-foreground, var(--view-foreground)))); }
+body:is(.vscode-high-contrast, .vscode-high-contrast-light) .terminal-section:not([data-active="true"]) .section-heading:hover::before { background: var(--vscode-tab-hoverBackground, var(--vscode-sideBarSectionHeader-background, var(--view-background))); outline: 1px dashed var(--vscode-contrastActiveBorder, var(--vscode-contrastBorder, transparent)); outline-offset: -1px; }
+body:is(.vscode-high-contrast, .vscode-high-contrast-light) .terminal-section:not([data-active="true"]) .section-heading:hover { color: var(--vscode-tab-hoverForeground, var(--vscode-sideBarSectionHeader-foreground, var(--view-foreground))); }
 .section-toggle { display: flex; flex: 1 1 auto; align-items: center; min-width: 0; padding: 2px 4px; gap: 4px; border: 0; border-radius: var(--tab-radius); background: transparent; text-align: left; color: inherit; font-size: inherit; font-weight: normal; line-height: 20px; }
-.terminal-section:not([data-active="true"]) .section-heading:hover { color: var(--vscode-list-hoverForeground, var(--vscode-sideBarSectionHeader-foreground, var(--view-foreground))); }
 .section-chevron { display: flex; flex: 0 0 16px; align-items: center; justify-content: center; }
 .section-toggle[aria-expanded="true"] .section-chevron { transform: rotate(90deg); }
 .section-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -113,6 +117,7 @@ body.vscode-high-contrast-light #status-badge { background: var(--vscode-activit
 #dismiss-error { flex: 0 0 auto; border: none; border-radius: var(--tab-radius); padding: 0 4px; background: transparent; font-size: calc(var(--vscode-font-size, 13px) + 3px); line-height: 18px; }
 #dismiss-error:hover { background: var(--vscode-toolbar-hoverBackground, var(--view-border)); }
 .empty-panel { display: flex; height: 100%; align-items: flex-start; flex-direction: column; justify-content: center; padding: 16px; gap: 10px; }
+#empty-panel { justify-content: flex-start; }
 .empty-panel p { margin: 0; line-height: 1.5; color: var(--vscode-descriptionForeground, var(--view-foreground)); }
 .primary, .secondary { min-height: 26px; padding: 3px 10px; border: 1px solid transparent; border-radius: var(--tab-radius); }
 .primary { color: var(--vscode-button-foreground, #fff); background: var(--vscode-button-background, #0078d4); }

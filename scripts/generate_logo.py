@@ -85,9 +85,10 @@ def circular_dashes(radius: float, body_width: float, outline_width: float) -> l
 
 
 def build_logo(font_path: Path, output: Path) -> None:
-    """Write SVG, vector EPS and 512-pixel PNG from the same source geometry."""
+    """Write logo exports and a monochrome sidebar icon from the same geometry."""
     # Scale the complete prompt, including its spacing and layered strokes.
     prompt_scale = 0.9
+    prompt_shift_y = 512 * 0.02
     font_bytes = font_path.read_bytes()
     with TTFont(font_path) as font:
         family = font['name'].getDebugName(1) or ''
@@ -163,12 +164,12 @@ def build_logo(font_path: Path, output: Path) -> None:
     svg = f'''<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title description">
   <title id="title">Terminal Sidebar</title>
-  <desc id="description">Twelve rounded white circular dashes, rotated three degrees clockwise, surround Photonico Code greater-than and underscore glyphs reduced ten per cent around the centre. Matching line weights and #646464 outlines, with a transparent background.</desc>
+  <desc id="description">Twelve rounded white circular dashes, rotated three degrees clockwise, surround Photonico Code greater-than and underscore glyphs reduced ten per cent around the centre, then shifted down two per cent of the canvas height. Matching line weights and #646464 outlines, with a transparent background.</desc>
   <metadata>Glyph source: {escape(family)} Regular, {escape(version)}. Font SHA-256: {font_hash}. Original glyph contours at scale {format_number(glyph_scale)}, each translated {format_number(prompt_inset)} units towards the centre. Complete prompt scaled by {format_number(prompt_scale)} from the previous design. Frame and prompt nominal bodies: {format_number(prompt_body_width)} units; grey borders: {format_number(outline_width)} units; complete widths: {format_number(prompt_body_width + outline_width)} units. Frame inner radius remains {format_number(ring_inner_radius)}; outer radius grows to {format_number(ring_radius + (ring_body_width + outline_width) / 2)}. Twelve dashes: visible 22-degree ink and 8-degree gap on radius {format_number(ring_radius)}, with round-cap outline compensation and 3-degree clockwise rotation. No embedded font.</metadata>
   <g id="frame" fill="#ffffff" stroke="#646464" stroke-width="{outline_width}" stroke-linejoin="round">
 {frame_elements}
   </g>
-  <g id="prompt" stroke-linejoin="round" stroke-linecap="round">
+  <g id="prompt" transform="translate(0 {format_number(prompt_shift_y)})" stroke-linejoin="round" stroke-linecap="round">
     <path id="prompt-outline" d="{prompt_path}" fill="#646464" stroke="#646464" stroke-width="{format_number(grey_glyph_stroke)}"/>
     <path id="prompt-body" d="{prompt_path}" fill="#ffffff" stroke="#ffffff" stroke-width="{format_number(white_glyph_stroke)}"/>
   </g>
@@ -176,6 +177,33 @@ def build_logo(font_path: Path, output: Path) -> None:
 '''
     output.mkdir(parents=True, exist_ok=True)
     (output / 'logo.svg').write_text(svg, encoding='utf-8')
+    # Small sidebar icons need more weight than the full-size logo: 45 canvas
+    # units become about 2.11px at 24px. Keep frame and glyph weights equal, and
+    # compensate the round caps again so the twelve dashes retain their gaps.
+    activity_line_width = 45
+    activity_added_width = activity_line_width - (prompt_body_width + outline_width)
+    activity_outline_width = outline_width + activity_added_width
+    # Both the prompt and frame expand by half the added width towards their
+    # shared gap. Move the frame out by the full amount to preserve that gap.
+    activity_ring_radius = ring_radius + activity_added_width
+    activity_frame_elements = '\n'.join(
+        f'    <path id="frame-dash-{index:02d}" d="{path}"/>'
+        for index, path in enumerate(circular_dashes(activity_ring_radius, ring_body_width, activity_outline_width))
+    )
+    # VS Code tints this opaque white silhouette through a CSS mask.
+    activity_icon = f'''<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title description">
+  <title id="title">Terminal Sidebar</title>
+  <desc id="description">Monochrome sidebar icon based on the logo, with {format_number(activity_line_width)}-unit line weight and an outward-adjusted frame for small-size legibility.</desc>
+  <g id="frame" fill="#ffffff" stroke="#ffffff" stroke-width="{format_number(activity_outline_width)}" stroke-linejoin="round">
+{activity_frame_elements}
+  </g>
+  <g id="prompt" transform="translate(0 {format_number(prompt_shift_y)})" stroke-linejoin="round" stroke-linecap="round">
+    <path id="prompt-outline" d="{prompt_path}" fill="#ffffff" stroke="#ffffff" stroke-width="{format_number(grey_glyph_stroke + activity_added_width)}"/>
+  </g>
+</svg>
+'''
+    (output / 'activity-icon.svg').write_text(activity_icon, encoding='utf-8')
     eps_source = cairosvg.svg2eps(bytestring=svg.encode()).decode('ascii')
     # Preserve the complete transparent margins: 512 CSS pixels = 384 pt.
     eps_lines = []
@@ -189,7 +217,7 @@ def build_logo(font_path: Path, output: Path) -> None:
         eps_lines.append(line.rstrip())
     (output / 'logo.eps').write_text('\n'.join(eps_lines) + '\n', encoding='ascii')
     cairosvg.svg2png(bytestring=svg.encode(), write_to=str(output / 'logo.png'), output_width=512, output_height=512)
-    print(f'Created logo.svg, logo.eps, logo.png in {output}')
+    print(f'Created logo.svg, logo.eps, logo.png, activity-icon.svg in {output}')
 
 
 if __name__ == '__main__':
