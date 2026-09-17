@@ -1,7 +1,7 @@
 import { build, context } from 'esbuild';
 import { mkdir, copyFile as copy_file, cp as copy_directory, rm as remove_directory } from 'node:fs/promises';
 import { existsSync as exists_sync } from 'node:fs';
-import './prepare-pty.mjs';
+import './prepare_pty.mjs';
 
 await mkdir('dist', { recursive: true });
 

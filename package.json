@@ -527,7 +527,7 @@
     "build": "node scripts/build.mjs",
     "watch": "node scripts/build.mjs --watch",
     "typecheck": "tsc --noEmit",
-    "pretest": "node scripts/prepare-pty.mjs",
+    "pretest": "node scripts/prepare_pty.mjs",
     "test": "node --import tsx --test test/*.test.ts",
     "check": "npm run typecheck && npm test && npm run build",
     "vscode:prepublish": "npm run check",
