@@ -3,7 +3,9 @@
 ## 0.5.0 — Pre-release
 
 - Reorder tabs by dragging or keyboard; restore each sidebar's saved order.
-- Keep collapsed sections at the top with consistent headers and a status badge.
+- Preserve section order when expanding or collapsing, with consistent headers and a status badge.
+- Match left tab selection and hover colours to editor tabs; adapt empty views and footer backgrounds to the theme.
+- Place empty-state guidance at the top with more space around the message.
 - Theme-based scrollbars, rounded controls, and collapsible startup groups.
 - Reset numbering after all ordinary tabs close.
 - Unify Side Terminal naming; refine the logo and Activity Bar icon.

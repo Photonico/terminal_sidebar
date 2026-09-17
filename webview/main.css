@@ -119,6 +119,7 @@ body.vscode-high-contrast-light #status-badge { background: var(--vscode-activit
 .empty-panel { display: flex; height: 100%; align-items: flex-start; flex-direction: column; justify-content: center; padding: 16px; gap: 10px; }
 #empty-panel { justify-content: flex-start; }
 .empty-panel p { margin: 0; line-height: 1.5; color: var(--vscode-descriptionForeground, var(--view-foreground)); }
+#empty-panel p { margin-block: 1lh; }
 .primary, .secondary { min-height: 26px; padding: 3px 10px; border: 1px solid transparent; border-radius: var(--tab-radius); }
 .primary { color: var(--vscode-button-foreground, #fff); background: var(--vscode-button-background, #0078d4); }
 .primary:hover:not(:disabled) { background: var(--vscode-button-hoverBackground, #026ec1); }
