@@ -320,7 +320,7 @@ test('adding, renaming and closing runtime tabs never rewrites startup settings'
   await right.send({ type: 'rename_tab', id: temporary_tab.id, name: 'Scratch' });
   await right.send({ type: 'close_tab', id: temporary_tab.id });
   await right.send({ type: 'add_tab' });
-  assert.equal(right.state().tabs.at(-1)?.name, 'Term 1');
+  assert.equal(right.state().tabs.at(-1)?.name, 'Term 0', 'closing all ordinary tabs resets numbering');
   assert.deepEqual(runtime.updates, []);
   assert.deepEqual(runtime.configuration(), initial_configuration);
   const left = await runtime.view('left');

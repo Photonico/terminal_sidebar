@@ -83,7 +83,6 @@ export class sidebar_tabs {
     const profiles_by_id = new Map(profiles.map(profile => [profile.id, profile]));
     const restored_profiles = new Set<string>();
     const memory = read_memory(remembered);
-    this.next_number = memory.next_number;
     let temporary_count = 0;
 
     // Restore the previous order; removed startup settings cannot recover an old command.
@@ -104,6 +103,7 @@ export class sidebar_tabs {
         temporary_count += 1;
       }
     }
+    this.next_number = temporary_count === 0 ? 0 : memory.next_number;
     for (const tab of this.current_tabs) {
       if (memory.expanded_ids.includes(tab.id)) {
         this.expanded.add(tab.id);
@@ -132,7 +132,7 @@ export class sidebar_tabs {
     return this.current_tabs.filter(tab => this.expanded.has(tab.id)).map(tab => tab.id);
   }
 
-  /** Add an ordinary default-shell tab. Names advance monotonically and skip occupied names. */
+  /** Number ordinary tabs upward, restarting from zero after all are closed and skipping occupied names. */
   add_tab(): terminal_tab {
     this.assert_capacity();
     if (this.current_tabs.filter(tab => tab.profile_id === undefined).length >= maximum_temporary_tabs) {
@@ -167,6 +167,9 @@ export class sidebar_tabs {
       return false;
     }
     this.current_tabs.splice(index, 1);
+    if (!this.current_tabs.some(tab => tab.profile_id === undefined)) {
+      this.next_number = 0;
+    }
     this.expanded.delete(identifier);
     this.renamed_profiles.delete(identifier);
     if (this.selected_id === identifier) {

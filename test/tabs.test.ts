@@ -27,17 +27,62 @@ test('closing, renaming, and reopening runtime tabs never changes startup settin
   assert.equal(reopened.name, 'Grok');
 });
 
-test('temporary tabs have monotonically numbered names without name collisions or startup commands', () => {
+test('temporary names advance while ordinary tabs remain, avoiding collisions and startup commands', () => {
   const model = new sidebar_tabs([{ id: 'occupied', name: 'Term 0', command: 'anything', shell: 'bash' }]);
   const first = model.add_tab();
   assert.equal(first.name, 'Term 1');
   assert.equal(first.command, '');
   assert.equal(first.shell, '');
   assert.equal(first.profile_id, undefined);
-  model.close_tab(first.id);
   assert.equal(model.add_tab().name, 'Term 2');
+  model.close_tab(first.id);
+  assert.equal(model.add_tab().name, 'Term 3');
   const next_window = new sidebar_tabs([], model.remember());
-  assert.equal(next_window.add_tab().name, 'Term 3');
+  assert.equal(next_window.add_tab().name, 'Term 4');
+});
+
+test('closing every temporary tab resets numbering even while startup profiles remain', () => {
+  const profiles = startup_profiles();
+  const model = new sidebar_tabs(profiles);
+  const first = model.add_tab();
+  const second = model.add_tab();
+  model.rename_tab(second.id, 'Scratch');
+  model.close_tab(first.id);
+  assert.equal(model.remember().next_number, 2);
+  model.close_tab(second.id);
+  assert.deepEqual(model.tabs.map(tab => tab.profile_id), ['grok', 'shell']);
+  assert.equal(model.remember().next_number, 0);
+  assert.equal(new sidebar_tabs(profiles, model.remember()).add_tab().name, 'Term 0');
+  assert.equal(model.add_tab().name, 'Term 0');
+});
+
+test('restarting temporary numbering skips names occupied by startup profiles', () => {
+  const model = new sidebar_tabs([
+    { id: 'first', name: 'Term 0', command: '', shell: '' },
+    { id: 'second', name: 'Term 1', command: '', shell: '' },
+  ]);
+  const temporary = model.add_tab();
+  assert.equal(temporary.name, 'Term 2');
+  model.close_tab(temporary.id);
+  assert.equal(model.remember().next_number, 0);
+  assert.equal(model.add_tab().name, 'Term 2');
+});
+
+test('stale remembered numbering resets when no temporary tabs can be restored', () => {
+  for (const tabs of [
+    [],
+    [{ id: 'grok_tab', name: 'Grok', profile_id: 'grok' }],
+    [{ id: '../invalid', name: 'Term 5' }, { id: 'removed', name: 'Old profile', profile_id: 'deleted' }],
+  ]) {
+    const restored = new sidebar_tabs(startup_profiles(), {
+      version: 1,
+      tabs,
+      expanded_ids: [],
+      next_number: 6,
+    });
+    assert.equal(restored.remember().next_number, 0);
+    assert.equal(restored.add_tab().name, 'Term 0');
+  }
 });
 
 test('the two sidebar models keep their selections, closures, and numbering independent', () => {
@@ -49,6 +94,9 @@ test('the two sidebar models keep their selections, closures, and numbering inde
   left.close_tab(left.tabs[0].id);
   assert.equal(right.tabs.length, 2);
   assert.equal(right.add_tab().name, 'Term 0');
+  left.close_tab(left_temporary.id);
+  assert.equal(left.add_tab().name, 'Term 0');
+  assert.equal(right.add_tab().name, 'Term 1');
   left.tabs[0].name = 'External mutation';
   assert.equal(left.tabs[0].name, 'Shell');
 });
@@ -148,4 +196,6 @@ test('closing selects a neighbour, closing all remains empty, and unknown operat
   assert.equal(model.rename_tab('absent', 'Name'), false);
   assert.equal(model.set_expanded('absent', true), false);
   assert.deepEqual(new sidebar_tabs([], model.remember()).tabs, []);
+  assert.equal(model.remember().next_number, 0);
+  assert.equal(model.add_tab().name, 'Term 0');
 });

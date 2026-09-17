@@ -29,6 +29,7 @@ const icons = {
   undo: '<path d="M6 3 2 7l4 4M2 7h7a4 4 0 0 1 4 4v2"/>',
   redo: '<path d="m10 3 4 4-4 4m4-4H7a4 4 0 0 0-4 4v2"/>',
   chevron: '<path d="m6 3 5 5-5 5"/>',
+  warning: '<circle cx="8" cy="8" r="6"/><path d="M8 4.5v4M8 11v.1"/>',
 };
 
 function send(message: client_message): void {
@@ -56,7 +57,7 @@ app.innerHTML = `
       <button id="close-action" class="icon-button" type="button" aria-label="Cancel configuration changes" title="Cancel configuration changes">${icon('close')}</button>
     </div>
   </header>
-  <div id="error-banner" role="alert" hidden><span id="error-message"></span><button id="dismiss-error" type="button" aria-label="Dismiss error">×</button></div>
+  <div id="error-banner" role="alert" aria-atomic="true" hidden><span id="error-icon" aria-hidden="true">${icon('warning')}</span><span id="error-message"></span><button id="dismiss-error" type="button" aria-label="Dismiss error">×</button></div>
   <main id="terminal-content">
     <div id="trust-panel" class="empty-panel" hidden><p>Trust this workspace to run terminals.</p><button id="trust-button" class="primary" type="button">Manage Workspace Trust</button></div>
     <div id="empty-panel" class="empty-panel" hidden><p>No open terminals. Your startup configuration is unchanged.</p><button id="add-first-tab" class="primary" type="button">New terminal</button><button id="configure-empty" class="secondary" type="button">Configure startup terminals</button></div>
@@ -66,7 +67,7 @@ app.innerHTML = `
   <section id="configuration" aria-labelledby="configuration-title" hidden>
     <div class="configuration-heading"><h2 id="configuration-title">Startup terminals</h2><button id="refresh-shells" class="icon-button" type="button" aria-label="Detect shells again" title="Detect shells again">${icon('restart')}</button></div>
     <p class="configuration-intro">These profiles open at startup. Closing or adding a terminal during use does not change them. Blank Shell uses the default; keep secrets out of synced commands.</p>
-    <form id="profile-form">
+    <form id="profile-form" novalidate>
       <div id="profile-groups"></div>
       <div class="configuration-actions"><button id="save-profiles" class="primary" type="submit">Save</button><button id="cancel-configuration" class="secondary" type="button">Cancel</button></div>
     </form>
@@ -102,6 +103,7 @@ const terminal_views = new Map<string, terminal_view>();
 const sessions = new Map<string, session_info>();
 const activated_views = new Set<string>();
 const custom_shells = new Set<string>();
+const configuration_group_expanded: Record<sidebar_side, boolean> = { left: true, right: true };
 const draft = new configuration_draft();
 let startup_configuration: sidebar_configuration = { left: [], right: [] };
 let open_tabs: terminal_tab[] = [];
@@ -112,6 +114,7 @@ let trusted = false;
 let received_state = false;
 let configuring = false;
 let saving = false;
+let name_validation_error = false;
 let shells: shell_choice[] = [];
 let last_draft_state = '';
 let focused_terminal: string | undefined;
@@ -618,9 +621,17 @@ function render_content(): void {
   update_status();
 }
 
-function show_error(message: string): void {
+function show_error(message: string, is_name_validation = false): void {
+  name_validation_error = Boolean(message) && is_name_validation;
   element('error-message').textContent = message;
   error_banner.hidden = !message;
+}
+
+/** Clear only a resolved name warning; unrelated terminal errors stay visible. */
+function clear_resolved_name_error(): void {
+  if (name_validation_error && [...draft.value.left, ...draft.value.right].every(profile => profile.name.trim())) {
+    show_error('');
+  }
 }
 
 function copy_selection(id = active_id): void {
@@ -632,10 +643,10 @@ function copy_selection(id = active_id): void {
 
 function new_profile(profile_side: sidebar_side): terminal_profile {
   let number = draft.value[profile_side].length;
-  while (draft.value[profile_side].some(profile => profile.name === `${side_label(profile_side)} #${number}`)) {
+  while (draft.value[profile_side].some(profile => profile.name === `${side_label(profile_side)} ${number}`)) {
     number++;
   }
-  return { id: crypto.randomUUID(), name: `${side_label(profile_side)} #${number}`, command: '', shell: '' };
+  return { id: crypto.randomUUID(), name: `${side_label(profile_side)} ${number}`, command: '', shell: '' };
 }
 
 function side_label(profile_side: sidebar_side): string {
@@ -650,7 +661,8 @@ function open_configuration(): void {
   }
   render_draft();
   render_content();
-  (configuration_panel.querySelector<HTMLInputElement>('input') ?? element('add-left-profile')).focus();
+  (profile_groups.querySelector<HTMLInputElement>('.profile-group-content:not([hidden]) input')
+    ?? element('toggle-left-profiles')).focus();
 }
 
 function close_configuration(): void {
@@ -659,6 +671,9 @@ function close_configuration(): void {
   }
   configuring = false;
   draft.reset(startup_configuration);
+  if (name_validation_error) {
+    show_error('');
+  }
   custom_shells.clear();
   save_button.disabled = false;
   save_button.textContent = 'Save';
@@ -687,6 +702,7 @@ function update_draft(profile_side: sidebar_side, id: string, key: 'name' | 'com
       profile[key] = value;
     }
   }, `${profile_side}:${id}:${key}`);
+  clear_resolved_name_error();
   update_actions();
 }
 
@@ -696,7 +712,7 @@ function render_profile_row(profile_side: sidebar_side, profile: terminal_profil
   row.dataset.profileId = profile.id;
   const prefix = `${profile_side}-${profile.id}`;
   const legend = document.createElement('legend');
-  legend.textContent = `${side_label(profile_side)} #${index}`;
+  legend.textContent = `${side_label(profile_side)} ${index}`;
   row.append(legend);
   const actions = document.createElement('div');
   actions.className = 'row-actions';
@@ -764,7 +780,7 @@ function render_profile_row(profile_side: sidebar_side, profile: terminal_profil
     row.append(group);
   }
 
-  field('name', 'Name', `${side_label(profile_side)} #${index}`);
+  field('name', 'Name', `${side_label(profile_side)} ${index}`);
   field('command', 'Command', 'Optional startup command');
   const shell_group = document.createElement('div');
   shell_group.className = 'field';
@@ -834,6 +850,7 @@ function render_profile_row(profile_side: sidebar_side, profile: terminal_profil
 
 /** The draft covers both sides so Save, Undo and Redo remain atomic. */
 function render_draft(): void {
+  clear_resolved_name_error();
   const previous = document.activeElement;
   const text_input = previous instanceof HTMLInputElement || previous instanceof HTMLTextAreaElement ? previous : undefined;
   const start = text_input?.selectionStart ?? null;
@@ -844,15 +861,43 @@ function render_draft(): void {
     group.className = 'profile-group';
     group.dataset.side = profile_side;
     const heading = document.createElement('h3');
-    heading.textContent = side_label(profile_side);
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.id = `toggle-${profile_side}-profiles`;
+    toggle.className = 'profile-group-toggle';
+    toggle.innerHTML = `<span class="section-chevron">${icon('chevron')}</span>`;
+    const label = document.createElement('span');
+    label.textContent = side_label(profile_side);
+    toggle.append(label);
+    const content = document.createElement('div');
+    content.id = `${profile_side}-profile-content`;
+    content.className = 'profile-group-content';
+    toggle.setAttribute('aria-controls', content.id);
+
+    function set_group_expanded(expanded: boolean): void {
+      // Presentation state is separate from the draft and its undo history.
+      configuration_group_expanded[profile_side] = expanded;
+      toggle.setAttribute('aria-expanded', String(expanded));
+      content.hidden = !expanded;
+    }
+
+    set_group_expanded(configuration_group_expanded[profile_side]);
+    toggle.addEventListener('click', () => set_group_expanded(!configuration_group_expanded[profile_side]));
+    toggle.addEventListener('keydown', event => {
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+        event.preventDefault();
+        set_group_expanded(event.key === 'ArrowRight');
+      }
+    });
+    heading.append(toggle);
     group.append(heading);
     if (!draft.value[profile_side].length) {
       const empty = document.createElement('p');
       empty.className = 'configuration-empty';
       empty.textContent = 'No startup profiles on this side.';
-      group.append(empty);
+      content.append(empty);
     }
-    draft.value[profile_side].forEach((profile, index) => group.append(render_profile_row(profile_side, profile, index)));
+    draft.value[profile_side].forEach((profile, index) => content.append(render_profile_row(profile_side, profile, index)));
     const add_button = document.createElement('button');
     add_button.id = `add-${profile_side}-profile`;
     add_button.className = 'secondary add-profile';
@@ -867,13 +912,14 @@ function render_draft(): void {
       render_draft();
       profile_groups.querySelector<HTMLInputElement>(`[data-side="${profile_side}"] .profile-row:last-of-type input`)?.focus();
     });
-    group.append(add_button);
+    content.append(add_button);
     if (draft.value[profile_side].length >= maximum_profiles) {
       const limit = document.createElement('p');
       limit.className = 'field-hint';
       limit.textContent = '32 startup profiles on this side. Remove one to add another.';
-      group.append(limit);
+      content.append(limit);
     }
+    group.append(content);
     profile_groups.append(group);
   }
   element<HTMLButtonElement>('cancel-configuration').disabled = saving;
@@ -885,10 +931,15 @@ function save_configuration(): void {
   if (saving) {
     return;
   }
-  const profiles = [...draft.value.left, ...draft.value.right];
-  if (profiles.some(profile => !profile.name.trim())) {
-    show_error('Give each startup profile a name before saving.');
-    return;
+  for (const profile_side of ['left', 'right'] as const) {
+    const unnamed_profile = draft.value[profile_side].find(profile => !profile.name.trim());
+    if (unnamed_profile) {
+      configuration_group_expanded[profile_side] = true;
+      render_draft();
+      show_error('Give each startup profile a name before saving.', true);
+      element<HTMLInputElement>(`${profile_side}-${unnamed_profile.id}-name`).focus();
+      return;
+    }
   }
   const normalise = (entries: readonly terminal_profile[]): terminal_profile[] => entries.map(profile => ({
     ...profile, name: profile.name.trim(), shell: profile.shell.trim(),

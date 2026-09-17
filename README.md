@@ -19,7 +19,7 @@ After updating the extension, reload the VS Code window to load the new code.
 
 An **open terminal** belongs to the current workspace window. A **startup profile** describes a terminal to open when its sidebar starts. These are separate objects: closing a tab ends its process without deleting its startup profile.
 
-The right tab strip has a **+** button to create a terminal and a **×** button to close the selected one. A middle click closes the tab beneath the pointer. Double-click blank tab-strip space to create a terminal. New ordinary shells are named **Term 0**, **Term 1**, and so on, with an independent counter on each side. Numbers continue from the remembered layout and skip existing names.
+The right tab strip has a **+** button to create a terminal and a **×** button to close the selected one. A middle click closes the tab beneath the pointer. Double-click blank tab-strip space to create a terminal. New ordinary shells are named **Term 0**, **Term 1**, and so on, with an independent counter on each side. Closing all ordinary tabs resets that side's counter to **Term 0**, even when startup tabs remain. Existing names are skipped.
 
 The left sidebar presents an Explorer-style list of collapsible terminal sections. Several sections can be expanded at once and share the available height. Collapsed sections sit below them, at the bottom of the view; if all sections are collapsed, the list remains at the bottom. Collapsing a section hides its terminal and preserves the process; its close control ends the process. This layout uses a single Webview View and is not a collection of native Explorer panes.
 
@@ -33,7 +33,7 @@ The view uses documented [Webview theme variables](https://code.visualstudio.com
 
 ## Configuration
 
-Run **Terminal Sidebar: Configure Sidebars**, or select either sidebar's gear. The left configuration editor contains **Left sidebar** and **Right sidebar** groups. Each group numbers its entries from **#0** and provides:
+Run **Terminal Sidebar: Configure Sidebars**, or select either sidebar's gear. The left configuration editor contains independently collapsible **Left sidebar** and **Right sidebar** groups. Folding either group keeps its unsaved edits. Each group numbers its entries from **0** and provides:
 
 - **Name:** the initial terminal name, up to 80 characters.
 - **Command:** text sent once when the terminal starts. Blank opens an interactive shell.

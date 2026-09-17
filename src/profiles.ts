@@ -21,20 +21,20 @@ export function parse_profiles(value: unknown): terminal_profile[] {
   const identifiers = new Set<string>();
   return value.map((entry, index) => {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
-      throw new Error(`Sidebar #${index} must be an object.`);
+      throw new Error(`Sidebar ${index} must be an object.`);
     }
     const { id, name, command = '', shell = '' } = entry as Record<string, unknown>;
     if (!is_identifier(id) || identifiers.has(id)) {
-      throw new Error(`Sidebar #${index} needs a unique ID containing letters, numbers, underscores, or hyphens.`);
+      throw new Error(`Sidebar ${index} needs a unique ID containing letters, numbers, underscores, or hyphens.`);
     }
     if (!is_tab_name(name)) {
-      throw new Error(`Sidebar #${index} needs a name of 1–80 characters on one line.`);
+      throw new Error(`Sidebar ${index} needs a name of 1–80 characters on one line.`);
     }
     if (typeof command !== 'string' || command.length > 8192 || command.includes('\0')) {
-      throw new Error(`Sidebar #${index} has an invalid startup command.`);
+      throw new Error(`Sidebar ${index} has an invalid startup command.`);
     }
     if (typeof shell !== 'string' || shell.length > 1024 || /[\0\r\n]/.test(shell)) {
-      throw new Error(`Sidebar #${index} needs a shell executable name or path on one line.`);
+      throw new Error(`Sidebar ${index} needs a shell executable name or path on one line.`);
     }
     identifiers.add(id);
     return { id, name: name.trim(), command, shell: shell.trim() };
