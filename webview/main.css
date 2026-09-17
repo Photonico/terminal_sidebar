@@ -36,7 +36,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 #tab-actions, #configuration-toolbar { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; margin-left: auto; }
 #left-heading { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 4px 6px; font-size: 11px; color: var(--vscode-descriptionForeground, var(--view-foreground)); }
 .icon-button { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 4px; border: 1px solid transparent; border-radius: var(--tab-radius); background: transparent; }
-.icon-button:hover:not(:disabled) { background: var(--vscode-toolbar-hoverBackground, #80808025); }
+.icon-button:hover:not(:disabled) { background-color: var(--vscode-toolbar-hoverBackground, #80808025); }
+/* Inset the hover surface by 2px, preserving the hit area and icon alignment. */
+#tab-actions .icon-button, .section-close { border-width: 2px; padding: 3px; background-clip: padding-box; }
 .icon-button svg, .section-chevron svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
 
 #terminal-content { flex: 1 1 auto; min-height: 0; min-width: 0; position: relative; }
