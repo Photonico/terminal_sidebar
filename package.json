@@ -2,7 +2,7 @@
   "name": "terminal-sidebar",
   "displayName": "Terminal Sidebar",
   "description": "Independent sidebar terminals with named tabs, startup commands, and your choice of shell.",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "publisher": "ConAntares",
   "author": "Lu Niu (Photonico)",
   "license": "MIT",

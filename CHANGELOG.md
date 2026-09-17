@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.0 — Pre-release
+
+- Rename terminals from the edit button beside each sidebar's close button; preserve renamed tabs in the saved layout.
+- Use **Side Terminals** for both view titles and clarify the buttons that open the opposite sidebar's terminals.
+- Unify themed tab colours and compact circular action buttons; connect the Primary Side Bar's active, expanded tab background to its terminal.
+- Add **Return to terminals** to startup configuration, preserving unsaved drafts and undo history for continued editing.
+- Place startup profile titles and their actions on one line, use the same close icon as terminal tabs, and make shell detection and profile actions circular.
+- Improve configuration text readability, balanced spacing, and field alignment as the font size changes.
+
 ## 0.6.0 — Pre-release
 
 - Use the official Primary Side Bar and Secondary Side Bar names while preserving existing command identifiers and settings keys.
