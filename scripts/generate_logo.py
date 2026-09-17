@@ -203,7 +203,7 @@ def build_logo(font_path: Path, output: Path) -> None:
   </g>
 </svg>
 '''
-    (output / 'activity-icon.svg').write_text(activity_icon, encoding='utf-8')
+    (output / 'activity.svg').write_text(activity_icon, encoding='utf-8')
     eps_source = cairosvg.svg2eps(bytestring=svg.encode()).decode('ascii')
     # Preserve the complete transparent margins: 512 CSS pixels = 384 pt.
     eps_lines = []
@@ -217,7 +217,7 @@ def build_logo(font_path: Path, output: Path) -> None:
         eps_lines.append(line.rstrip())
     (output / 'logo.eps').write_text('\n'.join(eps_lines) + '\n', encoding='ascii')
     cairosvg.svg2png(bytestring=svg.encode(), write_to=str(output / 'logo.png'), output_width=512, output_height=512)
-    print(f'Created logo.svg, logo.eps, logo.png, activity-icon.svg in {output}')
+    print(f'Created logo.svg, logo.eps, logo.png, activity.svg in {output}')
 
 
 if __name__ == '__main__':

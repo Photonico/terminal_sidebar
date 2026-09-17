@@ -49,14 +49,14 @@
         {
           "id": "terminalSidebar",
           "title": "Side Terminal",
-          "icon": "assets/activity-icon.svg"
+          "icon": "assets/activity.svg"
         }
       ],
       "activitybar": [
         {
           "id": "terminalSidebarLeft",
           "title": "Side Terminal",
-          "icon": "assets/activity-icon.svg"
+          "icon": "assets/activity.svg"
         }
       ]
     },

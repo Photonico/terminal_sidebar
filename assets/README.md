@@ -3,7 +3,7 @@
 - `logo.svg`: 512 × 512 vector master, transparent background, outlined glyphs.
 - `logo.eps`: 384 × 384 pt vector EPS export, with the same proportions and margins as the SVG. The background and frame interior are unpainted; EPS does not store an alpha channel.
 - `logo.png`: 512 × 512 RGBA export for extension packaging and previews.
-- `activity-icon.svg`: monochrome mask for both sidebar icons, based on the logo with heavier strokes for small-size legibility and tinted by VS Code's theme.
+- `activity.svg`: monochrome mask for both sidebar icons, based on the logo with heavier strokes for small-size legibility and tinted by VS Code's theme.
 
 The circular frame consists of twelve white dashes with rounded ends, rotated three degrees clockwise. Each dash occupies 22 degrees of visible ink, followed by an 8-degree transparent gap, measured along the circle's 195-unit centreline radius. The generator compensates for the round caps, including their grey outline, so the stated lengths describe the visible result.
 
