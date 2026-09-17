@@ -303,6 +303,81 @@ test('sidebars own separate processes even with the same profile and runtime IDs
   assert.deepEqual(right.output().map(message => message.data), ['RIGHT_OUTPUT']);
 });
 
+test('opening the other sidebar reveals its view without duplicating terminals or reopening closed tabs', async test_case => {
+  for (const source_side of ['left', 'right'] as const) {
+    await test_case.test(`from ${source_side}`, async side_test => {
+      const target_side = source_side === 'left' ? 'right' : 'left';
+      const configuration = structuredClone(initial_configuration);
+      configuration[source_side] = [];
+      const runtime = await harness({ configuration });
+      side_test.after(() => runtime.dispose());
+      const source = await runtime.view(source_side);
+      const focus_command = `${view_ids[target_side]}.focus`;
+
+      await source.send({ type: 'open_other_sidebar' });
+      assert.equal(runtime.executions.at(-1)?.id, focus_command,
+        'focus can reveal a destination whose renderer does not exist yet');
+      assert.equal(runtime.processes.length, 0, 'startup waits for the destination renderer');
+
+      const target = await runtime.view(target_side);
+      const original_tabs = target.state().tabs;
+      const original_processes = [...runtime.processes];
+      const original_writes = runtime.processes.map(terminal => [...terminal.writes]);
+      assert.equal(original_processes.length, configuration[target_side].length);
+
+      target.hide();
+      await source.send({ type: 'open_other_sidebar' });
+      assert.equal(runtime.executions.at(-1)?.id, focus_command,
+        'a hidden destination is focused, never toggled');
+      // VS Code handles the focus command by making its existing view visible.
+      target.show();
+      await Promise.all([
+        source.send({ type: 'open_other_sidebar' }),
+        source.send({ type: 'open_other_sidebar' }),
+      ]);
+      await runtime.command(target_side === 'left' ? 'terminalSidebar.openLeft' : 'terminalSidebar.open');
+      assert.deepEqual(target.state().tabs, original_tabs);
+      assert.deepEqual(runtime.processes, original_processes);
+      assert.deepEqual(runtime.processes.map(terminal => terminal.writes), original_writes);
+      assert.ok(runtime.processes.every(terminal => terminal.killed === 0));
+      assert.deepEqual(source.state().tabs, []);
+
+      for (const tab of original_tabs) await target.send({ type: 'close_tab', id: tab.id });
+      target.hide();
+      await source.send({ type: 'open_other_sidebar' });
+      target.show();
+      await source.send({ type: 'open_other_sidebar' });
+      assert.deepEqual(target.state().tabs, [], 'closed startup tabs remain closed during this window');
+      assert.deepEqual(runtime.processes, original_processes);
+      assert.ok(runtime.processes.every(terminal => terminal.killed === 1));
+      assert.deepEqual(runtime.updates, []);
+      assert.deepEqual(runtime.configuration(), configuration);
+    });
+  }
+});
+
+test('sidebar navigation remains available without workspace trust and never bypasses the startup guard', async test_case => {
+  const runtime = await harness({ trusted: false });
+  test_case.after(() => runtime.dispose());
+  const left = await runtime.view('left');
+  await left.send({ type: 'open_other_sidebar' });
+  assert.equal(runtime.executions.at(-1)?.id, `${view_ids.right}.focus`);
+  const right = await runtime.view('right');
+  await right.send({ type: 'open_other_sidebar' });
+  assert.equal(runtime.executions.at(-1)?.id, `${view_ids.left}.focus`);
+  assert.equal(runtime.processes.length, 0);
+  assert.deepEqual(runtime.errors, []);
+  assert.ok([left, right].every(view => !view.messages.some(message => message.type === 'error')));
+
+  await runtime.grant_trust();
+  assert.equal(runtime.processes.length, 4);
+  const original_writes = runtime.processes.map(terminal => [...terminal.writes]);
+  await left.send({ type: 'open_other_sidebar' });
+  await right.send({ type: 'open_other_sidebar' });
+  assert.equal(runtime.processes.length, 4);
+  assert.deepEqual(runtime.processes.map(terminal => terminal.writes), original_writes);
+});
+
 test('adding, renaming and closing runtime tabs never rewrites startup settings', async test_case => {
   const runtime = await harness();
   test_case.after(() => runtime.dispose());

@@ -1,15 +1,17 @@
 # Terminal Sidebar
 
-Terminal Sidebar brings independent terminals into the VS Code sidebars. The left side organises terminals as collapsible sections; the right side uses a compact tab strip. Each terminal runs its own shell, leaving the ordinary terminal panel available for other work.
+Terminal Sidebar brings independent terminals into the VS Code side bars. The **Primary Side Bar** organises terminals as collapsible sections; the **Secondary Side Bar** uses a compact tab strip. Each terminal runs its own shell, leaving the ordinary terminal panel available for other work. These side bars are on the left and right by default, respectively, but VS Code allows their positions to change.
 
 **Version 0.5.0 is a pre-release for testing.** It requires VS Code **1.106 or later** and a desktop or remote Node.js extension host. Browser-only and virtual workspaces are unsupported.
 
 ## Getting started
 
 1. Install **Terminal Sidebar** by **Luke Niu** (`ConAntares.terminal-sidebar`) from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=ConAntares.terminal-sidebar), choosing the pre-release version. A matching VSIX can also be installed through **Extensions: Install from VSIX…**.
-2. Open **Side Terminal** from the Activity Bar or the right Secondary Side Bar.
-3. Use **+** to open an ordinary shell. On the right, double-clicking blank space in the tab strip also creates a terminal.
-4. Use either gear to open the configuration editor on the left. Add any terminals that should open automatically when their sidebar starts.
+2. Open **Side Terminal** from the Activity Bar or the Secondary Side Bar.
+3. Use **+** to open an ordinary shell. In the Secondary Side Bar, double-clicking blank space in the tab strip also creates a terminal.
+4. Use either gear to open the configuration editor in the Primary Side Bar. Add any terminals that should open automatically when their side bar starts.
+
+The Primary Side Bar's title toolbar includes **Open Secondary Side Bar** between **+** and **Save**. When either side bar has no tabs, **Open secondary side bar** or **Open primary side bar** appears between **New terminal** and **Configure startup terminals**. These controls open and focus the other Side Terminal view, including when it is hidden; they do not toggle it closed.
 
 For example, add **Neovim** as a startup name and `nvim` as its command. You can use `vim`, `nano`, or any other installed command-line tool in the same way. Each tool keeps its own configuration and works as it would in an ordinary terminal.
 
@@ -17,17 +19,17 @@ After updating the extension, reload the VS Code window to load the new code.
 
 ## Open terminals and startup settings
 
-An **open terminal** belongs to the current workspace window. A **startup profile** describes a terminal to open when its sidebar starts. These are separate objects: closing a tab ends its process without deleting its startup profile.
+An **open terminal** belongs to the current workspace window. A **startup profile** describes a terminal to open when its side bar starts. These are separate objects: closing a tab ends its process without deleting its startup profile.
 
-The right tab strip has a **+** button to create a terminal and a **×** button to close the selected one. A middle click closes the tab beneath the pointer. Double-click blank tab-strip space to create a terminal. New ordinary shells are named **Term 0**, **Term 1**, and so on, with an independent counter on each side. Closing all ordinary tabs resets that side's counter to **Term 0**, even when startup tabs remain. Existing names are skipped.
+The Secondary Side Bar's tab strip has a **+** button to create a terminal and a **×** button to close the selected one. A middle click closes the tab beneath the pointer. Double-click blank tab-strip space to create a terminal. New ordinary shells are named **Term 0**, **Term 1**, and so on, with an independent counter on each side. Closing all ordinary tabs resets that side's counter to **Term 0**, even when startup tabs remain. Existing names are skipped.
 
-The left sidebar presents an Explorer-style list of collapsible terminal sections. Several sections can be expanded at once and share the available height. Expanding or collapsing keeps their order; when all sections are collapsed, they form a compact list at the top with consistent header styling. Collapsing a section hides its terminal and preserves the process; its close control ends the process. The status row follows the terminal background when an expanded terminal sits directly above it, and the sidebar background otherwise. Empty sidebars show guidance and buttons at the top. This layout uses a single Webview View and is not a collection of native Explorer panes.
+The Primary Side Bar presents an Explorer-style list of collapsible terminal sections. Several sections can be expanded at once and share the available height. Expanding or collapsing keeps their order; when all sections are collapsed, they form a compact list at the top with consistent header styling. Collapsing a section hides its terminal and preserves the process; its close control ends the process. The status row follows the terminal background when an expanded terminal sits directly above it, and the side bar background otherwise. Empty side bars show guidance and buttons at the top. This layout uses a single Webview View and is not a collection of native Explorer panes.
 
-Drag a tab or section heading to change its position on the same side. A marker shows whether it will move before or after the target. With a heading focused, **Alt+Shift+Left/Right** on the right or **Alt+Shift+Up/Down** on the left moves it one position. Reordering preserves the running process, current selection, and expanded sections; it does not edit startup settings.
+Drag a tab or section heading to change its position on the same side. A marker shows whether it will move before or after the target. With a heading focused, **Alt+Shift+Left/Right** in the Secondary Side Bar or **Alt+Shift+Up/Down** in the Primary Side Bar moves it one position. Reordering preserves the running process, current selection, and expanded sections; it does not edit startup settings.
 
 The two sides have separate startup lists, open tabs, selections, terminal dimensions, and processes. Even terminals with the same name run independently. A command-line tool may still share its own global login or files between processes.
 
-Each side supports up to **32 startup profiles** and **32 additional ordinary terminals**. Terminals begin when their sidebar is first used in a trusted workspace, including background startup tabs. Opening configuration alone does not run commands. Switching tabs, folding sections, or hiding a sidebar does not restart processes or repeat startup commands.
+Each side supports up to **32 startup profiles** and **32 additional ordinary terminals**. Terminals begin when their side bar is first used in a trusted workspace, including background startup tabs. Opening configuration alone does not run commands. Switching tabs, folding sections, or hiding a side bar does not restart processes or repeat startup commands.
 
 Both sides use compact 24 px headers and the VS Code interface font. Colours and corner radii come from the current theme. Terminal scrollbars use the editor's scrollbar sizes and visibility together with its normal, hover, and active slider colours. Theme and setting changes update open terminals without restarting their processes. Terminal text continues to follow the integrated-terminal font settings.
 
@@ -35,7 +37,7 @@ The view uses documented [Webview theme variables](https://code.visualstudio.com
 
 ## Configuration
 
-Run **Terminal Sidebar: Configure Sidebars**, or select either sidebar's gear. The left configuration editor contains independently collapsible **Left sidebar** and **Right sidebar** groups. Folding either group keeps its unsaved edits. Each group numbers its entries from **0** and provides:
+Run **Terminal Sidebar: Configure Side Bars**, or select either side bar's gear. The configuration editor in the Primary Side Bar contains independently collapsible **Primary Side Bar** and **Secondary Side Bar** groups. Folding either group keeps its unsaved edits. Each group numbers its entries from **0** and provides:
 
 - **Name:** the initial terminal name, up to 80 characters.
 - **Command:** text sent once when the terminal starts. Blank opens an interactive shell.
@@ -59,7 +61,7 @@ The application-scoped User setting is `terminalSidebar.sidebars`:
 }
 ```
 
-The editor generates stable identifiers. Ordering and names can change without changing identity. Repository and workspace settings cannot supply startup commands. Commands execute as your user: keep credentials in the command-line tool's own login or local credential storage, since startup settings may be synced.
+The `left` and `right` keys refer to the Primary and Secondary Side Bars, respectively. They retain their original spelling for compatibility, regardless of where the views are positioned. The editor generates stable identifiers. Ordering and names can change without changing identity. Repository and workspace settings cannot supply startup commands. Commands execute as your user: keep credentials in the command-line tool's own login or local credential storage, since startup settings may be synced.
 
 ## Memory and process lifetime
 
@@ -73,7 +75,7 @@ Reloading VS Code, restarting the extension host, or closing the window ends all
 
 ## Commands and portability
 
-**Terminal Sidebar: Open Profile** opens a saved profile on the right by default. Integrations and custom keybindings can specify a side:
+**Terminal Sidebar: Open Profile** opens a saved profile in the Secondary Side Bar by default. Integrations and custom keybindings can specify a side:
 
 ```json
 {
@@ -84,7 +86,7 @@ Reloading VS Code, restarting the extension host, or closing the window ends all
 
 The `id` refers to a startup profile in the requested side, and `side` accepts `left` or `right`. The existing command identifiers remain compatible with earlier versions.
 
-On upgrading from 0.1 or 0.2, the old `terminalSidebar.profiles` list is read as right-side startup settings, and the left list starts empty. No settings are rewritten during activation. The first explicit save writes the new grouped setting and retains the old value for a possible downgrade. Once the grouped setting exists, it takes precedence. A downgrade reads the retained old list; it does not include later edits made in 0.3.
+On upgrading from 0.1 or 0.2, the old `terminalSidebar.profiles` list is read as Secondary Side Bar startup settings, and the Primary Side Bar list starts empty. No settings are rewritten during activation. The first explicit save writes the new grouped setting and retains the old value for a possible downgrade. Once the grouped setting exists, it takes precedence. A downgrade reads the retained old list; it does not include later edits made in 0.3.
 
 Startup settings can follow **VS Code Settings Sync** when Settings sync is enabled. Shells, command-line tools, and credentials must be installed separately on each machine. Executable names are usually more portable than machine-specific paths.
 

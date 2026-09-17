@@ -440,6 +440,10 @@ class terminal_sidebar implements vscode.Disposable {
       await this.configure();
       return;
     }
+    if (message.type === 'open_other_sidebar') {
+      await this.open(view.side === 'left' ? 'right' : 'left');
+      return;
+    }
     if (message.type === 'copy') {
       await vscode.env.clipboard.writeText(message.text);
       return;

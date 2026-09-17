@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Use the official Primary Side Bar and Secondary Side Bar names while preserving existing command identifiers and settings keys.
+- Add a toolbar control in the Primary Side Bar to open the Secondary Side Bar, between **+** and **Save**.
+- Add a button in each empty state to open and focus the other Side Terminal view, including when it is hidden.
+
 ## 0.5.0 — Pre-release
 
 - Reorder tabs by dragging or keyboard; restore each sidebar's saved order.

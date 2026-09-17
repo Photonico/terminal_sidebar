@@ -70,6 +70,7 @@ export type client_message =
   | { type: 'save'; configuration: sidebar_configuration; base_configuration: sidebar_configuration }
   | { type: 'select_profile' }
   | { type: 'configure' }
+  | { type: 'open_other_sidebar' }
   | { type: 'refresh_shells' }
   | { type: 'focus'; id: string }
   | { type: 'export'; id: string; text: string }

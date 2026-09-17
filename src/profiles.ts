@@ -76,6 +76,7 @@ export function is_client_message(value: unknown): value is client_message {
     case 'trust':
     case 'select_profile':
     case 'configure':
+    case 'open_other_sidebar':
     case 'refresh_shells':
     case 'add_tab':
       return true;

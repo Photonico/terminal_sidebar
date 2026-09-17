@@ -79,13 +79,13 @@
     "commands": [
       {
         "command": "terminalSidebar.open",
-        "title": "Open Right Sidebar",
+        "title": "Open Secondary Side Bar",
         "category": "Terminal Sidebar",
-        "icon": "$(terminal)"
+        "icon": "$(layout-sidebar-right)"
       },
       {
         "command": "terminalSidebar.openLeft",
-        "title": "Open Left Sidebar",
+        "title": "Open Primary Side Bar",
         "category": "Terminal Sidebar",
         "icon": "$(terminal)"
       },
@@ -97,7 +97,7 @@
       },
       {
         "command": "terminalSidebar.configure",
-        "title": "Configure Sidebars",
+        "title": "Configure Side Bars",
         "category": "Terminal Sidebar",
         "icon": "$(settings-gear)"
       },
@@ -141,7 +141,7 @@
       },
       {
         "command": "terminalSidebar.left.configure",
-        "title": "Configure Sidebars",
+        "title": "Configure Side Bars",
         "category": "Terminal Sidebar",
         "icon": "$(settings-gear)"
       },
@@ -185,7 +185,7 @@
       },
       {
         "command": "terminalSidebar.right.configure",
-        "title": "Configure Sidebars",
+        "title": "Configure Side Bars",
         "category": "Terminal Sidebar",
         "icon": "$(settings-gear)"
       },
@@ -216,29 +216,34 @@
           "group": "terminal@0"
         },
         {
+          "command": "terminalSidebar.open",
+          "when": "view == terminalSidebar.left",
+          "group": "navigation@1"
+        },
+        {
           "command": "terminalSidebar.left.save",
           "when": "view == terminalSidebar.left",
-          "group": "navigation@0"
+          "group": "navigation@2"
         },
         {
           "command": "terminalSidebar.left.undo",
           "when": "view == terminalSidebar.left && terminalSidebar.left.configuring",
-          "group": "navigation@1"
+          "group": "navigation@3"
         },
         {
           "command": "terminalSidebar.left.redo",
           "when": "view == terminalSidebar.left && terminalSidebar.left.configuring",
-          "group": "navigation@2"
+          "group": "navigation@4"
         },
         {
           "command": "terminalSidebar.left.close",
           "when": "view == terminalSidebar.left",
-          "group": "navigation@3"
+          "group": "navigation@5"
         },
         {
           "command": "terminalSidebar.left.configure",
           "when": "view == terminalSidebar.left",
-          "group": "navigation@4"
+          "group": "navigation@6"
         },
         {
           "command": "terminalSidebar.left.restart",
@@ -253,27 +258,27 @@
         {
           "command": "terminalSidebar.right.save",
           "when": "view == terminalSidebar.terminals",
-          "group": "navigation@0"
+          "group": "navigation@1"
         },
         {
           "command": "terminalSidebar.right.undo",
           "when": "view == terminalSidebar.terminals && terminalSidebar.right.configuring",
-          "group": "navigation@1"
+          "group": "navigation@2"
         },
         {
           "command": "terminalSidebar.right.redo",
           "when": "view == terminalSidebar.terminals && terminalSidebar.right.configuring",
-          "group": "navigation@2"
+          "group": "navigation@3"
         },
         {
           "command": "terminalSidebar.right.close",
           "when": "view == terminalSidebar.terminals",
-          "group": "navigation@3"
+          "group": "navigation@4"
         },
         {
           "command": "terminalSidebar.right.configure",
           "when": "view == terminalSidebar.terminals",
-          "group": "navigation@4"
+          "group": "navigation@5"
         },
         {
           "command": "terminalSidebar.right.restart",
@@ -283,6 +288,11 @@
         {
           "command": "terminalSidebar.left.add",
           "when": "view == terminalSidebar.left && !terminalSidebar.left.configuring",
+          "group": "navigation@0"
+        },
+        {
+          "command": "terminalSidebar.right.add",
+          "when": "view == terminalSidebar.terminals && !terminalSidebar.right.configuring",
           "group": "navigation@0"
         }
       ],
@@ -359,7 +369,7 @@
         "terminalSidebar.profiles": {
           "type": "array",
           "scope": "application",
-          "markdownDescription": "Legacy startup profiles from 0.1 and 0.2. Used on the right only when terminalSidebar.sidebars has no explicit User value.",
+          "markdownDescription": "Legacy startup profiles from 0.1 and 0.2. Used in the Secondary Side Bar only when terminalSidebar.sidebars has no explicit User value.",
           "default": [
             {
               "id": "default",
@@ -402,7 +412,7 @@
               }
             }
           },
-          "deprecationMessage": "Legacy startup profiles. Use Terminal Sidebar: Configure Sidebars to save independent left and right startup lists."
+          "deprecationMessage": "Legacy startup profiles. Use Terminal Sidebar: Configure Side Bars to save independent Primary and Secondary Side Bar startup lists."
         },
         "terminalSidebar.sidebars": {
           "type": "object",
@@ -412,7 +422,7 @@
             "left",
             "right"
           ],
-          "markdownDescription": "Startup tabs for the left and right sidebars. Configure them with **Terminal Sidebar: Configure Sidebars**. Closing a live tab leaves these lists unchanged. Commands run once at sidebar startup; keep secrets out of synced settings.",
+          "markdownDescription": "Startup tabs for the Primary and Secondary Side Bars. Configure them with **Terminal Sidebar: Configure Side Bars**. Closing a live tab leaves these lists unchanged. Commands run once at sidebar startup; keep secrets out of synced settings.",
           "default": {
             "left": [],
             "right": [
@@ -462,7 +472,7 @@
                   }
                 }
               },
-              "description": "Left sidebar startup sections."
+              "description": "Primary Side Bar startup sections."
             },
             "right": {
               "type": "array",
@@ -501,7 +511,7 @@
                   }
                 }
               },
-              "description": "Right sidebar startup tabs."
+              "description": "Secondary Side Bar startup tabs."
             }
           }
         }

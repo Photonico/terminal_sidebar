@@ -61,7 +61,12 @@ app.innerHTML = `
   <div id="error-banner" role="alert" aria-atomic="true" hidden><span id="error-icon" aria-hidden="true">${icon('warning')}</span><span id="error-message"></span><button id="dismiss-error" type="button" aria-label="Dismiss error">×</button></div>
   <main id="terminal-content">
     <div id="trust-panel" class="empty-panel" hidden><p>Trust this workspace to run terminals.</p><button id="trust-button" class="primary" type="button">Manage Workspace Trust</button></div>
-    <div id="empty-panel" class="empty-panel" hidden><p>No open terminals. Your startup configuration is unchanged.</p><button id="add-first-tab" class="primary" type="button">New terminal</button><button id="configure-empty" class="secondary" type="button">Configure startup terminals</button></div>
+    <div id="empty-panel" class="empty-panel" hidden>
+      <p>No open terminals. Your startup configuration is unchanged.</p>
+      <button id="add-first-tab" class="primary" type="button">New terminal</button>
+      <button id="open-other-sidebar" class="secondary" type="button">Open primary side bar</button>
+      <button id="configure-empty" class="secondary" type="button">Configure startup terminals</button>
+    </div>
     <div id="terminal-host"></div>
   </main>
   <footer id="session-status" role="status" aria-live="polite"><span id="status-badge"><span id="status-dot"></span><span id="status-text">Loading terminals…</span></span></footer>
@@ -646,6 +651,7 @@ function render_content(): void {
   configuration_panel.hidden = !configuring;
   element('trust-panel').hidden = trusted || !received_state;
   element('empty-panel').hidden = !trusted || open_tabs.length > 0;
+  element('open-other-sidebar').textContent = `Open ${side_label(side === 'left' ? 'right' : 'left').toLowerCase()}`;
   terminal_host.hidden = !trusted || open_tabs.length === 0;
   render_terminals();
   update_actions();
@@ -681,7 +687,7 @@ function new_profile(profile_side: sidebar_side): terminal_profile {
 }
 
 function side_label(profile_side: sidebar_side): string {
-  return profile_side === 'left' ? 'Left sidebar' : 'Right sidebar';
+  return profile_side === 'left' ? 'Primary Side Bar' : 'Secondary Side Bar';
 }
 
 function open_configuration(): void {
@@ -1064,6 +1070,7 @@ tab_strip.addEventListener('wheel', event => {
 element('add-tab').addEventListener('click', add_tab);
 element('close-tab').addEventListener('click', () => close_tab(active_id));
 element('add-first-tab').addEventListener('click', add_tab);
+element('open-other-sidebar').addEventListener('click', () => send({ type: 'open_other_sidebar' }));
 element('configure-empty').addEventListener('click', () => send({ type: 'configure' }));
 element('trust-button').addEventListener('click', () => send({ type: 'trust' }));
 element('dismiss-error').addEventListener('click', () => show_error(''));
