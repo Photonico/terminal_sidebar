@@ -1,14 +1,29 @@
-import { spawnSync } from 'node:child_process';
+import { spawnSync as spawn_sync } from 'node:child_process';
 import path from 'node:path';
 
-const args = process.argv.slice(2);
-const target = `${process.platform}-${process.arch}`;
-const index = args.indexOf('--target');
-if (index !== -1) {
-  if (args[index + 1] !== target) throw new Error(`Native PTY packages must be built on their target platform (${target}). Use the CI matrix for other platforms.`);
-  args.splice(index, 2);
+const arguments_list = process.argv.slice(2);
+const target_platform = `${process.platform}-${process.arch}`;
+const target_argument_index = arguments_list.indexOf('--target');
+
+// Native dependencies must be packaged on the operating system and architecture they run on.
+if (target_argument_index !== -1) {
+  if (arguments_list[target_argument_index + 1] !== target_platform) {
+    throw new Error(`Native PTY packages must be built on their target platform (${target_platform}). Use the CI matrix for other platforms.`);
+  }
+  arguments_list.splice(target_argument_index, 2);
 }
-if (args.some(arg => arg.startsWith('--target='))) throw new Error('Use --target followed by the platform name.');
-const result = spawnSync(process.execPath, [path.resolve('node_modules/@vscode/vsce/vsce'), 'package', '--no-dependencies', '--target', target, ...args], { stdio: 'inherit', env: process.env });
-if (result.error) throw result.error;
-process.exitCode = result.status ?? 1;
+if (arguments_list.some(argument => argument.startsWith('--target='))) {
+  throw new Error('Use --target followed by the platform name.');
+}
+
+const package_arguments = [
+  path.resolve('node_modules/@vscode/vsce/vsce'),
+  'package',
+  '--no-dependencies',
+  '--target',
+  target_platform,
+  ...arguments_list,
+];
+const package_result = spawn_sync(process.execPath, package_arguments, { stdio: 'inherit', env: process.env });
+if (package_result.error) throw package_result.error;
+process.exitCode = package_result.status ?? 1;

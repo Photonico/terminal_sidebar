@@ -2,7 +2,7 @@
   "name": "terminal-sidebar",
   "displayName": "Terminal Sidebar",
   "description": "Independent sidebar terminals with named tabs, startup commands, and your choice of shell.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "ConAntares",
   "author": "Lu Niu (Photonico)",
   "license": "MIT",
@@ -48,7 +48,7 @@
       "secondarySidebar": [
         {
           "id": "terminalSidebar",
-          "title": "Side Term",
+          "title": "Side Terminal",
           "icon": "assets/logo.svg"
         }
       ],
@@ -194,6 +194,18 @@
         "title": "Restart Terminal",
         "category": "Terminal Sidebar",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "terminalSidebar.left.add",
+        "title": "New Terminal",
+        "category": "Terminal Sidebar",
+        "icon": "$(add)"
+      },
+      {
+        "command": "terminalSidebar.right.add",
+        "title": "New Terminal",
+        "category": "Terminal Sidebar",
+        "icon": "$(add)"
       }
     ],
     "menus": {
@@ -267,6 +279,11 @@
           "command": "terminalSidebar.right.restart",
           "when": "view == terminalSidebar.terminals",
           "group": "terminal@1"
+        },
+        {
+          "command": "terminalSidebar.left.add",
+          "when": "view == terminalSidebar.left && !terminalSidebar.left.configuring",
+          "group": "navigation@0"
         }
       ],
       "commandPalette": [
@@ -325,6 +342,14 @@
         {
           "command": "terminalSidebar.right.restart",
           "when": "false"
+        },
+        {
+          "command": "terminalSidebar.left.add",
+          "when": "false"
+        },
+        {
+          "command": "terminalSidebar.right.add",
+          "when": "false"
         }
       ]
     },
@@ -334,7 +359,7 @@
         "terminalSidebar.profiles": {
           "type": "array",
           "scope": "application",
-          "markdownDescription": "Named sidebar terminals. Use **Terminal Sidebar: Configure Sidebars** for the visual editor. These user settings can follow VS Code Settings Sync. Keep API keys and passwords out of commands.",
+          "markdownDescription": "Legacy startup profiles from 0.1 and 0.2. Used on the right only when terminalSidebar.sidebars has no explicit User value.",
           "default": [
             {
               "id": "default",
@@ -375,6 +400,108 @@
                 "maxLength": 1024,
                 "description": "Optional shell executable: powershell, cmd, bash, zsh, fish, or an executable path. Blank uses the VS Code default shell, then the system default. Do not include arguments."
               }
+            }
+          },
+          "deprecationMessage": "Legacy startup profiles. Use Terminal Sidebar: Configure Sidebars to save independent left and right startup lists."
+        },
+        "terminalSidebar.sidebars": {
+          "type": "object",
+          "scope": "application",
+          "additionalProperties": false,
+          "required": [
+            "left",
+            "right"
+          ],
+          "markdownDescription": "Startup tabs for the left and right sidebars. Configure them with **Terminal Sidebar: Configure Sidebars**. Closing a live tab leaves these lists unchanged. Commands run once at sidebar startup; keep secrets out of synced settings.",
+          "default": {
+            "left": [],
+            "right": [
+              {
+                "id": "default",
+                "name": "Terminal",
+                "command": "",
+                "shell": ""
+              }
+            ]
+          },
+          "properties": {
+            "left": {
+              "type": "array",
+              "default": [],
+              "maxItems": 32,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "name"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{1,64}$",
+                    "description": "Stable unique ID. The visual editor creates this automatically."
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80,
+                    "description": "Name of the tab opened at sidebar startup."
+                  },
+                  "command": {
+                    "type": "string",
+                    "default": "",
+                    "maxLength": 8192,
+                    "description": "Command to run once when this terminal starts. Blank opens an interactive shell."
+                  },
+                  "shell": {
+                    "type": "string",
+                    "default": "",
+                    "maxLength": 1024,
+                    "description": "Optional shell executable: powershell, cmd, bash, zsh, fish, or an executable path. Blank uses the VS Code default shell, then the system default. Do not include arguments."
+                  }
+                }
+              },
+              "description": "Left sidebar startup sections."
+            },
+            "right": {
+              "type": "array",
+              "default": [],
+              "maxItems": 32,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "name"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{1,64}$",
+                    "description": "Stable unique ID. The visual editor creates this automatically."
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80,
+                    "description": "Name of the tab opened at sidebar startup."
+                  },
+                  "command": {
+                    "type": "string",
+                    "default": "",
+                    "maxLength": 8192,
+                    "description": "Command to run once when this terminal starts. Blank opens an interactive shell."
+                  },
+                  "shell": {
+                    "type": "string",
+                    "default": "",
+                    "maxLength": 1024,
+                    "description": "Optional shell executable: powershell, cmd, bash, zsh, fish, or an executable path. Blank uses the VS Code default shell, then the system default. Do not include arguments."
+                  }
+                }
+              },
+              "description": "Right sidebar startup tabs."
             }
           }
         }

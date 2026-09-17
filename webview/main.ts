@@ -1,323 +1,522 @@
 import { Terminal, type ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { ProfileDraft } from '../src/draft';
-import type { Appearance, ClientMessage, HostMessage, Profile, SessionInfo } from '../src/types';
+import { configuration_draft } from '../src/draft';
+import type {
+  appearance as terminal_appearance,
+  client_message,
+  host_message,
+  session_info,
+  shell_choice,
+  sidebar_configuration,
+  sidebar_side,
+  terminal_profile,
+  terminal_tab,
+} from '../src/types';
 import '@xterm/xterm/css/xterm.css';
 import './main.css';
 
-declare function acquireVsCodeApi(): { postMessage(message: ClientMessage): void };
+declare function acquireVsCodeApi(): { postMessage(message: client_message): void };
 
 const vscode = acquireVsCodeApi();
-const send = (message: ClientMessage): void => vscode.postMessage(message);
-const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
-const MAX_PROFILES = 32;
+const is_mac = /Mac|iPhone|iPad/.test(navigator.platform);
+const maximum_profiles = 32;
+const maximum_export_characters = 1024 * 1024;
 const icons = {
+  add: '<path d="M8 3v10M3 8h10"/>',
   restart: '<path d="M3.1 5.1a5.5 5.5 0 1 1-.6 5.1M3 1.8v3.8h3.8"/>',
   close: '<path d="m4 4 8 8M4 12l8-8"/>',
   save: '<path d="M3 2h8l3 3v9H2V2Zm2 0v4h5V2M5 14V9h6v5"/>',
   undo: '<path d="M6 3 2 7l4 4M2 7h7a4 4 0 0 1 4 4v2"/>',
   redo: '<path d="m10 3 4 4-4 4m4-4H7a4 4 0 0 0-4 4v2"/>',
+  chevron: '<path d="m6 3 5 5-5 5"/>',
 };
-const icon = (name: keyof typeof icons): string => `<svg viewBox="0 0 16 16" aria-hidden="true">${icons[name]}</svg>`;
+
+function send(message: client_message): void {
+  vscode.postMessage(message);
+}
+
+function icon(name: keyof typeof icons): string {
+  return `<svg viewBox="0 0 16 16" aria-hidden="true">${icons[name]}</svg>`;
+}
+
 const app = document.getElementById('app') ?? document.body.appendChild(document.createElement('div'));
 app.id = 'app';
 app.innerHTML = `
   <header id="terminal-header">
-    <div id="profile-tabs" role="tablist" aria-label="Terminal profiles"></div>
-    <div id="toolbar" role="toolbar" aria-label="Terminal actions">
-      <button id="save-action" class="icon-button" type="button" aria-label="Save terminal output" title="Save terminal output">${icon('save')}</button>
+    <div id="terminal-tabs" role="tablist" aria-label="Open terminals"></div>
+    <span id="left-heading">Terminals</span>
+    <div id="tab-actions" role="toolbar" aria-label="Tab actions">
+      <button id="add-tab" class="icon-button" type="button" aria-label="New terminal" title="New terminal">${icon('add')}</button>
+      <button id="close-tab" class="icon-button" type="button" aria-label="Close active terminal" title="Close active terminal">${icon('close')}</button>
+    </div>
+    <div id="configuration-toolbar" role="toolbar" aria-label="Configuration actions" hidden>
+      <button id="save-action" class="icon-button" type="button" aria-label="Save startup configuration" title="Save startup configuration">${icon('save')}</button>
       <button id="undo-action" class="icon-button" type="button" aria-label="Undo configuration change" title="Undo configuration change">${icon('undo')}</button>
       <button id="redo-action" class="icon-button" type="button" aria-label="Redo configuration change" title="Redo configuration change">${icon('redo')}</button>
-      <button id="close-action" class="icon-button" type="button" aria-label="Close terminal" title="Close terminal">${icon('close')}</button>
+      <button id="close-action" class="icon-button" type="button" aria-label="Cancel configuration changes" title="Cancel configuration changes">${icon('close')}</button>
     </div>
   </header>
   <div id="error-banner" role="alert" hidden><span id="error-message"></span><button id="dismiss-error" type="button" aria-label="Dismiss error">×</button></div>
   <main id="terminal-content">
-    <div id="trust-panel" class="empty-panel" hidden><p>Trust this workspace to start terminal profiles.</p><button id="trust-button" class="primary" type="button">Manage Workspace Trust</button></div>
-    <div id="empty-panel" class="empty-panel" hidden><p>Add a profile to open a terminal here.</p><button id="add-first-profile" class="primary" type="button">Add a profile</button></div>
+    <div id="trust-panel" class="empty-panel" hidden><p>Trust this workspace to run terminals.</p><button id="trust-button" class="primary" type="button">Manage Workspace Trust</button></div>
+    <div id="empty-panel" class="empty-panel" hidden><p>No open terminals. Your startup configuration is unchanged.</p><button id="add-first-tab" class="primary" type="button">New terminal</button></div>
     <div id="terminal-host"></div>
   </main>
-  <footer id="session-status" role="status" aria-live="polite"><span id="status-dot"></span><span id="status-text">Loading profiles…</span></footer>
+  <footer id="session-status" role="status" aria-live="polite"><span id="status-dot"></span><span id="status-text">Loading terminals…</span></footer>
   <section id="configuration" aria-labelledby="configuration-title" hidden>
-    <div class="configuration-heading"><h2 id="configuration-title">Terminal profiles</h2><button id="refresh-shells" class="icon-button" type="button" aria-label="Detect shells again" title="Detect shells again">${icon('restart')}</button></div>
-    <p class="configuration-intro">Name, startup command, and shell. Blank uses your default shell. Keep secrets out of synced commands.</p>
+    <div class="configuration-heading"><h2 id="configuration-title">Startup terminals</h2><button id="refresh-shells" class="icon-button" type="button" aria-label="Detect shells again" title="Detect shells again">${icon('restart')}</button></div>
+    <p class="configuration-intro">These profiles open at startup. Closing or adding a terminal during use does not change them. Blank Shell uses the default; keep secrets out of synced commands.</p>
     <form id="profile-form">
-      <div id="profile-rows"></div>
-      <button id="add-profile" class="secondary" type="button" aria-describedby="profile-limit">+ Add profile</button>
-      <p id="profile-limit" class="field-hint" hidden>32 profiles added. Remove one to add another.</p>
+      <div id="profile-groups"></div>
       <div class="configuration-actions"><button id="save-profiles" class="primary" type="submit">Save</button><button id="cancel-configuration" class="secondary" type="button">Cancel</button></div>
     </form>
   </section>`;
 
-const element = <T extends HTMLElement = HTMLElement>(id: string): T => {
+function element<element_type extends HTMLElement = HTMLElement>(id: string): element_type {
   const found = document.getElementById(id);
   if (!found) throw new Error(`Missing UI element: ${id}`);
-  return found as T;
-};
-const tabs = element('profile-tabs');
-const terminalHost = element('terminal-host');
-const content = element('terminal-content');
-const configuration = element('configuration');
-const profileRows = element('profile-rows');
-const statusBar = element('session-status');
-const errorBanner = element('error-banner');
-const saveButton = element<HTMLButtonElement>('save-profiles');
+  return found as element_type;
+}
 
-interface TerminalView { terminal: Terminal; fit: FitAddon; pane: HTMLDivElement }
-const terminals = new Map<string, TerminalView>();
-const sessions = new Map<string, SessionInfo>();
-let profiles: Profile[] = [];
-let activeId: string | undefined;
+const tab_strip = element('terminal-tabs');
+const terminal_host = element('terminal-host');
+const terminal_content = element('terminal-content');
+const configuration_panel = element('configuration');
+const profile_groups = element('profile-groups');
+const status_bar = element('session-status');
+const error_banner = element('error-banner');
+const save_button = element<HTMLButtonElement>('save-profiles');
+
+interface terminal_view {
+  terminal: Terminal;
+  fit: FitAddon;
+  pane: HTMLDivElement;
+  section?: HTMLElement;
+  section_button?: HTMLButtonElement;
+  section_label?: HTMLSpanElement;
+}
+
+const terminal_views = new Map<string, terminal_view>();
+const sessions = new Map<string, session_info>();
+const activated_views = new Set<string>();
+const custom_shells = new Set<string>();
+const draft = new configuration_draft();
+let startup_configuration: sidebar_configuration = { left: [], right: [] };
+let open_tabs: terminal_tab[] = [];
+let side: sidebar_side = 'right';
+let active_id: string | undefined;
+let expanded_ids = new Set<string>();
 let trusted = false;
-let receivedState = false;
+let received_state = false;
 let configuring = false;
-const draft = new ProfileDraft();
-let shells: Array<{ name: string; path: string; source: string }> = [];
-const customShells = new Set<string>();
-let lastDraftState = '';
-let focusedTerminal: string | undefined;
 let saving = false;
-let fitFrame = 0;
-let needsActivation = false;
-let appearance: Appearance = { fontFamily: 'monospace', fontSize: 13, cursorBlink: false, scrollback: 1000 };
+let shells: shell_choice[] = [];
+let last_draft_state = '';
+let focused_terminal: string | undefined;
+let fit_frame = 0;
+let appearance: terminal_appearance = {
+  font_family: 'monospace', font_size: 13, cursor_blink: false, scrollback: 1000,
+};
 
-function theme(): ITheme {
-  const css = getComputedStyle(document.body);
-  const color = (name: string, fallback?: string): string | undefined => css.getPropertyValue(`--vscode-${name}`).trim() || fallback;
+/** Resolve the same terminal colours for xterm and the selected tab. */
+function terminal_theme(): ITheme {
+  const styles = getComputedStyle(document.body);
+  const colour = (name: string, fallback?: string): string | undefined => {
+    return styles.getPropertyValue(`--vscode-${name}`).trim() || fallback;
+  };
   const dark = !document.body.classList.contains('vscode-light') && !document.body.classList.contains('vscode-high-contrast-light');
   return {
-    background: color('terminal-background', color('editor-background', dark ? '#1e1e1e' : '#ffffff')),
-    foreground: color('terminal-foreground', color('foreground', dark ? '#cccccc' : '#333333')),
-    cursor: color('terminalCursor-foreground', color('terminal-foreground', dark ? '#cccccc' : '#333333')),
-    cursorAccent: color('terminalCursor-background', color('editor-background', dark ? '#1e1e1e' : '#ffffff')),
-    selectionBackground: color('terminal-selectionBackground', dark ? '#ffffff40' : '#00000030'),
-    selectionInactiveBackground: color('terminal-inactiveSelectionBackground', dark ? '#ffffff20' : '#00000018'),
-    black: color('terminal-ansiBlack'), red: color('terminal-ansiRed'), green: color('terminal-ansiGreen'),
-    yellow: color('terminal-ansiYellow'), blue: color('terminal-ansiBlue'), magenta: color('terminal-ansiMagenta'),
-    cyan: color('terminal-ansiCyan'), white: color('terminal-ansiWhite'),
-    brightBlack: color('terminal-ansiBrightBlack'), brightRed: color('terminal-ansiBrightRed'),
-    brightGreen: color('terminal-ansiBrightGreen'), brightYellow: color('terminal-ansiBrightYellow'),
-    brightBlue: color('terminal-ansiBrightBlue'), brightMagenta: color('terminal-ansiBrightMagenta'),
-    brightCyan: color('terminal-ansiBrightCyan'), brightWhite: color('terminal-ansiBrightWhite'),
+    background: colour('terminal-background', colour('editor-background', dark ? '#1e1e1e' : '#ffffff')),
+    foreground: colour('terminal-foreground', colour('foreground', dark ? '#cccccc' : '#333333')),
+    cursor: colour('terminalCursor-foreground', colour('terminal-foreground', dark ? '#cccccc' : '#333333')),
+    cursorAccent: colour('terminalCursor-background', colour('editor-background', dark ? '#1e1e1e' : '#ffffff')),
+    selectionBackground: colour('terminal-selectionBackground', dark ? '#ffffff40' : '#00000030'),
+    selectionInactiveBackground: colour('terminal-inactiveSelectionBackground', dark ? '#ffffff20' : '#00000018'),
+    black: colour('terminal-ansiBlack'), red: colour('terminal-ansiRed'), green: colour('terminal-ansiGreen'),
+    yellow: colour('terminal-ansiYellow'), blue: colour('terminal-ansiBlue'), magenta: colour('terminal-ansiMagenta'),
+    cyan: colour('terminal-ansiCyan'), white: colour('terminal-ansiWhite'),
+    brightBlack: colour('terminal-ansiBrightBlack'), brightRed: colour('terminal-ansiBrightRed'),
+    brightGreen: colour('terminal-ansiBrightGreen'), brightYellow: colour('terminal-ansiBrightYellow'),
+    brightBlue: colour('terminal-ansiBrightBlue'), brightMagenta: colour('terminal-ansiBrightMagenta'),
+    brightCyan: colour('terminal-ansiBrightCyan'), brightWhite: colour('terminal-ansiBrightWhite'),
   };
 }
 
-function updateAppearance(): void {
-  for (const { terminal } of terminals.values()) {
-    terminal.options.fontFamily = appearance.fontFamily;
-    terminal.options.fontSize = appearance.fontSize;
-    terminal.options.cursorBlink = appearance.cursorBlink;
+function update_appearance(): void {
+  const theme = terminal_theme();
+  // Set this on #app, outside the theme observer, to avoid a mutation loop.
+  app.style.setProperty('--view-background', theme.background ?? '#1e1e1e');
+  for (const { terminal } of terminal_views.values()) {
+    terminal.options.fontFamily = appearance.font_family;
+    terminal.options.fontSize = appearance.font_size;
+    terminal.options.cursorBlink = appearance.cursor_blink;
     terminal.options.scrollback = appearance.scrollback;
-    terminal.options.theme = theme();
+    terminal.options.theme = theme;
   }
-  scheduleFit();
+  schedule_fit();
 }
 
-function ensureTerminal(profile: Profile): TerminalView {
-  const existing = terminals.get(profile.id);
-  if (existing) { existing.pane.setAttribute('aria-label', profile.name); return existing; }
+function is_visible_tab(id: string): boolean {
+  if (configuring || !trusted || document.hidden) return false;
+  return side === 'left' ? expanded_ids.has(id) : active_id === id;
+}
+
+function ensure_terminal(tab: terminal_tab): terminal_view {
+  const existing = terminal_views.get(tab.id);
+  if (existing) {
+    existing.pane.setAttribute('aria-label', tab.name);
+    return existing;
+  }
+
   const pane = document.createElement('div');
-  pane.id = `terminal-${profile.id}`;
+  pane.id = `terminal-${tab.id}`;
   pane.className = 'terminal-pane';
-  pane.setAttribute('role', 'tabpanel');
-  pane.setAttribute('aria-label', profile.name);
+  pane.setAttribute('role', side === 'left' ? 'region' : 'tabpanel');
+  pane.setAttribute('aria-label', tab.name);
+  pane.hidden = !is_visible_tab(tab.id);
   pane.addEventListener('focusin', () => {
-    if (trusted && focusedTerminal !== profile.id) { focusedTerminal = profile.id; send({ type: 'focus', id: profile.id }); }
+    if (!trusted) return;
+    if (active_id !== tab.id) select_tab(tab.id);
+    if (focused_terminal !== tab.id) {
+      focused_terminal = tab.id;
+      send({ type: 'focus', id: tab.id });
+    }
   });
   pane.addEventListener('focusout', event => {
-    if (!pane.contains(event.relatedTarget as Node | null)) focusedTerminal = undefined;
+    if (!pane.contains(event.relatedTarget as Node | null)) focused_terminal = undefined;
   });
-  pane.hidden = profile.id !== activeId;
-  terminalHost.append(pane);
+  terminal_host.append(pane);
+
   const terminal = new Terminal({
-    fontFamily: appearance.fontFamily,
-    fontSize: appearance.fontSize,
-    cursorBlink: appearance.cursorBlink,
+    fontFamily: appearance.font_family,
+    fontSize: appearance.font_size,
+    cursorBlink: appearance.cursor_blink,
     scrollback: appearance.scrollback,
     screenReaderMode: false,
     allowProposedApi: false,
-    theme: theme(),
+    theme: terminal_theme(),
     convertEol: false,
   });
   const fit = new FitAddon();
   terminal.loadAddon(fit);
   terminal.open(pane);
-  terminal.onData(data => { if (trusted) send({ type: 'input', id: profile.id, data }); });
-  terminal.onResize(({ cols, rows }) => {
-    if (trusted && profile.id === activeId && !configuring) send({ type: 'resize', id: profile.id, cols, rows });
+  terminal.onData(data => {
+    if (trusted) send({ type: 'input', id: tab.id, data });
   });
-  terminal.onSelectionChange(updateActions);
-  // xterm has no audible bell without an audio integration; no bell handler or addon is installed.
+  terminal.onResize(({ cols, rows }) => {
+    if (is_visible_tab(tab.id)) send({ type: 'resize', id: tab.id, cols, rows });
+  });
+  // No audible bell handler or audio addon is installed.
   terminal.attachCustomKeyEventHandler(event => {
     if (event.type !== 'keydown') return true;
-    const shortcut = isMac ? event.metaKey && !event.ctrlKey && !event.altKey : event.ctrlKey && event.shiftKey && !event.altKey && !event.metaKey;
+    const shortcut = is_mac
+      ? event.metaKey && !event.ctrlKey && !event.altKey
+      : event.ctrlKey && event.shiftKey && !event.altKey && !event.metaKey;
     if (!shortcut) return true;
     const key = event.key.toLowerCase();
     if (key !== 'c' && key !== 'v') return true;
     event.preventDefault();
-    if (key === 'c') copySelection(profile.id);
-    else if (trusted) send({ type: 'paste', id: profile.id });
+    if (key === 'c') copy_selection(tab.id);
+    else if (trusted) send({ type: 'paste', id: tab.id });
     return false;
   });
+
   const view = { terminal, fit, pane };
-  terminals.set(profile.id, view);
+  terminal_views.set(tab.id, view);
   return view;
 }
 
-function scheduleFit(): void {
-  if (fitFrame) return;
-  fitFrame = requestAnimationFrame(() => {
-    fitFrame = 0;
-    if (!activeId || !trusted || configuring || !terminalHost.clientWidth || !terminalHost.clientHeight) return;
-    const profile = profiles.find(item => item.id === activeId);
-    if (!profile) return;
-    const view = ensureTerminal(profile);
-    if (view.pane.hidden) return;
-    view.fit.fit();
-    if (needsActivation && view.terminal.cols > 0 && view.terminal.rows > 0) {
-      needsActivation = false;
-      send({ type: 'activate', id: profile.id, cols: view.terminal.cols, rows: view.terminal.rows });
+/** Fit expanded left sections or the selected right tab, never a hidden pane. */
+function schedule_fit(): void {
+  if (fit_frame) return;
+  fit_frame = requestAnimationFrame(() => {
+    fit_frame = 0;
+    if (configuring || !trusted || !terminal_host.clientWidth || !terminal_host.clientHeight) return;
+    for (const tab of open_tabs) {
+      if (!is_visible_tab(tab.id)) continue;
+      const view = terminal_views.get(tab.id);
+      if (!view || view.pane.hidden || !view.pane.clientWidth || !view.pane.clientHeight) continue;
+      view.fit.fit();
+      if (!activated_views.has(tab.id) && view.terminal.cols > 0 && view.terminal.rows > 0) {
+        activated_views.add(tab.id);
+        send({ type: 'activate', id: tab.id, cols: view.terminal.cols, rows: view.terminal.rows });
+      }
     }
   });
 }
 
-function selectProfile(id: string, focus = false): void {
-  if (!profiles.some(profile => profile.id === id)) return;
-  if (activeId !== id) {
-    activeId = id;
-    needsActivation = true;
-  }
-  if (trusted) ensureTerminal(profiles.find(profile => profile.id === id)!);
-  for (const [profileId, view] of terminals) view.pane.hidden = profileId !== id;
-  renderTabs();
-  updateStatus();
-  updateActions();
-  scheduleFit();
-  if (focus) requestAnimationFrame(() => terminals.get(id)?.terminal.focus());
+function focus_terminal(id: string): void {
+  requestAnimationFrame(() => {
+    if (is_visible_tab(id)) terminal_views.get(id)?.terminal.focus();
+  });
 }
 
-function renderTabs(): void {
-  const focusedId = document.activeElement instanceof HTMLElement ? document.activeElement.dataset.profileId : undefined;
-  tabs.replaceChildren(...profiles.map(profile => {
-    const tab = document.createElement('button');
-    tab.id = `tab-${profile.id}`;
-    tab.type = 'button';
-    tab.className = 'profile-tab';
-    tab.dataset.profileId = profile.id;
-    tab.setAttribute('role', 'tab');
-    tab.setAttribute('aria-controls', `terminal-${profile.id}`);
-    tab.setAttribute('aria-selected', String(profile.id === activeId));
-    tab.tabIndex = profile.id === activeId ? 0 : -1;
-    tab.textContent = profile.name;
-    tab.title = profile.name;
-    const session = sessions.get(profile.id);
-    if (session) tab.dataset.status = session.status;
-    tab.addEventListener('click', () => selectProfile(profile.id, true));
-    tab.addEventListener('keydown', event => {
-      const index = profiles.findIndex(item => item.id === profile.id);
-      let next: number;
-      if (event.key === 'ArrowRight') next = (index + 1) % profiles.length;
-      else if (event.key === 'ArrowLeft') next = (index - 1 + profiles.length) % profiles.length;
-      else if (event.key === 'Home') next = 0;
-      else if (event.key === 'End') next = profiles.length - 1;
+/** User selection is sent once. Rendering a host selection does not send it back. */
+function select_tab(id: string, focus = false): void {
+  if (!open_tabs.some(tab => tab.id === id)) return;
+  if (active_id !== id) {
+    active_id = id;
+    send({ type: 'select', id });
+  }
+  render_terminals();
+  update_status();
+  update_actions();
+  schedule_fit();
+  if (focus) focus_terminal(id);
+}
+
+function close_tab(id: string | undefined): void {
+  if (id && !saving) send({ type: 'close_tab', id });
+}
+
+function add_tab(): void {
+  if (trusted && !configuring && !saving) send({ type: 'add_tab' });
+}
+
+function set_expanded(id: string, expanded: boolean): void {
+  if (expanded) expanded_ids.add(id);
+  else expanded_ids.delete(id);
+  send({ type: 'expanded', id, expanded });
+  select_tab(id);
+}
+
+function attach_middle_close(button: HTMLElement, id: string): void {
+  button.addEventListener('mousedown', event => {
+    if (event.button === 1) event.preventDefault();
+  });
+  button.addEventListener('auxclick', event => {
+    if (event.button !== 1) return;
+    event.preventDefault();
+    event.stopPropagation();
+    close_tab(id);
+  });
+}
+
+function render_tabs(): void {
+  const focused_id = document.activeElement instanceof HTMLElement ? document.activeElement.dataset.tabId : undefined;
+  tab_strip.replaceChildren(...open_tabs.map(tab => {
+    const button = document.createElement('button');
+    button.id = `tab-${tab.id}`;
+    button.type = 'button';
+    button.className = 'terminal-tab';
+    button.dataset.tabId = tab.id;
+    button.setAttribute('role', 'tab');
+    button.setAttribute('aria-controls', `terminal-${tab.id}`);
+    button.setAttribute('aria-selected', String(tab.id === active_id));
+    button.tabIndex = tab.id === active_id ? 0 : -1;
+    const label = document.createElement('span');
+    label.className = 'tab-label';
+    label.textContent = tab.name;
+    button.append(label);
+    button.title = `${tab.name} · Middle-click to close`;
+    button.dataset.status = sessions.get(tab.id)?.status ?? 'idle';
+    button.addEventListener('click', () => select_tab(tab.id, true));
+    attach_middle_close(button, tab.id);
+    button.addEventListener('keydown', event => {
+      const current_index = open_tabs.findIndex(item => item.id === tab.id);
+      let next_index: number;
+      if (event.key === 'ArrowRight') next_index = (current_index + 1) % open_tabs.length;
+      else if (event.key === 'ArrowLeft') next_index = (current_index - 1 + open_tabs.length) % open_tabs.length;
+      else if (event.key === 'Home') next_index = 0;
+      else if (event.key === 'End') next_index = open_tabs.length - 1;
+      else if (event.key === 'Delete') {
+        event.preventDefault();
+        close_tab(tab.id);
+        return;
+      } else return;
+      event.preventDefault();
+      const next_id = open_tabs[next_index]!.id;
+      select_tab(next_id);
+      element(`tab-${next_id}`).focus();
+    });
+    return button;
+  }));
+  if (focused_id && open_tabs.some(tab => tab.id === focused_id)) element(`tab-${focused_id}`).focus();
+  if (active_id) document.getElementById(`tab-${active_id}`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+}
+
+function ensure_section(tab: terminal_tab, view: terminal_view): void {
+  if (!view.section) {
+    const section = document.createElement('section');
+    section.className = 'terminal-section';
+    section.dataset.tabId = tab.id;
+    const heading = document.createElement('div');
+    heading.className = 'section-heading';
+    const button = document.createElement('button');
+    button.id = `section-${tab.id}`;
+    button.className = 'section-toggle';
+    button.type = 'button';
+    button.dataset.tabId = tab.id;
+    button.setAttribute('aria-controls', view.pane.id);
+    button.innerHTML = `<span class="section-chevron">${icon('chevron')}</span>`;
+    const label = document.createElement('span');
+    label.className = 'section-label';
+    button.append(label);
+    button.addEventListener('click', () => set_expanded(tab.id, !expanded_ids.has(tab.id)));
+    button.addEventListener('keydown', event => {
+      if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+        event.preventDefault();
+        set_expanded(tab.id, event.key === 'ArrowRight');
+        return;
+      }
+      if (event.key === 'Delete') {
+        event.preventDefault();
+        close_tab(tab.id);
+        return;
+      }
+      const index = open_tabs.findIndex(item => item.id === tab.id);
+      let next_index: number;
+      if (event.key === 'ArrowDown') next_index = (index + 1) % open_tabs.length;
+      else if (event.key === 'ArrowUp') next_index = (index - 1 + open_tabs.length) % open_tabs.length;
+      else if (event.key === 'Home') next_index = 0;
+      else if (event.key === 'End') next_index = open_tabs.length - 1;
       else return;
       event.preventDefault();
-      selectProfile(profiles[next]!.id);
-      element(`tab-${profiles[next]!.id}`).focus();
+      element(`section-${open_tabs[next_index]!.id}`).focus();
     });
-    return tab;
-  }));
-  if (focusedId && profiles.some(profile => profile.id === focusedId)) element(`tab-${focusedId}`).focus();
-  const selected = activeId ? document.getElementById(`tab-${activeId}`) : undefined;
-  selected?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    attach_middle_close(button, tab.id);
+    const close_button = document.createElement('button');
+    close_button.type = 'button';
+    close_button.className = 'icon-button section-close';
+    close_button.innerHTML = icon('close');
+    close_button.addEventListener('click', () => close_tab(tab.id));
+    heading.append(button, close_button);
+    section.append(heading, view.pane);
+    view.section = section;
+    view.section_button = button;
+    view.section_label = label;
+  }
+  view.section_button!.setAttribute('aria-expanded', String(expanded_ids.has(tab.id)));
+  view.section_button!.title = `${tab.name} · Middle-click to close`;
+  view.section_label!.textContent = tab.name;
+  view.section!.dataset.active = String(active_id === tab.id);
+  view.section!.dataset.status = sessions.get(tab.id)?.status ?? 'idle';
+  const close_button = view.section!.querySelector<HTMLButtonElement>('.section-close')!;
+  close_button.title = `Close ${tab.name}`;
+  close_button.setAttribute('aria-label', close_button.title);
+  terminal_host.append(view.section!);
 }
 
-function updateActions(): void {
-  const hasTerminal = Boolean(activeId && trusted && !configuring);
-  element<HTMLButtonElement>('close-action').disabled = saving || (!configuring && !hasTerminal);
-  const saveAction = element<HTMLButtonElement>('save-action');
-  saveAction.disabled = saving || (!configuring && !hasTerminal);
-  saveAction.title = configuring ? 'Save profiles' : 'Save terminal output';
-  saveAction.setAttribute('aria-label', saveAction.title);
-  element<HTMLButtonElement>('undo-action').disabled = !configuring || !draft.canUndo || saving;
-  element<HTMLButtonElement>('redo-action').disabled = !configuring || !draft.canRedo || saving;
-  element('undo-action').hidden = !configuring;
-  element('redo-action').hidden = !configuring;
+function render_terminals(): void {
+  document.body.dataset.side = side;
+  for (const [id, view] of terminal_views) {
+    if (!open_tabs.some(tab => tab.id === id)) {
+      view.terminal.dispose();
+      (view.section ?? view.pane).remove();
+      terminal_views.delete(id);
+      activated_views.delete(id);
+    }
+  }
+  if (side === 'right') render_tabs();
+  else tab_strip.replaceChildren();
+  if (!trusted) return;
+  for (const tab of open_tabs) {
+    const view = ensure_terminal(tab);
+    if (side === 'left') ensure_section(tab, view);
+    view.pane.hidden = !is_visible_tab(tab.id);
+  }
+}
+
+function update_actions(): void {
+  element<HTMLButtonElement>('add-tab').disabled = !trusted || saving;
+  element<HTMLButtonElement>('close-tab').disabled = !active_id || saving;
+  element<HTMLButtonElement>('save-action').disabled = saving;
+  element<HTMLButtonElement>('close-action').disabled = saving;
+  element<HTMLButtonElement>('undo-action').disabled = !draft.can_undo || saving;
+  element<HTMLButtonElement>('redo-action').disabled = !draft.can_redo || saving;
   element<HTMLButtonElement>('refresh-shells').disabled = saving;
-  element('toolbar').hidden = !configuring;
-  const state = { type: 'draftState' as const, configuring, canUndo: configuring && draft.canUndo && !saving, canRedo: configuring && draft.canRedo && !saving };
-  const serialised = JSON.stringify(state);
-  if (receivedState && serialised !== lastDraftState) { lastDraftState = serialised; send(state); }
+  element('tab-actions').hidden = configuring;
+  element('configuration-toolbar').hidden = !configuring;
+  tab_strip.hidden = configuring || side === 'left';
+  element('left-heading').hidden = !configuring && side !== 'left';
+  element('left-heading').textContent = configuring ? 'Startup configuration' : 'Terminals';
+  const draft_state = {
+    type: 'draft_state' as const,
+    configuring,
+    can_undo: configuring && draft.can_undo && !saving,
+    can_redo: configuring && draft.can_redo && !saving,
+  };
+  const serialised = JSON.stringify(draft_state);
+  if (received_state && serialised !== last_draft_state) {
+    last_draft_state = serialised;
+    send(draft_state);
+  }
 }
 
-function updateStatus(): void {
-  const session = activeId ? sessions.get(activeId) : undefined;
+function update_status(): void {
+  const session = active_id ? sessions.get(active_id) : undefined;
   const status = element('status-text');
   element('status-dot').dataset.status = trusted ? session?.status ?? 'idle' : 'idle';
-  if (!receivedState) status.textContent = 'Loading profiles…';
+  if (!received_state) status.textContent = 'Loading terminals…';
   else if (!trusted) status.textContent = 'Workspace trust required';
-  else if (!activeId) status.textContent = 'No profiles';
+  else if (!active_id) status.textContent = 'No open terminals';
   else if (session?.message) status.textContent = session.message;
   else if (session?.status === 'running') status.textContent = 'Running';
-  else if (session?.status === 'exited') status.textContent = session.exitCode === undefined ? 'Stopped · Restart to run again' : `Exited (${session.exitCode}) · Restart to run again`;
-  else if (session?.status === 'error') status.textContent = 'Terminal could not start';
+  else if (session?.status === 'exited') {
+    status.textContent = session.exit_code === undefined
+      ? 'Stopped · Restart to run again'
+      : `Exited (${session.exit_code}) · Restart to run again`;
+  } else if (session?.status === 'error') status.textContent = 'Terminal could not start';
   else status.textContent = 'Starting terminal…';
   status.title = status.textContent ?? '';
 }
 
-function renderContent(): void {
-  content.hidden = configuring;
-  statusBar.hidden = configuring;
-  configuration.hidden = !configuring;
-  element('trust-panel').hidden = trusted || !receivedState;
-  element('empty-panel').hidden = !trusted || profiles.length > 0;
-  terminalHost.hidden = !trusted || profiles.length === 0;
-  updateActions();
-  updateStatus();
+function render_content(): void {
+  terminal_content.hidden = configuring;
+  status_bar.hidden = configuring;
+  configuration_panel.hidden = !configuring;
+  element('trust-panel').hidden = trusted || !received_state;
+  element('empty-panel').hidden = !trusted || open_tabs.length > 0;
+  terminal_host.hidden = !trusted || open_tabs.length === 0;
+  render_terminals();
+  update_actions();
+  update_status();
 }
 
-function showError(message: string): void {
+function show_error(message: string): void {
   element('error-message').textContent = message;
-  errorBanner.hidden = !message;
+  error_banner.hidden = !message;
 }
 
-function copySelection(id = activeId): void {
-  const text = id ? terminals.get(id)?.terminal.getSelection() : undefined;
-  if (text) send({ type: 'copy', text });
+function copy_selection(id = active_id): void {
+  const selection = id ? terminal_views.get(id)?.terminal.getSelection() : undefined;
+  if (selection) send({ type: 'copy', text: selection });
 }
 
-function newProfile(): Profile {
-  let number = draft.value.length;
-  while (draft.value.some(profile => profile.name === `Customised sidebar #${number}`)) number++;
-  return { id: crypto.randomUUID(), name: `Customised sidebar #${number}`, command: '', shell: '' };
+function new_profile(profile_side: sidebar_side): terminal_profile {
+  let number = draft.value[profile_side].length;
+  while (draft.value[profile_side].some(profile => profile.name === `${side_label(profile_side)} #${number}`)) number++;
+  return { id: crypto.randomUUID(), name: `${side_label(profile_side)} #${number}`, command: '', shell: '' };
 }
 
-function openConfiguration(add = false): void {
+function side_label(profile_side: sidebar_side): string {
+  return profile_side === 'left' ? 'Left sidebar' : 'Right sidebar';
+}
+
+function open_configuration(): void {
   if (!configuring) {
-    draft.reset(profiles);
-    customShells.clear();
+    draft.reset(startup_configuration);
+    custom_shells.clear();
     configuring = true;
   }
-  if (add && draft.value.length < MAX_PROFILES) draft.change(items => items.push(newProfile()));
-  renderDraft();
-  renderContent();
-  const firstInput = configuration.querySelector<HTMLInputElement>(add ? '.profile-row:last-child input' : 'input');
-  (firstInput ?? element('add-profile')).focus();
+  render_draft();
+  render_content();
+  (configuration_panel.querySelector<HTMLInputElement>('input') ?? element('add-left-profile')).focus();
 }
 
-function closeConfiguration(): void {
+function close_configuration(): void {
   if (saving) return;
   configuring = false;
-  draft.reset(profiles);
-  customShells.clear();
-  saveButton.disabled = false;
-  saveButton.textContent = 'Save';
-  renderContent();
-  scheduleFit();
-  requestAnimationFrame(() => terminals.get(activeId ?? '')?.terminal.focus());
+  draft.reset(startup_configuration);
+  custom_shells.clear();
+  save_button.disabled = false;
+  save_button.textContent = 'Save';
+  render_content();
+  schedule_fit();
+  if (active_id) focus_terminal(active_id);
 }
 
-function restoreDraftFocus(previous: Element | null, start: number | null, end: number | null): void {
+function restore_draft_focus(previous: Element | null, start: number | null, end: number | null): void {
   if (!(previous instanceof HTMLElement) || !previous.id) return;
   const next = document.getElementById(previous.id);
   next?.focus();
@@ -326,280 +525,370 @@ function restoreDraftFocus(previous: Element | null, start: number | null, end: 
   }
 }
 
-function updateDraft(id: string, key: 'name' | 'command' | 'shell', value: string): void {
-  draft.change(items => { const profile = items.find(item => item.id === id); if (profile) profile[key] = value; }, `${id}:${key}`);
-  updateActions();
+function update_draft(profile_side: sidebar_side, id: string, key: 'name' | 'command' | 'shell', value: string): void {
+  draft.change(configuration => {
+    const profile = configuration[profile_side].find(item => item.id === id);
+    if (profile) profile[key] = value;
+  }, `${profile_side}:${id}:${key}`);
+  update_actions();
 }
 
-function renderDraft(): void {
-  const previous = document.activeElement;
-  const textInput = previous instanceof HTMLInputElement || previous instanceof HTMLTextAreaElement ? previous : undefined;
-  const start = textInput?.selectionStart ?? null;
-  const end = textInput?.selectionEnd ?? null;
-  profileRows.replaceChildren();
-  if (!draft.value.length) {
-    const empty = document.createElement('p');
-    empty.className = 'configuration-empty';
-    empty.textContent = 'No profiles yet. Add one below.';
-    profileRows.append(empty);
-  }
-  draft.value.forEach((profile, index) => {
-    const row = document.createElement('fieldset');
-    row.className = 'profile-row';
-    row.dataset.profileId = profile.id;
-    const legend = document.createElement('legend');
-    legend.textContent = `Customised sidebar #${index}`;
-    row.append(legend);
-    const actions = document.createElement('div');
-    actions.className = 'row-actions';
-    const rowAction = (text: string, label: string, disabled: boolean, action: (items: Profile[]) => void): void => {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.id = `${profile.id}-${label.replaceAll(' ', '-')}`;
-      button.className = 'row-button';
-      button.textContent = text;
-      button.title = label;
-      button.setAttribute('aria-label', `${label}: ${profile.name || `profile ${index + 1}`}`);
-      button.disabled = disabled || saving;
-      button.addEventListener('click', () => {
-        draft.change(action);
-        renderDraft();
-        const focusId = draft.value.some(item => item.id === profile.id) ? profile.id : draft.value[Math.min(index, draft.value.length - 1)]?.id;
-        const nextRow = Array.from(profileRows.querySelectorAll<HTMLElement>('.profile-row')).find(item => item.dataset.profileId === focusId);
-        const nextButton = Array.from(nextRow?.querySelectorAll<HTMLButtonElement>('button') ?? []).find(item => item.textContent === text && !item.disabled);
-        (nextButton ?? nextRow?.querySelector<HTMLInputElement>('input') ?? element('add-profile')).focus();
-      });
-      actions.append(button);
-    };
-    rowAction('↑', 'Move up', index === 0, items => { [items[index - 1], items[index]] = [items[index]!, items[index - 1]!]; });
-    rowAction('↓', 'Move down', index === draft.value.length - 1, items => { [items[index + 1], items[index]] = [items[index]!, items[index + 1]!]; });
-    rowAction('×', 'Remove profile', false, items => { items.splice(index, 1); });
-    row.append(actions);
-    const field = (key: 'name' | 'command', title: string, placeholder: string): void => {
-      const label = document.createElement('label');
-      const input = key === 'command' ? document.createElement('textarea') : document.createElement('input');
-      input.id = `${profile.id}-${key}`;
-      input.name = key;
-      input.value = profile[key];
-      input.placeholder = placeholder;
-      input.spellcheck = false;
-      input.disabled = saving;
-      input.setAttribute('autocomplete', 'off');
-      if (key === 'name') { input.required = true; input.maxLength = 80; }
-      if (key === 'command') { input.maxLength = 8192; input.title = 'Runs once when this profile starts or restarts.'; }
-      if (input instanceof HTMLTextAreaElement) input.rows = 1;
-      input.addEventListener('input', () => updateDraft(profile.id, key, input.value));
-      input.addEventListener('blur', () => draft.endGroup());
-      label.htmlFor = input.id;
-      label.textContent = title;
-      const group = document.createElement('div');
-      group.className = 'field';
-      group.append(label, input);
-      row.append(group);
-    };
-    field('name', 'Name', `Customised sidebar #${index}`);
-    field('command', 'Command', 'Optional startup command');
-    const shellGroup = document.createElement('div');
-    shellGroup.className = 'field';
-    const label = document.createElement('label');
-    const select = document.createElement('select');
-    select.id = `${profile.id}-shell-select`;
-    select.disabled = saving;
-    label.htmlFor = select.id;
-    label.textContent = 'Shell';
-    const option = (value: string, text: string, title?: string): void => {
-      const item = document.createElement('option');
-      item.value = value;
-      item.textContent = text;
-      if (title) item.title = title;
-      select.append(item);
-    };
-    option('', 'Default shell');
-    for (const shell of shells) option(shell.path, `${shell.name} — ${shell.path}`, `${shell.source}: ${shell.path}`);
-    // Preserve a configured short name exactly until the user explicitly chooses another shell.
-    const matchedPath = shells.some(shell => shell.path === profile.shell);
-    const matchedName = profile.shell && shells.some(shell => shell.name.toLowerCase() === profile.shell.toLowerCase());
-    if (matchedName && !matchedPath) option(profile.shell, `${profile.shell} (configured)`);
-    const isCustom = customShells.has(profile.id) || Boolean(profile.shell && !matchedPath && !matchedName);
-    option('__custom__', 'Custom executable…');
-    select.value = isCustom ? '__custom__' : profile.shell;
-    select.addEventListener('change', () => {
-      draft.endGroup();
-      if (select.value === '__custom__') customShells.add(profile.id);
-      else { customShells.delete(profile.id); updateDraft(profile.id, 'shell', select.value); }
-      renderDraft();
-      if (select.value === '__custom__') element<HTMLInputElement>(`${profile.id}-shell`).focus();
+function render_profile_row(profile_side: sidebar_side, profile: terminal_profile, index: number): HTMLFieldSetElement {
+  const row = document.createElement('fieldset');
+  row.className = 'profile-row';
+  row.dataset.profileId = profile.id;
+  const prefix = `${profile_side}-${profile.id}`;
+  const legend = document.createElement('legend');
+  legend.textContent = `${side_label(profile_side)} #${index}`;
+  row.append(legend);
+  const actions = document.createElement('div');
+  actions.className = 'row-actions';
+
+  function row_action(text: string, label: string, disabled: boolean, action: (profiles: terminal_profile[]) => void): void {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.id = `${prefix}-${label.replaceAll(' ', '-')}`;
+    button.className = 'row-button';
+    button.textContent = text;
+    button.title = label;
+    button.setAttribute('aria-label', `${label}: ${profile.name || `profile ${index + 1}`}`);
+    button.disabled = disabled || saving;
+    button.addEventListener('click', () => {
+      draft.change(configuration => action(configuration[profile_side]));
+      render_draft();
+      const remaining_profiles = draft.value[profile_side];
+      const focus_id = remaining_profiles.some(item => item.id === profile.id)
+        ? profile.id : remaining_profiles[Math.min(index, remaining_profiles.length - 1)]?.id;
+      const focus_row = Array.from(profile_groups.querySelectorAll<HTMLElement>('.profile-row'))
+        .find(item => item.dataset.profileId === focus_id && item.closest('[data-side]')?.getAttribute('data-side') === profile_side);
+      const next_button = Array.from(focus_row?.querySelectorAll<HTMLButtonElement>('button') ?? [])
+        .find(item => item.textContent === text && !item.disabled);
+      (next_button ?? focus_row?.querySelector<HTMLInputElement>('input') ?? element(`add-${profile_side}-profile`)).focus();
     });
-    shellGroup.append(label, select);
-    if (isCustom) {
-      const input = document.createElement('input');
-      input.id = `${profile.id}-shell`;
-      input.value = profile.shell;
-      input.placeholder = 'Shell name or executable path';
-      input.setAttribute('aria-label', `Custom shell for ${profile.name}`);
-      input.setAttribute('autocomplete', 'off');
-      input.className = 'custom-shell';
-      input.spellcheck = false;
-      input.maxLength = 1024;
-      input.disabled = saving;
-      input.addEventListener('input', () => updateDraft(profile.id, 'shell', input.value));
-      input.addEventListener('blur', () => draft.endGroup());
-      shellGroup.append(input);
-    }
-    row.append(shellGroup);
-    profileRows.append(row);
+    actions.append(button);
+  }
+
+  row_action('↑', 'Move up', index === 0, profiles => {
+    [profiles[index - 1], profiles[index]] = [profiles[index]!, profiles[index - 1]!];
   });
-  element<HTMLButtonElement>('add-profile').disabled = saving || draft.value.length >= MAX_PROFILES;
-  element('profile-limit').hidden = draft.value.length < MAX_PROFILES;
+  row_action('↓', 'Move down', index === draft.value[profile_side].length - 1, profiles => {
+    [profiles[index + 1], profiles[index]] = [profiles[index]!, profiles[index + 1]!];
+  });
+  row_action('×', 'Remove startup profile', false, profiles => profiles.splice(index, 1));
+  row.append(actions);
+
+  function field(key: 'name' | 'command', title: string, placeholder: string): void {
+    const label = document.createElement('label');
+    const input = key === 'command' ? document.createElement('textarea') : document.createElement('input');
+    input.id = `${prefix}-${key}`;
+    input.name = key;
+    input.value = profile[key];
+    input.placeholder = placeholder;
+    input.spellcheck = false;
+    input.disabled = saving;
+    input.setAttribute('autocomplete', 'off');
+    if (key === 'name') {
+      input.required = true;
+      input.maxLength = 80;
+    } else {
+      input.maxLength = 8192;
+      input.title = 'Runs once when a terminal is created from this startup profile, or restarted.';
+    }
+    if (input instanceof HTMLTextAreaElement) input.rows = 1;
+    input.addEventListener('input', () => update_draft(profile_side, profile.id, key, input.value));
+    input.addEventListener('blur', () => draft.end_group());
+    label.htmlFor = input.id;
+    label.textContent = title;
+    const group = document.createElement('div');
+    group.className = 'field';
+    group.append(label, input);
+    row.append(group);
+  }
+
+  field('name', 'Name', `${side_label(profile_side)} #${index}`);
+  field('command', 'Command', 'Optional startup command');
+  const shell_group = document.createElement('div');
+  shell_group.className = 'field';
+  const label = document.createElement('label');
+  const select = document.createElement('select');
+  select.id = `${prefix}-shell-select`;
+  select.disabled = saving;
+  label.htmlFor = select.id;
+  label.textContent = 'Shell';
+
+  function option(value: string, text: string, title?: string): void {
+    const item = document.createElement('option');
+    item.value = value;
+    item.textContent = text;
+    if (title) item.title = title;
+    select.append(item);
+  }
+
+  option('', 'Default shell');
+  for (const shell of shells) option(shell.path, `${shell.name} — ${shell.path}`, `${shell.source}: ${shell.path}`);
+  const matched_path = shells.some(shell => shell.path === profile.shell);
+  const matched_name = profile.shell && shells.some(shell => shell.name.toLowerCase() === profile.shell.toLowerCase());
+  if (matched_name && !matched_path) option(profile.shell, `${profile.shell} (configured)`);
+  const custom_key = `${profile_side}:${profile.id}`;
+  const is_custom = custom_shells.has(custom_key) || Boolean(profile.shell && !matched_path && !matched_name);
+  option('__custom__', 'Custom executable…');
+  select.value = is_custom ? '__custom__' : profile.shell;
+  select.addEventListener('change', () => {
+    draft.end_group();
+    if (select.value === '__custom__') custom_shells.add(custom_key);
+    else {
+      custom_shells.delete(custom_key);
+      update_draft(profile_side, profile.id, 'shell', select.value);
+    }
+    render_draft();
+    if (select.value === '__custom__') element<HTMLInputElement>(`${prefix}-shell`).focus();
+  });
+  shell_group.append(label, select);
+  if (is_custom) {
+    const input = document.createElement('input');
+    input.id = `${prefix}-shell`;
+    input.value = profile.shell;
+    input.placeholder = 'Shell name or executable path';
+    input.setAttribute('aria-label', `Custom shell for ${profile.name}`);
+    input.setAttribute('autocomplete', 'off');
+    input.className = 'custom-shell';
+    input.spellcheck = false;
+    input.maxLength = 1024;
+    input.disabled = saving;
+    input.addEventListener('input', () => update_draft(profile_side, profile.id, 'shell', input.value));
+    input.addEventListener('blur', () => draft.end_group());
+    shell_group.append(input);
+  }
+  row.append(shell_group);
+  return row;
+}
+
+/** The draft covers both sides so Save, Undo and Redo remain atomic. */
+function render_draft(): void {
+  const previous = document.activeElement;
+  const text_input = previous instanceof HTMLInputElement || previous instanceof HTMLTextAreaElement ? previous : undefined;
+  const start = text_input?.selectionStart ?? null;
+  const end = text_input?.selectionEnd ?? null;
+  profile_groups.replaceChildren();
+  for (const profile_side of ['left', 'right'] as const) {
+    const group = document.createElement('section');
+    group.className = 'profile-group';
+    group.dataset.side = profile_side;
+    const heading = document.createElement('h3');
+    heading.textContent = side_label(profile_side);
+    group.append(heading);
+    if (!draft.value[profile_side].length) {
+      const empty = document.createElement('p');
+      empty.className = 'configuration-empty';
+      empty.textContent = 'No startup profiles on this side.';
+      group.append(empty);
+    }
+    draft.value[profile_side].forEach((profile, index) => group.append(render_profile_row(profile_side, profile, index)));
+    const add_button = document.createElement('button');
+    add_button.id = `add-${profile_side}-profile`;
+    add_button.className = 'secondary add-profile';
+    add_button.type = 'button';
+    add_button.textContent = `+ Add ${profile_side} startup profile`;
+    add_button.disabled = saving || draft.value[profile_side].length >= maximum_profiles;
+    add_button.addEventListener('click', () => {
+      if (saving || draft.value[profile_side].length >= maximum_profiles) return;
+      draft.change(configuration => configuration[profile_side].push(new_profile(profile_side)));
+      render_draft();
+      profile_groups.querySelector<HTMLInputElement>(`[data-side="${profile_side}"] .profile-row:last-of-type input`)?.focus();
+    });
+    group.append(add_button);
+    if (draft.value[profile_side].length >= maximum_profiles) {
+      const limit = document.createElement('p');
+      limit.className = 'field-hint';
+      limit.textContent = '32 startup profiles on this side. Remove one to add another.';
+      group.append(limit);
+    }
+    profile_groups.append(group);
+  }
   element<HTMLButtonElement>('cancel-configuration').disabled = saving;
-  updateActions();
-  restoreDraftFocus(previous, start, end);
+  update_actions();
+  restore_draft_focus(previous, start, end);
 }
 
-function saveProfiles(): void {
+function save_configuration(): void {
   if (saving) return;
-  if (draft.value.some(profile => !profile.name.trim())) { showError('Give each profile a name before saving.'); return; }
+  const profiles = [...draft.value.left, ...draft.value.right];
+  if (profiles.some(profile => !profile.name.trim())) {
+    show_error('Give each startup profile a name before saving.');
+    return;
+  }
+  const normalise = (entries: readonly terminal_profile[]): terminal_profile[] => entries.map(profile => ({
+    ...profile, name: profile.name.trim(), shell: profile.shell.trim(),
+  }));
   saving = true;
-  saveButton.disabled = true;
-  saveButton.textContent = 'Saving…';
-  showError('');
-  renderDraft();
-  send({ type: 'save', profiles: draft.value.map(profile => ({ ...profile, name: profile.name.trim(), shell: profile.shell.trim() })), baseProfiles: draft.base });
+  save_button.disabled = true;
+  save_button.textContent = 'Saving…';
+  show_error('');
+  render_draft();
+  send({
+    type: 'save',
+    configuration: { left: normalise(draft.value.left), right: normalise(draft.value.right) },
+    base_configuration: draft.base,
+  });
 }
 
-function exportOutput(): void {
-  if (!activeId) return;
-  const buffer = terminals.get(activeId)?.terminal.buffer.active;
+function export_output(): void {
+  if (!active_id) return;
+  const buffer = terminal_views.get(active_id)?.terminal.buffer.active;
   if (!buffer) return;
-  // Join wrapped rows without introducing line breaks into long commands.
+  // Join wrapped rows without inserting line breaks into long commands.
   const lines: string[] = [];
-  for (let i = 0; i < buffer.length; i++) {
-    const line = buffer.getLine(i);
+  for (let index = 0; index < buffer.length; index++) {
+    const line = buffer.getLine(index);
     if (!line) continue;
-    const text = line.translateToString(!buffer.getLine(i + 1)?.isWrapped);
+    const text = line.translateToString(!buffer.getLine(index + 1)?.isWrapped);
     if (line.isWrapped && lines.length) lines[lines.length - 1] += text;
     else lines.push(text);
   }
   while (lines.length && !lines[lines.length - 1]) lines.pop();
   const text = lines.join('\n') + (lines.length ? '\n' : '');
-  if (text.length > 1024 * 1024) { showError('Terminal text exceeds the 1 MiB export limit. Reduce scrollback before exporting.'); return; }
-  send({ type: 'export', id: activeId, text });
+  if (text.length > maximum_export_characters) {
+    show_error('Terminal text exceeds the 1 MiB export limit. Reduce scrollback before exporting.');
+    return;
+  }
+  send({ type: 'export', id: active_id, text });
 }
 
-function runAction(action: 'save' | 'undo' | 'redo' | 'close'): void {
+function run_action(action: 'save' | 'undo' | 'redo' | 'close' | 'add'): void {
   if (saving) return;
-  if (action === 'save') { if (configuring) saveProfiles(); else exportOutput(); }
-  else if (action === 'close') { if (configuring) closeConfiguration(); else if (activeId) send({ type: 'stop', id: activeId }); }
-  else if (configuring && draft[action]()) { customShells.clear(); renderDraft(); }
+  if (action === 'add') add_tab();
+  else if (action === 'save') {
+    if (configuring) save_configuration();
+    else export_output();
+  } else if (action === 'close') {
+    if (configuring) close_configuration();
+    else close_tab(active_id);
+  } else if (configuring && draft[action]()) {
+    custom_shells.clear();
+    render_draft();
+  }
 }
 
-tabs.addEventListener('wheel', event => {
-  if (tabs.scrollWidth > tabs.clientWidth && Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
+// Empty strip space opens a terminal. Tabs and the action buttons are excluded.
+tab_strip.addEventListener('dblclick', event => {
+  if (event.target === tab_strip) {
     event.preventDefault();
-    tabs.scrollLeft += event.deltaY;
+    add_tab();
+  }
+});
+tab_strip.addEventListener('wheel', event => {
+  if (tab_strip.scrollWidth > tab_strip.clientWidth && Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
+    event.preventDefault();
+    tab_strip.scrollLeft += event.deltaY;
   }
 }, { passive: false });
-element('add-first-profile').addEventListener('click', () => send({ type: 'configure' }));
+element('add-tab').addEventListener('click', add_tab);
+element('close-tab').addEventListener('click', () => close_tab(active_id));
+element('add-first-tab').addEventListener('click', add_tab);
 element('trust-button').addEventListener('click', () => send({ type: 'trust' }));
-element('dismiss-error').addEventListener('click', () => showError(''));
-for (const action of ['save', 'undo', 'redo', 'close'] as const) element(`${action}-action`).addEventListener('click', () => runAction(action));
-element('refresh-shells').addEventListener('click', () => send({ type: 'refreshShells' }));
-element('add-profile').addEventListener('click', () => {
-  if (saving || draft.value.length >= MAX_PROFILES) return;
-  draft.change(items => items.push(newProfile()));
-  renderDraft();
-  profileRows.querySelector<HTMLInputElement>('.profile-row:last-child input')?.focus();
-});
-element('cancel-configuration').addEventListener('click', closeConfiguration);
+element('dismiss-error').addEventListener('click', () => show_error(''));
+for (const action of ['save', 'undo', 'redo', 'close'] as const) {
+  element(`${action}-action`).addEventListener('click', () => run_action(action));
+}
+element('refresh-shells').addEventListener('click', () => send({ type: 'refresh_shells' }));
+element('cancel-configuration').addEventListener('click', close_configuration);
 element<HTMLFormElement>('profile-form').addEventListener('submit', event => {
   event.preventDefault();
-  saveProfiles();
+  save_configuration();
 });
-configuration.addEventListener('keydown', event => {
-  const modifier = isMac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
+configuration_panel.addEventListener('keydown', event => {
+  const modifier = is_mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
   if (!modifier || event.altKey || event.isComposing || saving) return;
   const key = event.key.toLowerCase();
-  if (key === 's') { event.preventDefault(); saveProfiles(); }
-  else if (key === 'z') { event.preventDefault(); runAction(event.shiftKey ? 'redo' : 'undo'); }
-  else if (!isMac && key === 'y') { event.preventDefault(); runAction('redo'); }
+  if (key === 's') {
+    event.preventDefault();
+    save_configuration();
+  } else if (key === 'z') {
+    event.preventDefault();
+    run_action(event.shiftKey ? 'redo' : 'undo');
+  } else if (!is_mac && key === 'y') {
+    event.preventDefault();
+    run_action('redo');
+  }
 });
 
-window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
+window.addEventListener('message', (event: MessageEvent<host_message>) => {
   const message = event.data;
   if (!message || typeof message.type !== 'string') return;
   switch (message.type) {
     case 'state': {
-      const becameTrusted = !trusted && message.trusted;
-      receivedState = true;
-      profiles = message.profiles;
+      received_state = true;
+      side = message.side;
+      startup_configuration = message.configuration;
+      open_tabs = message.tabs;
+      active_id = open_tabs.some(tab => tab.id === message.active_id) ? message.active_id : open_tabs[0]?.id;
+      expanded_ids = new Set(message.expanded_ids);
       trusted = message.trusted;
       appearance = message.appearance;
       shells = message.shells;
       sessions.clear();
-      message.sessions.forEach(session => sessions.set(session.id, session));
-      for (const [id, view] of terminals) {
-        if (!profiles.some(profile => profile.id === id)) { view.terminal.dispose(); view.pane.remove(); terminals.delete(id); }
-      }
-      const selectedId = profiles.some(profile => profile.id === message.activeId) ? message.activeId
-        : profiles.some(profile => profile.id === activeId) ? activeId : profiles[0]?.id;
-      if (selectedId !== activeId || becameTrusted) needsActivation = true;
-      activeId = selectedId;
-      if (activeId) selectProfile(activeId);
-      else renderTabs();
+      for (const session of message.sessions) sessions.set(session.id, session);
       if (configuring && !saving) {
-        if (!draft.dirty && JSON.stringify(draft.base) !== JSON.stringify(profiles)) draft.reset(profiles);
-        renderDraft();
+        if (!draft.dirty && JSON.stringify(draft.base) !== JSON.stringify(startup_configuration)) draft.reset(startup_configuration);
+        render_draft();
       }
-      updateAppearance();
-      renderContent();
-      scheduleFit();
+      render_content();
+      update_appearance();
+      schedule_fit();
       break;
     }
     case 'output': {
-      const profile = profiles.find(item => item.id === message.id);
-      if (profile) ensureTerminal(profile).terminal.write(message.data);
+      const tab = open_tabs.find(item => item.id === message.id);
+      if (tab && trusted) ensure_terminal(tab).terminal.write(message.data);
       break;
     }
-    case 'session':
+    case 'session': {
       sessions.set(message.session.id, message.session);
-      updateStatus();
-      updateActions();
-      // Session events must not rebuild the tab bar or disturb keyboard focus.
-      if (document.getElementById(`tab-${message.session.id}`)) element(`tab-${message.session.id}`).dataset.status = message.session.status;
+      update_status();
+      const tab = document.getElementById(`tab-${message.session.id}`);
+      if (tab) tab.dataset.status = message.session.status;
+      const section = terminal_views.get(message.session.id)?.section;
+      if (section) section.dataset.status = message.session.status;
       break;
-    case 'reset': terminals.get(message.id)?.terminal.reset(); break;
+    }
+    case 'reset': terminal_views.get(message.id)?.terminal.reset(); break;
     case 'paste':
-      if (trusted) terminals.get(message.id)?.terminal.paste(message.data);
+      if (trusted) terminal_views.get(message.id)?.terminal.paste(message.data);
       break;
     case 'saved':
-      profiles = message.profiles;
-      for (const [id, view] of terminals) {
-        if (!profiles.some(profile => profile.id === id)) { view.terminal.dispose(); view.pane.remove(); terminals.delete(id); }
-      }
-      if (!profiles.some(profile => profile.id === activeId)) { activeId = profiles[0]?.id; needsActivation = true; }
-      if (activeId) selectProfile(activeId);
-      else renderTabs();
+      startup_configuration = message.configuration;
       saving = false;
-      closeConfiguration();
-      showError('');
+      close_configuration();
+      show_error('');
       break;
     case 'error':
-      showError(message.message);
-      if (saving) { saving = false; saveButton.disabled = false; saveButton.textContent = 'Save'; renderDraft(); }
+      show_error(message.message);
+      if (saving) {
+        saving = false;
+        save_button.disabled = false;
+        save_button.textContent = 'Save';
+        render_draft();
+      }
       break;
-    case 'configure': openConfiguration(); break;
-    case 'action': runAction(message.action); break;
+    case 'configure': open_configuration(); break;
+    case 'action': run_action(message.action); break;
   }
 });
 
-new ResizeObserver(scheduleFit).observe(terminalHost);
-const themeObserver = new MutationObserver(updateAppearance);
-themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class', 'style'] });
-themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style'] });
-document.fonts?.ready.then(scheduleFit).catch(() => undefined);
-window.addEventListener('beforeunload', () => {
-  themeObserver.disconnect();
-  for (const view of terminals.values()) view.terminal.dispose();
+const resize_observer = new ResizeObserver(schedule_fit);
+resize_observer.observe(terminal_host);
+const theme_observer = new MutationObserver(update_appearance);
+theme_observer.observe(document.body, { attributes: true, attributeFilter: ['class', 'style'] });
+theme_observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style'] });
+document.fonts?.ready.then(schedule_fit).catch(() => undefined);
+document.addEventListener('visibilitychange', () => {
+  for (const [id, view] of terminal_views) view.pane.hidden = !is_visible_tab(id);
+  schedule_fit();
 });
-renderContent();
+window.addEventListener('beforeunload', () => {
+  resize_observer.disconnect();
+  theme_observer.disconnect();
+  for (const view of terminal_views.values()) view.terminal.dispose();
+});
+render_content();
 send({ type: 'ready' });

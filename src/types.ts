@@ -1,56 +1,74 @@
-export interface Profile {
+/** Persistent startup settings. Runtime tabs are a separate, workspace-local object. */
+export interface terminal_profile {
   id: string;
   name: string;
   command: string;
   shell: string;
 }
 
-export type SessionStatus = 'idle' | 'running' | 'exited' | 'error';
-export interface SessionInfo {
+export type sidebar_side = 'left' | 'right';
+
+export interface sidebar_configuration {
+  left: terminal_profile[];
+  right: terminal_profile[];
+}
+
+/** A running or stopped tab; profile_id identifies its optional startup source. */
+export interface terminal_tab extends terminal_profile {
+  profile_id?: string;
+}
+
+export type session_status = 'idle' | 'running' | 'exited' | 'error';
+
+export interface session_info {
   id: string;
-  status: SessionStatus;
-  exitCode?: number;
+  status: session_status;
+  exit_code?: number;
   message?: string;
 }
 
-export interface Appearance {
-  fontFamily: string;
-  fontSize: number;
-  cursorBlink: boolean;
+export interface appearance {
+  font_family: string;
+  font_size: number;
+  cursor_blink: boolean;
   scrollback: number;
 }
 
-export interface ShellChoice {
+export interface shell_choice {
   name: string;
   path: string;
   source: 'profile' | 'environment' | 'path' | 'system';
 }
 
-export type HostMessage =
-  | { type: 'state'; profiles: Profile[]; sessions: SessionInfo[]; trusted: boolean; appearance: Appearance; activeId?: string; shells: ShellChoice[] }
+export type host_message =
+  | { type: 'state'; side: sidebar_side; configuration: sidebar_configuration; tabs: terminal_tab[]; sessions: session_info[]; trusted: boolean; appearance: appearance; active_id?: string; expanded_ids: string[]; shells: shell_choice[] }
   | { type: 'output'; id: string; data: string }
-  | { type: 'session'; session: SessionInfo }
+  | { type: 'session'; session: session_info }
   | { type: 'reset'; id: string }
-  | { type: 'saved'; profiles: Profile[] }
+  | { type: 'saved'; configuration: sidebar_configuration }
   | { type: 'error'; message: string }
   | { type: 'configure' }
-  | { type: 'action'; action: 'save' | 'undo' | 'redo' | 'close' }
+  | { type: 'action'; action: 'save' | 'undo' | 'redo' | 'close' | 'add' }
   | { type: 'paste'; id: string; data: string };
 
-export type ClientMessage =
+export type client_message =
   | { type: 'ready' }
   | { type: 'activate'; id: string; cols: number; rows: number }
   | { type: 'input'; id: string; data: string }
   | { type: 'resize'; id: string; cols: number; rows: number }
   | { type: 'restart'; id: string; cols: number; rows: number }
-  | { type: 'stop'; id: string }
-  | { type: 'save'; profiles: Profile[]; baseProfiles: Profile[] }
-  | { type: 'selectProfile' }
+  | { type: 'select'; id: string }
+  | { type: 'close_tab'; id: string }
+  | { type: 'add_tab' }
+  | { type: 'rename_tab'; id: string; name: string }
+  | { type: 'expanded'; id: string; expanded: boolean }
+  | { type: 'save'; configuration: sidebar_configuration; base_configuration: sidebar_configuration }
+  | { type: 'select_profile' }
   | { type: 'configure' }
-  | { type: 'refreshShells' }
+  | { type: 'refresh_shells' }
   | { type: 'focus'; id: string }
   | { type: 'export'; id: string; text: string }
-  | { type: 'draftState'; configuring: boolean; canUndo: boolean; canRedo: boolean }
+  | { type: 'draft_state'; configuring: boolean; can_undo: boolean; can_redo: boolean }
   | { type: 'settings' }
   | { type: 'trust' }
   | { type: 'copy'; text: string }

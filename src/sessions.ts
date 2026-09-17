@@ -1,121 +1,162 @@
-import type { Profile, SessionInfo } from './types';
+import type { terminal_profile, session_info } from './types';
 
-export interface Disposable { dispose(): void }
-export interface PtyProcess {
-  onData(listener: (data: string) => void): Disposable;
-  onExit(listener: (event: { exitCode: number; signal?: number }) => void): Disposable;
+export interface disposable {
+  dispose(): void;
+}
+
+/** The member names in this interface follow the external node-pty contract. */
+export interface pty_process {
+  onData(listener: (data: string) => void): disposable;
+  onExit(listener: (event: { exitCode: number; signal?: number }) => void): disposable;
   write(data: string): void;
-  resize(cols: number, rows: number): void;
+  resize(columns: number, rows: number): void;
   kill(): void;
 }
-export interface PtySpawnOptions {
+
+export interface pty_spawn_options {
   name: string;
   cols: number;
   rows: number;
   cwd: string;
   env: Record<string, string>;
 }
-export interface PtyFactory {
-  spawn(file: string, args: string[], options: PtySpawnOptions): PtyProcess;
+
+export interface pty_factory {
+  spawn(file: string, args: string[], options: pty_spawn_options): pty_process;
 }
-export interface SessionLaunch {
+
+/** Executable, arguments, environment and working directory passed to node-pty. */
+export interface session_launch {
   file: string;
   args: string[];
   env: Record<string, string>;
   cwd: string;
 }
-export interface SessionManagerOptions {
-  resolve(profile: Profile): SessionLaunch;
-  onOutput(id: string, data: string): void;
-  onState(info: SessionInfo): void;
-  factory?: PtyFactory;
+
+export interface session_manager_options {
+  resolve(profile: terminal_profile): session_launch;
+  on_output(id: string, data: string): void;
+  on_state(info: session_info): void;
+  factory?: pty_factory;
   platform?: NodeJS.Platform;
 }
 
-interface Session {
-  info: SessionInfo;
+interface terminal_session {
+  info: session_info;
   generation: number;
-  process?: PtyProcess;
-  subscriptions: Disposable[];
+  process?: pty_process;
+  subscriptions: disposable[];
 }
 
-const OUTPUT_CHUNK_SIZE = 64 * 1024;
-function dimension(value: number, fallback: number): number {
-  return Number.isFinite(value) ? Math.max(1, Math.min(1000, Math.floor(value))) : fallback;
+// A message contains at most 64 Ki UTF-16 code units, without a split surrogate pair.
+const output_chunk_size = 64 * 1024;
+
+/** Bound a terminal dimension in character cells; use the fallback for non-finite input. */
+function bounded_dimension(value: number, fallback: number): number {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(1, Math.min(1000, Math.floor(value)));
 }
 
-/** One long-lived PTY per profile. Exited sessions only restart through an explicit start call. */
-export class SessionManager implements Disposable {
-  private readonly sessions = new Map<string, Session>();
-  private nextGeneration = 0;
+/** One long-lived PTY per terminal ID. Exited sessions restart only through an explicit start. */
+export class session_manager implements disposable {
+  private readonly sessions = new Map<string, terminal_session>();
+  private next_generation = 0;
   private disposed = false;
 
-  constructor(private readonly options: SessionManagerOptions) {}
+  constructor(private readonly options: session_manager_options) {}
 
-  start(profile: Profile, cols: number, rows: number): SessionInfo {
-    if (this.disposed) return { id: profile.id, status: 'error', message: 'The terminal manager has been disposed.' };
-    const existing = this.sessions.get(profile.id);
-    if (existing?.info.status === 'running') return { ...existing.info };
-    const session: Session = {
+  /** Start once, or return the running session. Columns and rows are measured in character cells. */
+  start(profile: terminal_profile, columns: number, rows: number): session_info {
+    if (this.disposed) {
+      return { id: profile.id, status: 'error', message: 'The terminal manager has been disposed.' };
+    }
+    const existing_session = this.sessions.get(profile.id);
+    if (existing_session?.info.status === 'running') return { ...existing_session.info };
+
+    const session: terminal_session = {
       info: { id: profile.id, status: 'running' },
-      generation: ++this.nextGeneration,
+      generation: ++this.next_generation,
       subscriptions: [],
     };
     this.sessions.set(profile.id, session);
     const generation = session.generation;
-    let phase: 'resolve' | 'load' | 'spawn' = 'resolve';
+    let launch_phase: 'resolve' | 'load' | 'spawn' = 'resolve';
+
     try {
       const launch = this.options.resolve(profile);
-      phase = 'load';
-      // Deliberately lazy: settings and activation work even when the native binary is unavailable.
-      const factory: PtyFactory = this.options.factory ?? require('node-pty');
-      phase = 'spawn';
-      const pty = factory.spawn(launch.file, launch.args, {
-        name: 'xterm-256color', cols: dimension(cols, 80), rows: dimension(rows, 24),
-        cwd: launch.cwd, env: launch.env,
+      launch_phase = 'load';
+      // Load lazily so configuration remains available without a usable native binary.
+      const factory: pty_factory = this.options.factory ?? require('node-pty');
+      launch_phase = 'spawn';
+      const terminal_process = factory.spawn(launch.file, launch.args, {
+        name: 'xterm-256color',
+        cols: bounded_dimension(columns, 80),
+        rows: bounded_dimension(rows, 24),
+        cwd: launch.cwd,
+        env: launch.env,
       });
-      session.process = pty;
-      this.track(session, pty.onData((data) => {
-        // Forward directly; terminal scrollback belongs to the retained webview, not the host.
-        for (let offset = 0; offset < data.length && this.isRunning(session, generation);) {
-          let end = Math.min(offset + OUTPUT_CHUNK_SIZE, data.length);
-          // Do not split a UTF-16 surrogate pair across separate webview messages.
-          if (end < data.length && data.charCodeAt(end - 1) >= 0xd800 && data.charCodeAt(end - 1) <= 0xdbff) end--;
-          try { this.options.onOutput(profile.id, data.slice(offset, end)); } catch { /* A detached view cannot break a PTY. */ }
-          offset = end;
+      session.process = terminal_process;
+
+      this.track_subscription(session, terminal_process.onData((data) => {
+        // Forward output directly. Retained terminal views own their scrollback.
+        let offset = 0;
+        while (offset < data.length && this.is_running(session, generation)) {
+          let chunk_end = Math.min(offset + output_chunk_size, data.length);
+          const final_code_unit = data.charCodeAt(chunk_end - 1);
+          if (chunk_end < data.length && final_code_unit >= 0xd800 && final_code_unit <= 0xdbff) {
+            chunk_end--;
+          }
+          try {
+            this.options.on_output(profile.id, data.slice(offset, chunk_end));
+          } catch { /* A detached view cannot break a PTY. */ }
+          offset = chunk_end;
         }
       }));
-      this.track(session, pty.onExit((event) => {
-        if (!this.isRunning(session, generation)) return;
+
+      this.track_subscription(session, terminal_process.onExit((event) => {
+        if (!this.is_running(session, generation)) return;
         session.process = undefined;
-        session.info = { id: profile.id, status: 'exited', exitCode: event.exitCode };
-        this.clearSubscriptions(session);
-        this.emitState(session);
-        // node-pty's Windows backend retains its ConPTY worker after natural exit
-        // until kill() releases the native resources. POSIX kill() sends a signal
-        // to a numeric PID, so never call it after a POSIX process has exited.
+        session.info = { id: profile.id, status: 'exited', exit_code: event.exitCode };
+        this.clear_subscriptions(session);
+        this.emit_state(session);
+
+        // node-pty retains its Windows ConPTY worker after natural exit until kill().
+        // POSIX kill() signals a numeric PID, which may already belong to another process.
         if ((this.options.platform ?? process.platform) === 'win32') {
-          try { pty.kill(); } catch { /* Preserve the natural exit result if cleanup races. */ }
+          try {
+            terminal_process.kill();
+          } catch { /* Preserve the natural exit result if cleanup races. */ }
         }
       }));
-      if (this.isRunning(session, generation)) {
-        this.emitState(session);
-        if (this.isRunning(session, generation) && profile.command.trim()) this.input(profile.id, profile.command + '\r');
+
+      if (this.is_running(session, generation)) {
+        this.emit_state(session);
+        if (this.is_running(session, generation) && profile.command.trim()) {
+          this.input(profile.id, profile.command + '\r');
+        }
       }
     } catch (error) {
-      const pty = session.process;
+      const failed_process = session.process;
       session.process = undefined;
-      this.clearSubscriptions(session);
-      const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
-      const suffix = ['ENOENT', 'ENOTDIR', 'ENOMEM', 'EACCES', 'EPERM'].includes(code) ? ` (${code})` : '';
-      const message = phase === 'load'
-        ? 'The terminal backend could not load. Rebuild or reinstall the extension’s node-pty dependency.'
-        : phase === 'resolve'
-          ? 'The shell or working directory could not be resolved. Check the configured executable path and terminal profile.'
-          : `The terminal could not start. Check the shell, working directory, and node-pty installation.${suffix}`;
-      session.info = { id: profile.id, status: 'error', message };
-      this.emitState(session);
-      try { pty?.kill(); } catch { /* Spawn may already have failed or exited. */ }
+      this.clear_subscriptions(session);
+
+      const error_code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
+      const error_suffix = ['ENOENT', 'ENOTDIR', 'ENOMEM', 'EACCES', 'EPERM'].includes(error_code)
+        ? ` (${error_code})`
+        : '';
+      let error_message: string;
+      if (launch_phase === 'load') {
+        error_message = 'The terminal backend could not load. Rebuild or reinstall the extension’s node-pty dependency.';
+      } else if (launch_phase === 'resolve') {
+        error_message = 'The shell or working directory could not be resolved. Check the configured executable path and terminal profile.';
+      } else {
+        error_message = `The terminal could not start. Check the shell, working directory, and node-pty installation.${error_suffix}`;
+      }
+      session.info = { id: profile.id, status: 'error', message: error_message };
+      this.emit_state(session);
+      try {
+        failed_process?.kill();
+      } catch { /* Spawn may already have failed or exited. */ }
     }
     return { ...session.info };
   }
@@ -123,25 +164,31 @@ export class SessionManager implements Disposable {
   input(id: string, data: string): void {
     const session = this.sessions.get(id);
     if (!session || session.info.status !== 'running' || this.disposed) return;
-    try { session.process?.write(data); } catch { /* Process exit can race a queued input message. */ }
+    try {
+      session.process?.write(data);
+    } catch { /* Process exit can race a queued input message. */ }
   }
 
-  resize(id: string, cols: number, rows: number): void {
+  resize(id: string, columns: number, rows: number): void {
     const session = this.sessions.get(id);
     if (!session || session.info.status !== 'running' || this.disposed) return;
-    try { session.process?.resize(dimension(cols, 80), dimension(rows, 24)); } catch { /* Process exit can race resize. */ }
+    try {
+      session.process?.resize(bounded_dimension(columns, 80), bounded_dimension(rows, 24));
+    } catch { /* Process exit can race resize. */ }
   }
 
   stop(id: string): void {
     const session = this.sessions.get(id);
     if (!session || session.info.status !== 'running') return;
-    const pty = session.process;
+    const terminal_process = session.process;
     session.process = undefined;
-    session.generation = ++this.nextGeneration;
+    session.generation = ++this.next_generation;
     session.info = { id, status: 'exited', message: 'Stopped.' };
-    this.clearSubscriptions(session);
-    this.emitState(session);
-    try { pty?.kill(); } catch { /* Already-exited processes do not need another signal. */ }
+    this.clear_subscriptions(session);
+    this.emit_state(session);
+    try {
+      terminal_process?.kill();
+    } catch { /* Already-exited processes do not need another signal. */ }
   }
 
   remove(id: string): void {
@@ -149,8 +196,11 @@ export class SessionManager implements Disposable {
     this.sessions.delete(id);
   }
 
-  list(): SessionInfo[] { return [...this.sessions.values()].map((session) => ({ ...session.info })); }
-  get(id: string): SessionInfo | undefined {
+  list(): session_info[] {
+    return [...this.sessions.values()].map((session) => ({ ...session.info }));
+  }
+
+  get(id: string): session_info | undefined {
     const info = this.sessions.get(id)?.info;
     return info ? { ...info } : undefined;
   }
@@ -162,19 +212,34 @@ export class SessionManager implements Disposable {
     this.sessions.clear();
   }
 
-  private isRunning(session: Session, generation: number): boolean {
-    return !this.disposed && this.sessions.get(session.info.id) === session && session.generation === generation && session.info.status === 'running';
+  private is_running(session: terminal_session, generation: number): boolean {
+    return !this.disposed
+      && this.sessions.get(session.info.id) === session
+      && session.generation === generation
+      && session.info.status === 'running';
   }
-  private track(session: Session, disposable: Disposable): void {
-    if (session.info.status === 'running') session.subscriptions.push(disposable);
-    else { try { disposable.dispose(); } catch { /* Subscription already ended. */ } }
+
+  private track_subscription(session: terminal_session, subscription: disposable): void {
+    if (session.info.status === 'running') {
+      session.subscriptions.push(subscription);
+      return;
+    }
+    try {
+      subscription.dispose();
+    } catch { /* Subscription already ended. */ }
   }
-  private clearSubscriptions(session: Session): void {
-    for (const disposable of session.subscriptions.splice(0)) {
-      try { disposable.dispose(); } catch { /* Continue cleaning up other listeners. */ }
+
+  private clear_subscriptions(session: terminal_session): void {
+    for (const subscription of session.subscriptions.splice(0)) {
+      try {
+        subscription.dispose();
+      } catch { /* Continue cleaning up other listeners. */ }
     }
   }
-  private emitState(session: Session): void {
-    try { this.options.onState({ ...session.info }); } catch { /* A detached view cannot prevent cleanup. */ }
+
+  private emit_state(session: terminal_session): void {
+    try {
+      this.options.on_state({ ...session.info });
+    } catch { /* A detached view cannot prevent cleanup. */ }
   }
 }
