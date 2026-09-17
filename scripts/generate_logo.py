@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
-"""Build the outlined Photonico Code logo without embedding the font file.
+"""Build the Terminal Sidebar logo from the owner's Photonico Code outlines.
 
 Usage: python scripts/generate_logo.py /path/to/Photonico-Code-Regular.ttf
 Dependencies: fonttools, cairosvg (with system Cairo).
+
+Geometry uses a 512-unit square canvas. SVG and PNG retain transparency;
+EPS leaves the same areas unpainted rather than storing an alpha channel.
 """
 
 from __future__ import annotations
 
 import argparse
 import hashlib
+import math
 from pathlib import Path
 from xml.sax.saxutils import escape
 
@@ -19,80 +23,152 @@ from fontTools.pens.transformPen import TransformPen
 from fontTools.ttLib import TTFont
 
 
-def circle_path(cx: float, cy: float, radius: float) -> str:
+def format_number(value: float) -> str:
+    """Return SVG coordinates with four decimal places at most."""
+    if value == 0:
+        return '0'
+    return f'{value:.4f}'.rstrip('0').rstrip('.')
+
+
+def circle_point(radius: float, angle: float) -> str:
+    """Return a point about (256, 256); angle is measured in radians."""
+    horizontal = 256 + radius * math.cos(angle)
+    vertical = 256 + radius * math.sin(angle)
+    return f'{format_number(horizontal)} {format_number(vertical)}'
+
+
+def circular_dash_path(radius: float, body_width: float, start: float, end: float) -> str:
+    """Return a closed annular dash with semicircular ends, before outlining.
+
+    Radius and body_width use canvas units. Start and end are centreline
+    angles in radians, increasing clockwise in the SVG coordinate system.
+    """
+    half_width = body_width / 2
+    outside_radius = radius + half_width
+    inside_radius = radius - half_width
     return (
-        f"M{cx + radius:g} {cy:g}"
-        f"A{radius:g} {radius:g} 0 1 0 {cx - radius:g} {cy:g}"
-        f"A{radius:g} {radius:g} 0 1 0 {cx + radius:g} {cy:g}Z"
+        f'M{circle_point(outside_radius, start)}'
+        f'A{outside_radius:g} {outside_radius:g} 0 0 1 {circle_point(outside_radius, end)}'
+        f'A{half_width:g} {half_width:g} 0 0 1 {circle_point(inside_radius, end)}'
+        f'A{inside_radius:g} {inside_radius:g} 0 0 0 {circle_point(inside_radius, start)}'
+        f'A{half_width:g} {half_width:g} 0 0 1 {circle_point(outside_radius, start)}Z'
     )
 
 
-def build(font_path: Path, output: Path) -> None:
+def circular_dashes(radius: float, body_width: float, outline_width: float) -> list[str]:
+    """Build 12 dashes with a visible 2:1 solid-to-gap ratio on the centreline.
+
+    Each 30-degree interval contains 20 degrees of visible ink and 10 degrees
+    of transparent gap. A round cap, including the grey outline, extends
+    beyond the underlying arc. Its angular reach on the reference circle is
+    2 * asin(cap_radius / (2 * radius)); subtract both ends before drawing.
+    This preserves the visible ratio instead of setting a naive dash array.
+    """
+    number_of_dashes = 12
+    interval_angle = 2 * math.pi / number_of_dashes
+    visible_dash_angle = interval_angle * 2 / 3
+    outside_cap_radius = (body_width + outline_width) / 2
+    cap_angle = 2 * math.asin(outside_cap_radius / (2 * radius))
+    arc_angle = visible_dash_angle - 2 * cap_angle
+    if arc_angle <= 0:
+        raise ValueError('The ring is too thick for 12 separate rounded dashes.')
+
+    paths = []
+    for index in range(number_of_dashes):
+        # Centre a dash at twelve o'clock, then repeat every thirty degrees.
+        centre_angle = -math.pi / 2 + index * interval_angle
+        start_angle = centre_angle - arc_angle / 2
+        end_angle = centre_angle + arc_angle / 2
+        paths.append(circular_dash_path(radius, body_width, start_angle, end_angle))
+    return paths
+
+
+def build_logo(font_path: Path, output: Path) -> None:
+    """Write SVG, vector EPS and 512-pixel PNG from the same source geometry."""
     font_bytes = font_path.read_bytes()
     with TTFont(font_path) as font:
         family = font['name'].getDebugName(1) or ''
         version = font['name'].getDebugName(5) or ''
         if family != 'Photonico Code':
-            raise ValueError(f"Expected Photonico Code, received {family!r}")
+            raise ValueError(f'Expected Photonico Code, received {family!r}')
 
         glyph_set = font.getGlyphSet()
-        cmap = font.getBestCmap()
-        glyphs: list[tuple[str, float]] = []
-        bounds = []
-        advance = 0
+        character_map = font.getBestCmap()
+        positioned_glyphs: list[tuple[str, float]] = []
+        glyph_bounds = []
+        horizontal_advance = 0
         for index, character in enumerate('>_'):
             if index:
-                # Tighten the two-character lockup without stretching the glyphs.
-                advance -= 170
-            name = cmap[ord(character)]
-            pen = BoundsPen(glyph_set)
-            glyph_set[name].draw(TransformPen(pen, (1, 0, 0, 1, advance, 0)))
-            if pen.bounds is None:
-                raise ValueError(f"No outline for {character!r}")
-            bounds.append(pen.bounds)
-            glyphs.append((name, advance))
-            advance += font['hmtx'][name][0]
+                horizontal_advance -= 170
+            glyph_name = character_map[ord(character)]
+            bounds_pen = BoundsPen(glyph_set)
+            glyph_set[glyph_name].draw(TransformPen(bounds_pen, (1, 0, 0, 1, horizontal_advance, 0)))
+            if bounds_pen.bounds is None:
+                raise ValueError(f'No outline for {character!r}')
+            glyph_bounds.append(bounds_pen.bounds)
+            positioned_glyphs.append((glyph_name, horizontal_advance))
+            horizontal_advance += font['hmtx'][glyph_name][0]
 
-        xmin = min(b[0] for b in bounds)
-        ymin = min(b[1] for b in bounds)
-        xmax = max(b[2] for b in bounds)
-        ymax = max(b[3] for b in bounds)
-        # Keep the original glyph size while reducing the overall letter spacing.
-        scale = 0.137
-        dx = 256 - (xmin + xmax) * scale / 2
-        dy = 256 + (ymin + ymax) * scale / 2
-        path_pen = SVGPathPen(glyph_set, ntos=lambda v: f'{v:.4f}'.rstrip('0').rstrip('.') if v else '0')
-        for name, position in glyphs:
-            glyph_set[name].draw(TransformPen(path_pen, (scale, 0, 0, -scale, dx + position * scale, dy)))
-        glyph_path = path_pen.getCommands()
+        minimum_x = min(bounds[0] for bounds in glyph_bounds)
+        minimum_y = min(bounds[1] for bounds in glyph_bounds)
+        maximum_x = max(bounds[2] for bounds in glyph_bounds)
+        maximum_y = max(bounds[3] for bounds in glyph_bounds)
+        glyph_scale = 0.137
+        horizontal_offset = 256 - (minimum_x + maximum_x) * glyph_scale / 2
+        vertical_offset = 256 + (minimum_y + maximum_y) * glyph_scale / 2
+        outline_pen = SVGPathPen(glyph_set, ntos=format_number)
+        for glyph_name, position in positioned_glyphs:
+            transform = (glyph_scale, 0, 0, -glyph_scale, horizontal_offset + position * glyph_scale, vertical_offset)
+            glyph_set[glyph_name].draw(TransformPen(outline_pen, transform))
+        prompt_path = outline_pen.getCommands()
+        underscore_bounds = glyph_bounds[1]
+        original_body_width = (underscore_bounds[3] - underscore_bounds[1]) * glyph_scale
 
-    ring = circle_path(256, 256, 208) + circle_path(256, 256, 180)
+    ring_radius = 194
+    body_width = 28
     outline_width = 6
+    # Both shapes have a nominal 28-unit body and a centred 6-unit outline:
+    # visible white width = 22; total width including the outline = 34.
+    # Widen the actual font outline by 8.82 units, without stretching it.
+    added_glyph_width = body_width - original_body_width
+    grey_glyph_stroke = added_glyph_width + outline_width
+    white_glyph_stroke = added_glyph_width - outline_width
+    if white_glyph_stroke < 0:
+        raise ValueError('This font weight is too heavy for the outlined prompt geometry.')
+
+    dash_paths = circular_dashes(ring_radius, body_width, outline_width)
+    frame_elements = '\n'.join(
+        f'    <path id="frame-dash-{index:02d}" d="{path}"/>'
+        for index, path in enumerate(dash_paths)
+    )
+    font_hash = hashlib.sha256(font_bytes).hexdigest()
     svg = f'''<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title description">
   <title id="title">Terminal Sidebar</title>
-  <desc id="description">White circular frame and tightly spaced Photonico Code greater-than and underscore glyphs, with matching #646464 outlines on a transparent background.</desc>
-  <metadata>Glyph source: {escape(family)} Regular, {escape(version)}. Font SHA-256: {hashlib.sha256(font_bytes).hexdigest()}. Glyphs converted to paths; no embedded font.</metadata>
-  <g fill="#ffffff" stroke="#646464" stroke-width="{outline_width}" stroke-linejoin="round">
-    <path id="frame" d="{ring}" fill-rule="evenodd"/>
-    <path id="prompt" d="{glyph_path}"/>
+  <desc id="description">Twelve rounded white circular dashes, with a visible two-to-one dash-to-gap ratio, surround a bold, compact Photonico Code greater-than and underscore. Matching #646464 outlines and a transparent background.</desc>
+  <metadata>Glyph source: {escape(family)} Regular, {escape(version)}. Font SHA-256: {font_hash}. Actual font outlines, widened to the nominal 28-unit frame body. Frame and prompt grey borders: 6 units. Twelve dashes: visible 20-degree ink and 10-degree gap on radius 194, including round-cap outline compensation. No embedded font.</metadata>
+  <g id="frame" fill="#ffffff" stroke="#646464" stroke-width="{outline_width}" stroke-linejoin="round">
+{frame_elements}
+  </g>
+  <g id="prompt" stroke-linejoin="round" stroke-linecap="round">
+    <path id="prompt-outline" d="{prompt_path}" fill="#646464" stroke="#646464" stroke-width="{format_number(grey_glyph_stroke)}"/>
+    <path id="prompt-body" d="{prompt_path}" fill="#ffffff" stroke="#ffffff" stroke-width="{format_number(white_glyph_stroke)}"/>
   </g>
 </svg>
 '''
     output.mkdir(parents=True, exist_ok=True)
     (output / 'logo.svg').write_text(svg, encoding='utf-8')
-    eps = cairosvg.svg2eps(bytestring=svg.encode()).decode('ascii')
-    # Cairo uses the ink bounds for EPS. Preserve the SVG's transparent margins:
-    # 512 CSS pixels at 96 dpi correspond to 384 PostScript points at 72 dpi.
+    eps_source = cairosvg.svg2eps(bytestring=svg.encode()).decode('ascii')
+    # Preserve the complete transparent margins: 512 CSS pixels = 384 pt.
     eps_lines = []
-    for line in eps.splitlines():
+    for line in eps_source.splitlines():
         if line.startswith('%%BoundingBox:'):
             line = '%%BoundingBox: 0 0 384 384'
         elif line.startswith('%%PageBoundingBox:'):
             line = '%%PageBoundingBox: 0 0 384 384'
         elif line.startswith('%%CreationDate:'):
-            continue  # Keep regeneration independent of the local clock.
-        eps_lines.append(line)
+            continue
+        eps_lines.append(line.rstrip())
     (output / 'logo.eps').write_text('\n'.join(eps_lines) + '\n', encoding='ascii')
     cairosvg.svg2png(bytestring=svg.encode(), write_to=str(output / 'logo.png'), output_width=512, output_height=512)
     print(f'Created logo.svg, logo.eps, logo.png in {output}')
@@ -102,5 +178,5 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('font', type=Path)
     parser.add_argument('--output', type=Path, default=Path(__file__).resolve().parents[1] / 'assets')
-    args = parser.parse_args()
-    build(args.font.expanduser(), args.output)
+    arguments = parser.parse_args()
+    build_logo(arguments.font.expanduser(), arguments.output)

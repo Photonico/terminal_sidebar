@@ -7,6 +7,7 @@
 - Add runtime tabs with + or a double click on blank tab-strip space, and close them with × or a middle click without deleting startup settings.
 - Remember workspace-local tab layout and ordinary Term numbering. Restore new shells without storing or replaying typed input.
 - Use compact 24 px tabs, connected active backgrounds, and smaller rounded hover backgrounds.
+- Refresh the logo with twelve rounded ring segments and heavier Photonico Code glyphs.
 - Migrate legacy profiles to the right at read time and preserve compatibility with existing commands.
 - Refactor project-owned code to descriptive snake_case and explicit lifecycle stages.
 

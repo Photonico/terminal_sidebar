@@ -33,7 +33,7 @@ Run **Terminal Sidebar: Configure Sidebars**, or select either sidebar's gear. T
 
 - **Name:** the initial terminal name, up to 80 characters.
 - **Command:** text sent once when the terminal starts. Blank opens an interactive shell.
-- **Shell:** an installed shell or executable path. Blank follows the configured VS Code shell, with a system-shell fallback.
+- **Shell:** an installed shell or executable path. Blank follows the configured VS Code shell, or the system shell when no default profile is supplied. An invalid configured executable reports an error.
 
 Installed shells are detected on the machine where the extension runs. Detection checks available executables without launching them and does not change the selected shell. A custom executable path remains available when detection does not find the shell. Shell arguments do not belong in the executable field.
 
