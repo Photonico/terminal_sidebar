@@ -45,8 +45,13 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 #left-heading { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 4px 6px; font-size: 11px; color: var(--vscode-descriptionForeground, var(--view-foreground)); }
 .icon-button { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 4px; border: 1px solid transparent; border-radius: var(--tab-radius); background: transparent; }
 .icon-button:hover:not(:disabled) { background-color: var(--vscode-toolbar-hoverBackground, #80808025); }
-/* Keep a 20px circular hover surface inside the unchanged 24px hit area. */
+/* Keep idle and hover surfaces circular at 20px inside the unchanged 24px hit area. */
 #tab-actions .icon-button, .section_rename, .section-close { border-width: 2px; padding: 3px; border-radius: 50%; background-clip: padding-box; }
+/* Default surfaces follow each sidebar's tab palette; the shared hover rule takes precedence. */
+.section_rename, .section-close { background-color: var(--vscode-sideBarSectionHeader-background, var(--vscode-sideBar-background, var(--view-background))); }
+:where(#tab-actions) .icon-button,
+:where(.terminal-section[data-active="true"]) .section_rename,
+:where(.terminal-section[data-active="true"]) .section-close { background-color: var(--view-background); }
 .icon-button svg, .section-chevron svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
 
 #terminal-content { flex: 1 1 auto; min-height: 0; min-width: 0; position: relative; }
