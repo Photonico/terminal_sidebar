@@ -249,7 +249,7 @@ class terminal_sidebar implements vscode.Disposable {
       }
       const layout = this.ensure_layout(view);
       if (view.view) {
-        view.view.title = view.side === 'left' ? 'Terminals' : 'Side Terminal';
+        view.view.title = 'Side Terminals';
       }
       view.post({
         type: 'state', side: view.side, configuration: this.configuration,
@@ -626,7 +626,7 @@ class terminal_sidebar implements vscode.Disposable {
       const configuration = parse_configuration(value);
       const baseline = JSON.stringify(parse_configuration(baseline_value));
       if (baseline !== JSON.stringify(this.current_configuration())) {
-        throw new Error('Startup settings changed elsewhere. Your draft is intact. Reopen configuration before saving.');
+        throw new Error('Startup settings changed elsewhere. Your draft is intact. Copy any edits you want to keep, then Cancel and reopen configuration to load the latest settings.');
       }
       await vscode.workspace.getConfiguration('terminalSidebar').update(
         'sidebars', configuration, vscode.ConfigurationTarget.Global,

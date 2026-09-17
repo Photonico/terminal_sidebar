@@ -81,7 +81,7 @@ app.innerHTML = `
     <p class="configuration-intro">These profiles open at startup. Closing or adding a terminal during use does not change them. Blank Shell uses the default; keep secrets out of synced commands.</p>
     <form id="profile-form" novalidate>
       <div id="profile-groups"></div>
-      <div class="configuration-actions"><button id="save-profiles" class="primary" type="submit">Save</button><button id="cancel-configuration" class="secondary" type="button">Cancel</button></div>
+      <div class="configuration-actions"><button id="save-profiles" class="primary" type="submit">Save</button><button id="cancel-configuration" class="secondary" type="button">Cancel</button><button id="return_to_terminals" class="secondary" type="button">Return to terminals</button></div>
     </form>
   </section>`;
 
@@ -718,8 +718,12 @@ function side_label(profile_side: sidebar_side): string {
 
 function open_configuration(): void {
   if (!configuring) {
-    draft.reset(startup_configuration);
-    custom_shells.clear();
+    // Resume a suspended draft. A clean draft follows settings changed elsewhere;
+    // a dirty draft keeps its original baseline for the host's conflict check.
+    if (!draft.dirty && JSON.stringify(draft.base) !== JSON.stringify(startup_configuration)) {
+      draft.reset(startup_configuration);
+      custom_shells.clear();
+    }
     configuring = true;
   }
   render_draft();
@@ -728,23 +732,33 @@ function open_configuration(): void {
     ?? element('toggle-left-profiles')).focus();
 }
 
-function close_configuration(): void {
+function return_to_terminals(): void {
   if (saving) {
     return;
   }
   configuring = false;
-  draft.reset(startup_configuration);
+  draft.end_group();
   if (name_validation_error) {
     show_error('');
   }
-  custom_shells.clear();
-  save_button.disabled = false;
-  save_button.textContent = 'Save';
   render_content();
   schedule_fit();
   if (active_id) {
     focus_terminal(active_id);
+  } else {
+    element(trusted ? 'add-first-tab' : 'trust-button').focus();
   }
+}
+
+function close_configuration(): void {
+  if (saving) {
+    return;
+  }
+  draft.reset(startup_configuration);
+  custom_shells.clear();
+  save_button.disabled = false;
+  save_button.textContent = 'Save';
+  return_to_terminals();
 }
 
 function restore_draft_focus(previous: Element | null, start: number | null, end: number | null): void {
@@ -775,16 +789,25 @@ function render_profile_row(profile_side: sidebar_side, profile: terminal_profil
   row.dataset.profileId = profile.id;
   const prefix = `${profile_side}-${profile.id}`;
   const legend = document.createElement('legend');
-  legend.textContent = `${side_label(profile_side)} ${index}`;
+  const heading = document.createElement('span');
+  heading.className = 'profile_heading';
+  const title = document.createElement('span');
+  title.id = `${prefix}_title`;
+  title.className = 'profile_title';
+  title.textContent = `${side_label(profile_side)} ${index}`;
+  title.title = title.textContent;
+  row.setAttribute('aria-labelledby', title.id);
+  heading.append(title);
+  legend.append(heading);
   row.append(legend);
-  const actions = document.createElement('div');
+  const actions = document.createElement('span');
   actions.className = 'row-actions';
 
-  function row_action(text: string, label: string, disabled: boolean, action: (profiles: terminal_profile[]) => void): void {
+  function row_action(text: string, label: string, disabled: boolean, action: (profiles: terminal_profile[]) => void): HTMLButtonElement {
     const button = document.createElement('button');
     button.type = 'button';
     button.id = `${prefix}-${label.replaceAll(' ', '-')}`;
-    button.className = 'row-button';
+    button.className = 'icon-button row-button';
     button.textContent = text;
     button.title = label;
     button.setAttribute('aria-label', `${label}: ${profile.name || `profile ${index + 1}`}`);
@@ -798,10 +821,11 @@ function render_profile_row(profile_side: sidebar_side, profile: terminal_profil
       const focus_row = Array.from(profile_groups.querySelectorAll<HTMLElement>('.profile-row'))
         .find(item => item.dataset.profileId === focus_id && item.closest('[data-side]')?.getAttribute('data-side') === profile_side);
       const next_button = Array.from(focus_row?.querySelectorAll<HTMLButtonElement>('button') ?? [])
-        .find(item => item.textContent === text && !item.disabled);
+        .find(item => item.title === label && !item.disabled);
       (next_button ?? focus_row?.querySelector<HTMLInputElement>('input') ?? element(`add-${profile_side}-profile`)).focus();
     });
     actions.append(button);
+    return button;
   }
 
   row_action('↑', 'Move up', index === 0, profiles => {
@@ -810,8 +834,9 @@ function render_profile_row(profile_side: sidebar_side, profile: terminal_profil
   row_action('↓', 'Move down', index === draft.value[profile_side].length - 1, profiles => {
     [profiles[index + 1], profiles[index]] = [profiles[index]!, profiles[index + 1]!];
   });
-  row_action('×', 'Remove startup profile', false, profiles => profiles.splice(index, 1));
-  row.append(actions);
+  const remove_button = row_action('', 'Remove startup profile', false, profiles => profiles.splice(index, 1));
+  remove_button.innerHTML = icon('close');
+  heading.append(actions);
 
   function field(key: 'name' | 'command', title: string, placeholder: string): void {
     const label = document.createElement('label');
@@ -986,6 +1011,7 @@ function render_draft(): void {
     profile_groups.append(group);
   }
   element<HTMLButtonElement>('cancel-configuration').disabled = saving;
+  element<HTMLButtonElement>('return_to_terminals').disabled = saving;
   update_actions();
   restore_draft_focus(previous, start, end);
 }
@@ -1106,6 +1132,7 @@ for (const action of ['save', 'undo', 'redo', 'close'] as const) {
 }
 element('refresh-shells').addEventListener('click', () => send({ type: 'refresh_shells' }));
 element('cancel-configuration').addEventListener('click', close_configuration);
+element('return_to_terminals').addEventListener('click', return_to_terminals);
 element<HTMLFormElement>('profile-form').addEventListener('submit', event => {
   event.preventDefault();
   save_configuration();

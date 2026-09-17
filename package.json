@@ -48,14 +48,14 @@
       "secondarySidebar": [
         {
           "id": "terminalSidebar",
-          "title": "Side Terminal",
+          "title": "Side Terminals",
           "icon": "assets/activity.svg"
         }
       ],
       "activitybar": [
         {
           "id": "terminalSidebarLeft",
-          "title": "Side Terminal",
+          "title": "Side Terminals",
           "icon": "assets/activity.svg"
         }
       ]
@@ -64,14 +64,14 @@
       "terminalSidebar": [
         {
           "id": "terminalSidebar.terminals",
-          "name": "Terminals",
+          "name": "Side Terminals",
           "type": "webview"
         }
       ],
       "terminalSidebarLeft": [
         {
           "id": "terminalSidebar.left",
-          "name": "Terminals",
+          "name": "Side Terminals",
           "type": "webview"
         }
       ]
