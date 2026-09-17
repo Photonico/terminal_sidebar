@@ -484,10 +484,13 @@ function ensure_section(tab: terminal_tab, view: terminal_view): void {
     button.dataset.reorderId = tab.id;
     button.draggable = true;
     button.setAttribute('aria-controls', view.pane.id);
-    button.innerHTML = `<span class="section-chevron">${icon('chevron')}</span>`;
+    const caption = document.createElement('span');
+    caption.className = 'section_caption';
+    caption.innerHTML = `<span class="section-chevron">${icon('chevron')}</span>`;
     const label = document.createElement('span');
     label.className = 'section-label';
-    button.append(label);
+    caption.append(label);
+    button.append(caption);
     button.addEventListener('click', () => set_expanded(tab.id, !expanded_ids.has(tab.id)));
     button.addEventListener('keydown', event => {
       if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.isComposing) {

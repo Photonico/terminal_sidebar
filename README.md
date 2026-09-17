@@ -33,7 +33,7 @@ The two sides have separate startup lists, open tabs, selections, terminal dimen
 
 Each side supports up to **32 startup profiles** and **32 additional ordinary terminals**. Terminals begin when their side bar is first used in a trusted workspace, including background startup tabs. Opening configuration alone does not run commands. Switching tabs, folding sections, or hiding a side bar does not restart processes or repeat startup commands.
 
-Both sides use compact 24 px headers and the VS Code interface font. Colours and corner radii come from the current theme. Terminal scrollbars use the editor's scrollbar sizes and visibility together with its normal, hover, and active slider colours. Theme and setting changes update open terminals without restarting their processes. Terminal text continues to follow the integrated-terminal font settings.
+The Primary Side Bar uses 26 px headers, with extra vertical spacing around each title; the Secondary Side Bar uses 24 px headers. Both use the VS Code interface font. Colours and corner radii come from the current theme. Terminal scrollbars use the editor's scrollbar sizes and visibility together with its normal, hover, and active slider colours. Theme and setting changes update open terminals without restarting their processes. Terminal text continues to follow the integrated-terminal font settings.
 
 The view uses documented [Webview theme variables](https://code.visualstudio.com/api/extension-guides/webview#theming-webview-content) and public terminal APIs. It follows the host's appearance where those APIs expose it; it cannot inherit arbitrary private editor styling or guarantee pixel-identical behaviour across future VS Code releases.
 

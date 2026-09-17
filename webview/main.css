@@ -29,9 +29,17 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .terminal-tab { flex: 0 0 auto; max-width: 200px; height: var(--tab-height); position: relative; isolation: isolate; padding: 2px 6px; border: 0; border-radius: var(--tab-radius) var(--tab-radius) 0 0; background: transparent; color: var(--vscode-tab-inactiveForeground, var(--view-foreground)); font-size: inherit; font-weight: normal; line-height: 20px; white-space: nowrap; }
 .tab-label { display: block; overflow: hidden; text-overflow: ellipsis; }
 .terminal-tab::before { content: ''; position: absolute; z-index: -1; inset: 2px; border-radius: var(--tab-radius); background: transparent; pointer-events: none; }
-.terminal-tab:hover:not([aria-selected="true"])::before { background: var(--vscode-tab-hoverBackground, var(--vscode-toolbar-hoverBackground, #80808020)); }
-.terminal-tab:hover:not([aria-selected="true"]) { color: var(--vscode-tab-hoverForeground, var(--vscode-tab-inactiveForeground, var(--view-foreground))); }
-.terminal-tab[aria-selected="true"] { color: var(--terminal-foreground, var(--view-foreground)); background: var(--view-background); }
+/* Both sidebars share terminal tab colours; active hover retains the terminal palette. */
+.terminal-tab:hover:not([aria-selected="true"])::before,
+.terminal-section:not([data-active="true"]) .section-heading:hover::before { background: var(--vscode-tab-hoverBackground, var(--vscode-toolbar-hoverBackground, #80808020)); }
+.terminal-tab:hover:not([aria-selected="true"]),
+.terminal-section:not([data-active="true"]) .section-heading:hover,
+#tab-actions .icon-button:hover:not(:disabled),
+.section_rename:hover:not(:disabled), .section-close:hover:not(:disabled) { color: var(--vscode-tab-hoverForeground, var(--vscode-tab-inactiveForeground, var(--view-foreground))); }
+.terminal-tab[aria-selected="true"],
+.terminal-section[data-active="true"] .section-heading { color: var(--terminal-foreground, var(--view-foreground)); }
+.terminal-tab[aria-selected="true"],
+.terminal-section[data-active="true"] .section_caption::before { background: var(--view-background); }
 .terminal-tab[data-status="error"] { color: var(--vscode-errorForeground, #f48771); }
 #tab-actions, #configuration-toolbar { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; margin-left: auto; }
 #left-heading { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 4px 6px; font-size: 11px; color: var(--vscode-descriptionForeground, var(--view-foreground)); }
@@ -69,23 +77,23 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 
 /* Left terminals are independent, collapsible sections like Explorer groups. */
 body[data-side="left"] #terminal-host { display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden; background: var(--vscode-sideBar-background, var(--view-background)); }
-.terminal-section { display: flex; flex-direction: column; flex: 0 0 var(--tab-height); min-width: 0; min-height: var(--tab-height); background: var(--vscode-sideBar-background, var(--view-background)); }
+.terminal-section { --tab-height: 26px; display: flex; flex-direction: column; flex: 0 0 var(--tab-height); min-width: 0; min-height: var(--tab-height); background: var(--vscode-sideBar-background, var(--view-background)); }
 .terminal-section[data-expanded="true"] { flex: 1 0 72px; }
 .section-heading { display: flex; flex: 0 0 var(--tab-height); height: var(--tab-height); min-width: 0; position: relative; isolation: isolate; border: 0; border-radius: var(--tab-radius); color: var(--vscode-sideBarSectionHeader-foreground, var(--view-foreground)); background: transparent; }
-/* Keep every header's painted surface inset, while its 24px hit area stays intact. */
-.section-heading::before { content: ''; position: absolute; z-index: -1; inset: 2px; border-radius: var(--tab-radius); background: var(--vscode-sideBarSectionHeader-background, var(--vscode-sideBar-background, var(--view-background))); pointer-events: none; }
-/* Match active editor tabs, with the classic palette as an older VS Code fallback. */
-.terminal-section[data-active="true"] .section-heading { color: var(--vscode-modernEditorTab-activeForeground, var(--vscode-tab-activeForeground, var(--view-foreground))); }
-.terminal-section[data-active="true"] .section-heading::before { background: var(--vscode-modernEditorTab-activeBackground, var(--vscode-tab-activeBackground, var(--view-background))); }
-body:is(.vscode-high-contrast, .vscode-high-contrast-light) .terminal-section[data-active="true"] .section-heading { color: var(--vscode-tab-activeForeground, var(--view-foreground)); }
-body:is(.vscode-high-contrast, .vscode-high-contrast-light) .terminal-section[data-active="true"] .section-heading::before { background: var(--vscode-tab-activeBackground, var(--view-background)); outline: 1px solid var(--vscode-contrastActiveBorder, var(--vscode-contrastBorder, transparent)); outline-offset: -1px; }
-/* Editor tabs distinguish active hover from inactive hover, preserving active text. */
-.terminal-section:not([data-active="true"]) .section-heading:hover::before { background: var(--vscode-modernEditorTab-hoverBackground, var(--vscode-tab-hoverBackground, var(--vscode-sideBarSectionHeader-background, var(--view-background)))); }
-.terminal-section[data-active="true"] .section-heading:hover::before { background: var(--vscode-modernEditorTab-activeHoverBackground, var(--vscode-modernEditorTab-hoverBackground, var(--vscode-tab-hoverBackground, var(--vscode-tab-activeBackground, var(--view-background))))); }
-.terminal-section:not([data-active="true"]) .section-heading:hover { color: var(--vscode-modernEditorTab-hoverForeground, var(--vscode-tab-hoverForeground, var(--vscode-sideBarSectionHeader-foreground, var(--view-foreground)))); }
-body:is(.vscode-high-contrast, .vscode-high-contrast-light) .terminal-section:not([data-active="true"]) .section-heading:hover::before { background: var(--vscode-tab-hoverBackground, var(--vscode-sideBarSectionHeader-background, var(--view-background))); outline: 1px dashed var(--vscode-contrastActiveBorder, var(--vscode-contrastBorder, transparent)); outline-offset: -1px; }
-body:is(.vscode-high-contrast, .vscode-high-contrast-light) .terminal-section:not([data-active="true"]) .section-heading:hover { color: var(--vscode-tab-hoverForeground, var(--vscode-sideBarSectionHeader-foreground, var(--view-foreground))); }
-.section-toggle { display: flex; flex: 1 1 auto; align-items: center; min-width: 0; padding: 2px 4px; gap: 4px; border: 0; border-radius: var(--tab-radius); background: transparent; text-align: left; color: inherit; font-size: inherit; font-weight: normal; line-height: 20px; }
+/* Add 1px of vertical breathing room on each side of the 20px painted header. */
+.section-heading::before { content: ''; position: absolute; z-index: -1; inset: 3px 2px; border-radius: var(--tab-radius); background: var(--vscode-sideBarSectionHeader-background, var(--vscode-sideBar-background, var(--view-background))); pointer-events: none; }
+/* Paint only the caption when active; the full-width toggle remains clickable. */
+.terminal-section[data-active="true"] .section-heading::before { background: transparent; }
+/* Join the active, expanded caption to its terminal without changing layout or hit areas. */
+.terminal-section[data-active="true"][data-expanded="true"] .section_caption::before { bottom: 0; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+/* Preserve high-contrast outlines without replacing the shared tab colours. */
+body:is(.vscode-high-contrast, .vscode-high-contrast-light) .terminal-section[data-active="true"] .section_caption::before { outline: 1px solid var(--vscode-contrastActiveBorder, var(--vscode-contrastBorder, transparent)); outline-offset: -1px; }
+body:is(.vscode-high-contrast, .vscode-high-contrast-light) .terminal-section:not([data-active="true"]) .section-heading:hover::before { outline: 1px dashed var(--vscode-contrastActiveBorder, var(--vscode-contrastBorder, transparent)); outline-offset: -1px; }
+.section-toggle { display: flex; flex: 1 1 auto; align-items: center; min-width: 0; padding: 0; border: 0; border-radius: var(--tab-radius); background: transparent; text-align: left; color: inherit; font-size: inherit; font-weight: normal; line-height: 20px; }
+/* A 124px caption gives a 120px painted minimum after the 2px inset on each side.
+   Intrinsic sizing follows names and fonts; flex shrink keeps both actions visible. */
+.section_caption { display: flex; flex: 0 1 auto; align-items: center; gap: 4px; position: relative; isolation: isolate; height: 100%; min-width: min(124px, 100%); max-width: 100%; padding: 3px 4px; }
+.section_caption::before { content: ''; position: absolute; z-index: -1; inset: 3px 2px; border-radius: var(--tab-radius); pointer-events: none; }
 .section-chevron { display: flex; flex: 0 0 16px; align-items: center; justify-content: center; }
 .section-toggle[aria-expanded="true"] .section-chevron { transform: rotate(90deg); }
 .section-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
