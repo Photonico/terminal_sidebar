@@ -64,7 +64,7 @@ app.innerHTML = `
     <div id="empty-panel" class="empty-panel" hidden>
       <p>No open terminals. Your startup configuration is unchanged.</p>
       <button id="add-first-tab" class="primary" type="button">New terminal</button>
-      <button id="open-other-sidebar" class="secondary" type="button">Open primary side bar</button>
+      <button id="open-other-sidebar" class="secondary" type="button">Open primary side bar terminals</button>
       <button id="configure-empty" class="secondary" type="button">Configure startup terminals</button>
     </div>
     <div id="terminal-host"></div>
@@ -651,7 +651,7 @@ function render_content(): void {
   configuration_panel.hidden = !configuring;
   element('trust-panel').hidden = trusted || !received_state;
   element('empty-panel').hidden = !trusted || open_tabs.length > 0;
-  element('open-other-sidebar').textContent = `Open ${side_label(side === 'left' ? 'right' : 'left').toLowerCase()}`;
+  element('open-other-sidebar').textContent = `Open ${side_label(side === 'left' ? 'right' : 'left').toLowerCase()} terminals`;
   terminal_host.hidden = !trusted || open_tabs.length === 0;
   render_terminals();
   update_actions();
