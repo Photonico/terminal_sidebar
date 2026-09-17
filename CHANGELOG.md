@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0 — Pre-release
+
+- Separate left and right startup profiles, open tabs, and terminal processes.
+- Present left terminals as Explorer-style collapsible sections; rename the right container Side Terminal.
+- Add runtime tabs with + or a double click on blank tab-strip space, and close them with × or a middle click without deleting startup settings.
+- Remember workspace-local tab layout and ordinary Term numbering. Restore new shells without storing or replaying typed input.
+- Use compact 24 px tabs, connected active backgrounds, and smaller rounded hover backgrounds.
+- Migrate legacy profiles to the right at read time and preserve compatibility with existing commands.
+- Refactor project-owned code to descriptive snake_case and explicit lifecycle stages.
+
 ## 0.2.0 — Pre-release
 
 This release extends the terminal view to both sidebars and refines profile configuration.

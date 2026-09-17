@@ -26,11 +26,25 @@ export class configuration_draft {
     this.reset(configuration);
   }
 
-  get value(): sidebar_configuration { return copy_configuration(this.current); }
-  get base(): sidebar_configuration { return copy_configuration(this.original); }
-  get dirty(): boolean { return !same_configuration(this.current, this.original); }
-  get can_undo(): boolean { return this.past.length > 0; }
-  get can_redo(): boolean { return this.future.length > 0; }
+  get value(): sidebar_configuration {
+    return copy_configuration(this.current);
+  }
+
+  get base(): sidebar_configuration {
+    return copy_configuration(this.original);
+  }
+
+  get dirty(): boolean {
+    return !same_configuration(this.current, this.original);
+  }
+
+  get can_undo(): boolean {
+    return this.past.length > 0;
+  }
+
+  get can_redo(): boolean {
+    return this.future.length > 0;
+  }
 
   reset(configuration: sidebar_configuration): void {
     this.current = copy_configuration(configuration);
@@ -44,10 +58,14 @@ export class configuration_draft {
   change(update: (configuration: sidebar_configuration) => void, group?: string, now = Date.now()): boolean {
     const next = copy_configuration(this.current);
     update(next);
-    if (same_configuration(next, this.current)) return false;
+    if (same_configuration(next, this.current)) {
+      return false;
+    }
     if (!group || group !== this.group || now - this.changed_at > 750 || this.future.length > 0) {
       this.past.push(this.current);
-      if (this.past.length > this.limit) this.past.shift();
+      if (this.past.length > this.limit) {
+        this.past.shift();
+      }
     }
     this.current = next;
     this.future = [];
@@ -56,11 +74,15 @@ export class configuration_draft {
     return true;
   }
 
-  end_group(): void { this.group = undefined; }
+  end_group(): void {
+    this.group = undefined;
+  }
 
   undo(): boolean {
     const previous = this.past.pop();
-    if (!previous) return false;
+    if (!previous) {
+      return false;
+    }
     this.future.push(this.current);
     this.current = previous;
     this.end_group();
@@ -69,7 +91,9 @@ export class configuration_draft {
 
   redo(): boolean {
     const next = this.future.pop();
-    if (!next) return false;
+    if (!next) {
+      return false;
+    }
     this.past.push(this.current);
     this.current = next;
     this.end_group();

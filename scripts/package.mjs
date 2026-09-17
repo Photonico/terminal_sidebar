@@ -25,5 +25,7 @@ const package_arguments = [
   ...arguments_list,
 ];
 const package_result = spawn_sync(process.execPath, package_arguments, { stdio: 'inherit', env: process.env });
-if (package_result.error) throw package_result.error;
+if (package_result.error) {
+  throw package_result.error;
+}
 process.exitCode = package_result.status ?? 1;

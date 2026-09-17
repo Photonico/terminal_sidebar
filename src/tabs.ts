@@ -5,6 +5,7 @@ export interface remembered_tab {
   id: string;
   name: string;
   profile_id?: string;
+  renamed?: true;
 }
 
 /** Workspace-local layout only. Shells, commands, terminal input, and output never belong here. */
@@ -22,20 +23,39 @@ const maximum_temporary_tabs = 32;
 /** Sanitize each remembered descriptor separately so one damaged entry cannot erase the rest. */
 function read_memory(value: unknown): tab_memory {
   const empty: tab_memory = { version: 1, tabs: [], expanded_ids: [], next_number: 0 };
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return empty;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return empty;
+  }
   const record = value as Record<string, unknown>;
-  if (record.version !== 1 || !Array.isArray(record.tabs)) return empty;
+  if (record.version !== 1 || !Array.isArray(record.tabs)) {
+    return empty;
+  }
 
   const identifiers = new Set<string>();
   for (const entry of record.tabs.slice(0, maximum_tabs)) {
-    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
-    const { id, name, profile_id } = entry as Record<string, unknown>;
-    if (!is_identifier(id) || identifiers.has(id) || !is_tab_name(name)) continue;
-    if (profile_id !== undefined && !is_identifier(profile_id)) continue;
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      continue;
+    }
+    const { id, name, profile_id, renamed } = entry as Record<string, unknown>;
+    if (!is_identifier(id) || identifiers.has(id) || !is_tab_name(name)) {
+      continue;
+    }
+    if (profile_id !== undefined && !is_identifier(profile_id)) {
+      continue;
+    }
     identifiers.add(id);
-    empty.tabs.push({ id, name: name.trim(), ...(profile_id === undefined ? {} : { profile_id }) });
+    const descriptor: remembered_tab = { id, name: name.trim() };
+    if (profile_id !== undefined) {
+      descriptor.profile_id = profile_id;
+    }
+    if (renamed === true) {
+      descriptor.renamed = true;
+    }
+    empty.tabs.push(descriptor);
   }
-  if (is_identifier(record.active_id)) empty.active_id = record.active_id;
+  if (is_identifier(record.active_id)) {
+    empty.active_id = record.active_id;
+  }
   if (Array.isArray(record.expanded_ids)) {
     empty.expanded_ids = record.expanded_ids.slice(0, maximum_tabs).filter(is_identifier);
   }
@@ -54,6 +74,7 @@ export class sidebar_tabs {
   private current_tabs: terminal_tab[] = [];
   private selected_id: string | undefined;
   private expanded = new Set<string>();
+  private renamed_profiles = new Set<string>();
   private next_number = 0;
   private next_identifier = 0;
 
@@ -69,8 +90,14 @@ export class sidebar_tabs {
     for (const descriptor of memory.tabs) {
       if (descriptor.profile_id !== undefined) {
         const profile = profiles_by_id.get(descriptor.profile_id);
-        if (!profile || restored_profiles.has(profile.id)) continue;
-        this.current_tabs.push({ ...profile, id: descriptor.id, name: descriptor.name, profile_id: profile.id });
+        if (!profile || restored_profiles.has(profile.id)) {
+          continue;
+        }
+        const name = descriptor.renamed ? descriptor.name : profile.name;
+        this.current_tabs.push({ ...profile, id: descriptor.id, name, profile_id: profile.id });
+        if (descriptor.renamed) {
+          this.renamed_profiles.add(descriptor.id);
+        }
         restored_profiles.add(profile.id);
       } else if (temporary_count < maximum_temporary_tabs) {
         this.current_tabs.push({ id: descriptor.id, name: descriptor.name, command: '', shell: '' });
@@ -78,20 +105,32 @@ export class sidebar_tabs {
       }
     }
     for (const tab of this.current_tabs) {
-      if (memory.expanded_ids.includes(tab.id)) this.expanded.add(tab.id);
+      if (memory.expanded_ids.includes(tab.id)) {
+        this.expanded.add(tab.id);
+      }
     }
 
     // Closing a runtime tab never removes its startup setting: it returns next window.
     for (const profile of profiles) {
-      if (!restored_profiles.has(profile.id)) this.append_profile(profile);
+      if (!restored_profiles.has(profile.id)) {
+        this.append_profile(profile);
+      }
     }
     this.selected_id = this.current_tabs.some(tab => tab.id === memory.active_id)
       ? memory.active_id : this.current_tabs[0]?.id;
   }
 
-  get tabs(): terminal_tab[] { return this.current_tabs.map(tab => ({ ...tab })); }
-  get active_id(): string | undefined { return this.selected_id; }
-  get expanded_ids(): string[] { return this.current_tabs.filter(tab => this.expanded.has(tab.id)).map(tab => tab.id); }
+  get tabs(): terminal_tab[] {
+    return this.current_tabs.map(tab => ({ ...tab }));
+  }
+
+  get active_id(): string | undefined {
+    return this.selected_id;
+  }
+
+  get expanded_ids(): string[] {
+    return this.current_tabs.filter(tab => this.expanded.has(tab.id)).map(tab => tab.id);
+  }
 
   /** Add an ordinary default-shell tab. Names advance monotonically and skip occupied names. */
   add_tab(): terminal_tab {
@@ -101,7 +140,9 @@ export class sidebar_tabs {
     }
     const names = new Set(this.current_tabs.map(tab => tab.name));
     let name = `Term ${this.next_number++}`;
-    while (names.has(name)) name = `Term ${this.next_number++}`;
+    while (names.has(name)) {
+      name = `Term ${this.next_number++}`;
+    }
     const tab: terminal_tab = { id: this.create_identifier(), name, command: '', shell: '' };
     this.current_tabs.push(tab);
     this.selected_id = tab.id;
@@ -122,9 +163,12 @@ export class sidebar_tabs {
   /** Select the right neighbour after closing, or the left neighbour when closing the last tab. */
   close_tab(identifier: string): boolean {
     const index = this.current_tabs.findIndex(tab => tab.id === identifier);
-    if (index < 0) return false;
+    if (index < 0) {
+      return false;
+    }
     this.current_tabs.splice(index, 1);
     this.expanded.delete(identifier);
+    this.renamed_profiles.delete(identifier);
     if (this.selected_id === identifier) {
       this.selected_id = this.current_tabs[Math.min(index, this.current_tabs.length - 1)]?.id;
     }
@@ -134,35 +178,56 @@ export class sidebar_tabs {
   /** Runtime names are remembered, but never written back into the startup profile. */
   rename_tab(identifier: string, name: string): boolean {
     const tab = this.current_tabs.find(entry => entry.id === identifier);
-    if (!tab || !is_tab_name(name)) return false;
+    if (!tab || !is_tab_name(name)) {
+      return false;
+    }
     const trimmed_name = name.trim();
-    if (tab.name === trimmed_name) return false;
+    if (tab.name === trimmed_name) {
+      return false;
+    }
     tab.name = trimmed_name;
+    if (tab.profile_id !== undefined) {
+      this.renamed_profiles.add(identifier);
+    }
     return true;
   }
 
   select_tab(identifier: string): boolean {
-    if (!this.current_tabs.some(tab => tab.id === identifier)) return false;
+    if (!this.current_tabs.some(tab => tab.id === identifier)) {
+      return false;
+    }
     this.selected_id = identifier;
     return true;
   }
 
   set_expanded(identifier: string, expanded: boolean): boolean {
-    if (!this.current_tabs.some(tab => tab.id === identifier)) return false;
-    if (expanded) this.expanded.add(identifier);
-    else this.expanded.delete(identifier);
+    if (!this.current_tabs.some(tab => tab.id === identifier)) {
+      return false;
+    }
+    if (expanded) {
+      this.expanded.add(identifier);
+    } else {
+      this.expanded.delete(identifier);
+    }
     return true;
   }
 
   /** Deliberately enumerate the persisted fields. Never spread a runtime tab into storage. */
   remember(): tab_memory {
+    const descriptors: remembered_tab[] = [];
+    for (const tab of this.current_tabs) {
+      const descriptor: remembered_tab = { id: tab.id, name: tab.name };
+      if (tab.profile_id !== undefined) {
+        descriptor.profile_id = tab.profile_id;
+      }
+      if (this.renamed_profiles.has(tab.id)) {
+        descriptor.renamed = true;
+      }
+      descriptors.push(descriptor);
+    }
     return {
       version: 1,
-      tabs: this.current_tabs.map(tab => ({
-        id: tab.id,
-        name: tab.name,
-        ...(tab.profile_id === undefined ? {} : { profile_id: tab.profile_id }),
-      })),
+      tabs: descriptors,
       ...(this.selected_id === undefined ? {} : { active_id: this.selected_id }),
       expanded_ids: this.expanded_ids,
       next_number: this.next_number,
@@ -178,12 +243,16 @@ export class sidebar_tabs {
   }
 
   private assert_capacity(): void {
-    if (this.current_tabs.length >= maximum_tabs) throw new Error('Each sidebar supports at most 64 open terminal tabs. Close one before adding another.');
+    if (this.current_tabs.length >= maximum_tabs) {
+      throw new Error('Each sidebar supports at most 64 open terminal tabs. Close one before adding another.');
+    }
   }
 
   private create_identifier(): string {
     let identifier = `tab_${this.next_identifier++}`;
-    while (this.current_tabs.some(tab => tab.id === identifier)) identifier = `tab_${this.next_identifier++}`;
+    while (this.current_tabs.some(tab => tab.id === identifier)) {
+      identifier = `tab_${this.next_identifier++}`;
+    }
     return identifier;
   }
 }

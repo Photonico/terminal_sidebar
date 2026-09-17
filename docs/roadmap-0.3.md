@@ -1,6 +1,6 @@
 # Terminal Sidebar 0.3
 
-Status: implementation plan. The installed extension and package version remain at 0.2.0.
+Status: implementation specification. Runtime tab behaviour below supersedes the original first-expansion startup proposal.
 
 Version 0.3 separates the two sidebars. The left sidebar presents named terminal sections that expand vertically, following the organisation of Explorer. The right sidebar retains compact horizontal tabs. Each side has its own profiles and terminal processes.
 
@@ -37,7 +37,7 @@ Each heading displays the configured name. Expanding a section reveals its termi
 
 Use one Webview View containing these sections. This is an Explorer-style arrangement, rather than a collection of native Explorer panes. A native Tree View cannot contain an interactive xterm surface. Predeclaring many native Webview Views would introduce fixed slots and additional title and layout state; it is unnecessary for the requested arrangement.
 
-A terminal starts on its first explicit expansion. Collapsing it preserves the process and output. Expanding it again does not resend the startup command. Restoring a list of expanded sections after reload must not silently start every saved command; restored sections without a running process show an explicit Start control.
+Configured startup tabs open when their sidebar is first used in a trusted workspace, including collapsed sections and background tabs. Opening configuration alone does not launch commands. Collapsing preserves the process and output; expanding again does not resend the startup command.
 
 Expanded sections share the available height, with a minimum usable terminal height and vertical scrolling when necessary. Only visible terminal surfaces are fitted; a collapsed or hidden surface must not resize its process to zero columns or rows. Closing a terminal stops that section's process and leaves its profile available for an explicit restart.
 
@@ -97,13 +97,13 @@ Resolve the tab and xterm backgrounds from the same theme value, including the s
 
 ## Migration from 0.2
 
-1. If the new setting exists, validate and use it. An explicitly empty group remains empty. Invalid new configuration reports an error and retains the last valid state; it must not silently fall back to old commands.
+1. If the new setting exists, validate and use it. An explicitly empty startup group remains empty; remembered runtime shells may still be restored. Invalid new configuration reports an error and retains the last valid state; it must not silently fall back to old commands.
 2. If only `terminalSidebar.profiles` exists, read it as the right-side list. Start the left list empty. Preserve profile identifiers, names, command text, shell selections, and ordering.
 3. Do not write settings during activation or start terminals merely to migrate configuration. The first explicit configuration save writes the new object. Keep the legacy value for an explicit downgrade; once the new setting exists, it is inactive.
 4. A new installation starts with one ordinary shell profile on the right and an empty left group. Reading defaults must not accidentally hide a user's legacy setting; inspect the explicit User value before applying defaults.
 5. Keep `terminalSidebar.openProfile` and its `{ "id": "...", "side": "left" | "right" }` argument form. An omitted side continues to mean right. Resolve a profile only within the requested side.
 
-User settings can continue through VS Code Settings Sync. Running processes, terminal output, selection, and expanded-section state remain local to the workspace window. Installed shells and CLI credentials remain managed on each execution host. Downgrading to 0.2 reads the retained old configuration; new 0.3 edits are not silently written back to that legacy setting.
+User settings can continue through VS Code Settings Sync. Running processes and output stay in memory. Tab descriptors, selection, and expanded-section state are remembered in workspace-local VS Code storage. Installed shells and CLI credentials remain managed on each execution host. Downgrading to 0.2 reads the retained old configuration; new 0.3 edits are not silently written back to that legacy setting.
 
 ## Implementation and acceptance
 
@@ -123,6 +123,12 @@ Acceptance checks must cover observable behaviour:
 - Shell discovery still leaves the default and custom executable selections intact.
 - Light, dark, and high-contrast themes show the selected tab joined to its terminal. The unselected hover background is visibly smaller without moving text or changing the hit area. Focus, long names, narrow widths, and window scaling remain usable.
 - The existing process cleanup and Workspace Trust checks pass on macOS, Windows, and Linux. Native VS Code tests confirm view registration and commands; visual checks establish layout separately.
+
+## Runtime tabs added to the scope
+
+Startup definitions and current tabs are separate. The right strip provides + and ×; blank-space double click adds an ordinary tab, and middle click closes the targeted tab. Closing never deletes startup settings. New tabs use the default shell and names Term 0, Term 1, and so on, independently on each side.
+
+Workspace memory stores tab identifiers, names, order, selection, expanded sections, and the next number. It excludes shell input, terminal output, credentials, and startup command copies. On a new window, restore ordinary tabs as fresh shells and reopen all currently configured startup profiles. Existing open tabs retain their launch settings when startup configuration changes.
 
 ## References
 

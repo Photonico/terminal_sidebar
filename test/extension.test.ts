@@ -1,24 +1,23 @@
 import assert from 'node:assert/strict';
-import { createRequire } from 'node:module';
+import { createRequire as create_require } from 'node:module';
 import * as path from 'node:path';
 import { test } from 'node:test';
-import { setImmediate as nextTurn } from 'node:timers/promises';
-import { runInNewContext } from 'node:vm';
+import { setImmediate as next_turn, setTimeout as delay } from 'node:timers/promises';
+import { runInNewContext as run_in_new_context } from 'node:vm';
 import { build } from 'esbuild';
 import type * as vscode from 'vscode';
-import type { ClientMessage, HostMessage, Profile } from '../src/types';
-import type { PtyProcess, PtySpawnOptions } from '../src/sessions';
+import type { client_message, host_message, sidebar_configuration, sidebar_side, terminal_profile } from '../src/types';
+import type { pty_process, pty_spawn_options } from '../src/sessions';
 
-const ROOT = path.resolve(__dirname, '..');
-const requireBuiltin = createRequire(path.join(ROOT, 'package.json'));
-const VIEW_IDS = { left: 'terminalSidebar.left', right: 'terminalSidebar.terminals' } as const;
-type Side = keyof typeof VIEW_IDS;
-type Disposable = { dispose(): void };
+const repository_root = path.resolve(__dirname, '..');
+const require_builtin = create_require(path.join(repository_root, 'package.json'));
+const view_ids = { left: 'terminalSidebar.left', right: 'terminalSidebar.terminals' } as const;
+type disposable = { dispose(): void };
 
-// Exercise the real extension and SessionManager together. Only the VS Code host,
-// OS shell lookup, and native process boundary are replaced; no CLI is executed.
-const bundledHost = build({
-  entryPoints: [path.join(ROOT, 'src/extension.ts')],
+// Execute the real controller, tab model and process manager together. Replace only
+// the VS Code host, shell lookup and native process boundary. No CLI runs here.
+const bundled_host = build({
+  entryPoints: [path.join(repository_root, 'src/extension.ts')],
   bundle: true,
   write: false,
   platform: 'node',
@@ -27,116 +26,171 @@ const bundledHost = build({
   plugins: [{
     name: 'host-test-operating-system-boundaries',
     setup(builder) {
-      builder.onResolve({ filter: /^\.\/(discovery|shell)$/ }, args => ({ path: args.path, namespace: 'host-test' }));
-      builder.onLoad({ filter: /.*/, namespace: 'host-test' }, args => ({ contents: args.path === './discovery'
-        ? 'exports.discoverShells = async () => [];'
-        : 'exports.resolveShell = (_selection, options) => ({ file: "test-shell", args: [], env: options.env });'
+      builder.onResolve({ filter: /^\.\/(discovery|shell)$/ }, arguments_object => ({
+        path: arguments_object.path,
+        namespace: 'host-test',
       }));
-    }
-  }]
+      builder.onLoad({ filter: /.*/, namespace: 'host-test' }, arguments_object => ({
+        contents: arguments_object.path === './discovery'
+          ? 'exports.discover_shells = async () => [];'
+          : 'exports.resolve_shell = (_selection, options) => ({ file: "test-shell", args: [], env: options.env });',
+      }));
+    },
+  }],
 }).then(result => result.outputFiles[0].text);
 
-class Event<T> {
-  readonly listeners = new Set<(value: T) => void>();
-  readonly subscribe = (listener: (value: T) => void): Disposable => {
+class event_source<value_type> {
+  readonly listeners = new Set<(value: value_type) => void>();
+  readonly subscribe = (listener: (value: value_type) => void): disposable => {
     this.listeners.add(listener);
     return { dispose: () => { this.listeners.delete(listener); } };
   };
-  fire(value: T): void { for (const listener of [...this.listeners]) listener(value); }
+
+  fire(value: value_type): void {
+    for (const listener of [...this.listeners]) listener(value);
+  }
 }
 
-class FakePty implements PtyProcess {
+class fake_terminal_process implements pty_process {
   readonly writes: string[] = [];
   readonly sizes: Array<[number, number]> = [];
-  readonly data = new Event<string>();
-  readonly exit = new Event<{ exitCode: number }>();
+  readonly data = new event_source<string>();
+  readonly exit = new event_source<{ exitCode: number }>();
   readonly onData = this.data.subscribe;
   readonly onExit = this.exit.subscribe;
   killed = 0;
+
   write(value: string): void { this.writes.push(value); }
-  resize(cols: number, rows: number): void { this.sizes.push([cols, rows]); }
+  resize(columns: number, rows: number): void { this.sizes.push([columns, rows]); }
   kill(): void { this.killed++; }
 }
 
-class FakeView {
+class fake_view {
   visible = true;
   title?: string;
-  readonly messages: HostMessage[] = [];
-  readonly incoming = new Event<unknown>();
-  readonly visibility = new Event<void>();
-  readonly disposal = new Event<void>();
+  readonly messages: host_message[] = [];
+  readonly incoming = new event_source<unknown>();
+  readonly visibility = new event_source<void>();
+  readonly disposal = new event_source<void>();
   readonly onDidChangeVisibility = this.visibility.subscribe;
   readonly onDidDispose = this.disposal.subscribe;
   readonly webview = {
-    options: {}, html: '', cspSource: 'vscode-webview://host-test',
+    options: {},
+    html: '',
+    cspSource: 'vscode-webview://host-test',
     asWebviewUri: (uri: unknown) => uri,
     onDidReceiveMessage: this.incoming.subscribe,
-    postMessage: async (message: HostMessage) => { this.messages.push(structuredClone(message)); return true; }
+    postMessage: async (message: host_message) => {
+      this.messages.push(structuredClone(message));
+      return true;
+    },
   };
-  async send(message: ClientMessage): Promise<void> {
+
+  async send(message: client_message): Promise<void> {
     this.incoming.fire(message);
-    // The public message callback returns void and starts an async host handler.
-    // Flush its promise continuations without waiting for terminal-output timers.
-    await nextTurn();
+    // The public event returns void. Flush its handler without advancing output timers.
+    await next_turn();
   }
-  hide(): void { this.visible = false; this.visibility.fire(); }
-  dispose(): void { this.visible = false; this.disposal.fire(); }
-  state(): Extract<HostMessage, { type: 'state' }> {
-    const state = [...this.messages].reverse().find(message => message.type === 'state');
-    assert.ok(state?.type === 'state', 'view has received a state snapshot');
-    return state;
+
+  hide(): void {
+    this.visible = false;
+    this.visibility.fire();
+  }
+
+  show(): void {
+    this.visible = true;
+    this.visibility.fire();
+  }
+
+  dispose(): void {
+    this.visible = false;
+    this.disposal.fire();
+  }
+
+  state(): Extract<host_message, { type: 'state' }> {
+    const latest_state = [...this.messages].reverse().find(message => message.type === 'state');
+    assert.ok(latest_state?.type === 'state', 'view has received a state snapshot');
+    return latest_state;
+  }
+
+  output(): Extract<host_message, { type: 'output' }>[] {
+    return this.messages.filter(message => message.type === 'output');
   }
 }
 
-const initialProfiles: Profile[] = [
-  { id: 'one', name: 'One', command: 'echo FIRST_START', shell: '' },
-  { id: 'two', name: 'Two', command: 'echo SECOND_START', shell: '' }
-];
+const initial_configuration: sidebar_configuration = {
+  left: [
+    { id: 'one', name: 'Left One', command: 'echo LEFT_START', shell: '' },
+    { id: 'two', name: 'Left Two', command: 'echo LEFT_SECOND', shell: '' },
+  ],
+  right: [
+    { id: 'one', name: 'Right One', command: 'echo RIGHT_START', shell: '' },
+    { id: 'two', name: 'Right Two', command: 'echo RIGHT_SECOND', shell: '' },
+  ],
+};
 
-async function harness() {
-  let profiles = structuredClone(initialProfiles);
-  const updates: Profile[][] = [];
-  const commands = new Map<string, (...args: unknown[]) => unknown>();
+interface harness_options {
+  configuration?: sidebar_configuration;
+  legacy_profiles?: terminal_profile[];
+  memory?: Map<string, unknown>;
+  trusted?: boolean;
+}
+
+async function harness(options: harness_options = {}) {
+  let configuration_value = options.legacy_profiles === undefined
+    ? structuredClone(options.configuration ?? initial_configuration)
+    : undefined;
+  const legacy_profiles = structuredClone(options.legacy_profiles);
+  const updates: sidebar_configuration[] = [];
+  const commands = new Map<string, (...arguments_list: unknown[]) => unknown>();
   const providers = new Map<string, vscode.WebviewViewProvider>();
   const executions: Array<{ id: string; args: unknown[] }> = [];
-  const processes: FakePty[] = [];
-  const spawns: PtySpawnOptions[] = [];
-  const subscriptions: Disposable[] = [];
-  const configuration = new Event<{ affectsConfiguration(section: string): boolean }>();
-  const trust = new Event<void>();
-  const state = new Map<string, unknown>();
+  const processes: fake_terminal_process[] = [];
+  const spawns: pty_spawn_options[] = [];
+  const subscriptions: disposable[] = [];
+  const configuration_changed = new event_source<{ affectsConfiguration(section: string): boolean }>();
+  const trust_granted = new event_source<void>();
+  const memory = new Map<string, unknown>(structuredClone(options.memory ?? new Map()));
+  const errors: string[] = [];
   const api = {
     ConfigurationTarget: { Global: 1 },
     Uri: {
       joinPath: (base: string, ...parts: string[]) => [base, ...parts].join('/'),
-      file: (fsPath: string) => ({ fsPath })
+      file: (fsPath: string) => ({ fsPath }),
     },
     workspace: {
-      isTrusted: true,
+      isTrusted: options.trusted ?? true,
       workspaceFolders: [],
-      onDidChangeConfiguration: configuration.subscribe,
-      onDidGrantWorkspaceTrust: trust.subscribe,
+      onDidChangeConfiguration: configuration_changed.subscribe,
+      onDidGrantWorkspaceTrust: trust_granted.subscribe,
       getConfiguration: (section: string) => ({
         get: (_key: string, fallback?: unknown) => fallback,
-        inspect: (key: string) => section === 'terminalSidebar' && key === 'profiles' ? { globalValue: profiles } : undefined,
-        update: async (key: string, value: Profile[], target: number) => {
-          assert.equal(section, 'terminalSidebar'); assert.equal(key, 'profiles'); assert.equal(target, 1);
-          profiles = structuredClone(value);
+        inspect: (key: string) => {
+          if (section !== 'terminalSidebar') return undefined;
+          if (key === 'sidebars') return { globalValue: configuration_value };
+          if (key === 'profiles') return { globalValue: legacy_profiles };
+          return undefined;
+        },
+        update: async (key: string, value: sidebar_configuration, target: number) => {
+          assert.equal(section, 'terminalSidebar');
+          assert.equal(key, 'sidebars');
+          assert.equal(target, 1);
+          configuration_value = structuredClone(value);
           updates.push(structuredClone(value));
-          configuration.fire({ affectsConfiguration: item => item === 'terminalSidebar.profiles' });
-        }
-      })
+          configuration_changed.fire({ affectsConfiguration: item => item === 'terminalSidebar.sidebars' });
+        },
+      }),
     },
     commands: {
-      registerCommand: (id: string, callback: (...args: unknown[]) => unknown) => {
+      registerCommand: (id: string, callback: (...arguments_list: unknown[]) => unknown) => {
         assert.ok(!commands.has(id), `command ${id} is registered once`);
         commands.set(id, callback);
         return { dispose: () => { commands.delete(id); } };
       },
-      executeCommand: async (id: string, ...args: unknown[]) => {
-        executions.push({ id, args });
-        return commands.get(id)?.(...args);
-      }
+      executeCommand: async (id: string, ...arguments_list: unknown[]) => {
+        executions.push({ id, args: arguments_list });
+        return commands.get(id)?.(...arguments_list);
+      },
     },
     window: {
       registerWebviewViewProvider: (id: string, provider: vscode.WebviewViewProvider) => {
@@ -144,165 +198,311 @@ async function harness() {
         providers.set(id, provider);
         return { dispose: () => { providers.delete(id); } };
       },
-      showErrorMessage: async (message: string) => { throw new Error(message); },
+      showErrorMessage: async (message: string) => { errors.push(message); },
       showWarningMessage: async (_message: string, _options: unknown, first: string) => first,
-      showQuickPick: async () => undefined
-    }
+      showQuickPick: async () => undefined,
+    },
   };
   const context = {
     subscriptions,
     extensionUri: 'vscode-extension://terminal-sidebar',
-    workspaceState: { get: (key: string) => state.get(key), update: async (key: string, value: unknown) => { state.set(key, value); } }
+    workspaceState: {
+      get: (key: string) => structuredClone(memory.get(key)),
+      update: async (key: string, value: unknown) => { memory.set(key, structuredClone(value)); },
+    },
   };
-  const module = { exports: {} as { activate(context: vscode.ExtensionContext): void } };
-  runInNewContext(await bundledHost, {
-    module, exports: module.exports, Buffer, process, setTimeout, clearTimeout,
+  const host_module = { exports: {} as { activate(context: vscode.ExtensionContext): void } };
+  run_in_new_context(await bundled_host, {
+    module: host_module,
+    exports: host_module.exports,
+    Buffer,
+    process,
+    setTimeout,
+    clearTimeout,
     require: (id: string) => {
       if (id === 'vscode') return api;
-      if (id === 'node-pty') return { spawn: (_file: string, _args: string[], options: PtySpawnOptions) => {
-        spawns.push(structuredClone(options));
-        const pty = new FakePty(); processes.push(pty); return pty;
-      } };
+      if (id === 'node-pty') {
+        return { spawn: (_file: string, _arguments: string[], spawn_options: pty_spawn_options) => {
+          spawns.push(structuredClone(spawn_options));
+          const terminal_process = new fake_terminal_process();
+          processes.push(terminal_process);
+          return terminal_process;
+        } };
+      }
       assert.ok(id.startsWith('node:'), `unexpected host dependency ${id}`);
-      return requireBuiltin(id);
-    }
-  }, { filename: 'terminal-sidebar-host-test.cjs' });
-  module.exports.activate(context as unknown as vscode.ExtensionContext);
-  await nextTurn();
-  return {
-    api, commands, providers, executions, processes, spawns, updates, state,
-    profiles: () => structuredClone(profiles),
-    replaceProfiles: (next: Profile[]) => {
-      profiles = structuredClone(next);
-      configuration.fire({ affectsConfiguration: item => item === 'terminalSidebar.profiles' });
+      return require_builtin(id);
     },
-    async view(side: Side) {
-      const provider = providers.get(VIEW_IDS[side]);
+  }, { filename: 'terminal-sidebar-host-test.cjs' });
+  host_module.exports.activate(context as unknown as vscode.ExtensionContext);
+  await next_turn();
+
+  return {
+    api, commands, providers, executions, processes, spawns, updates, memory, errors,
+    configuration: () => structuredClone(configuration_value),
+    replace_configuration: (next_configuration: sidebar_configuration) => {
+      configuration_value = structuredClone(next_configuration);
+      configuration_changed.fire({ affectsConfiguration: item => item === 'terminalSidebar.sidebars' });
+    },
+    grant_trust: async () => {
+      api.workspace.isTrusted = true;
+      trust_granted.fire();
+      await next_turn();
+    },
+    async view(side: sidebar_side) {
+      const provider = providers.get(view_ids[side]);
       assert.ok(provider, `${side} provider registered`);
-      const view = new FakeView();
+      const view = new fake_view();
       await provider.resolveWebviewView(view as unknown as vscode.WebviewView, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
       await view.send({ type: 'ready' });
       return view;
     },
-    async command(id: string, ...args: unknown[]) {
-      const command = commands.get(id); assert.ok(command, `command ${id} is registered`);
-      await command(...args); await nextTurn();
+    async command(id: string, ...arguments_list: unknown[]) {
+      const command = commands.get(id);
+      assert.ok(command, `command ${id} is registered`);
+      await command(...arguments_list);
+      await next_turn();
     },
-    dispose() { for (const disposable of subscriptions.splice(0).reverse()) disposable.dispose(); }
+    dispose() {
+      for (const subscription of subscriptions.splice(0).reverse()) subscription.dispose();
+    },
   };
 }
 
-test('both sidebars share one PTY per profile and run the startup command only once', async t => {
-  const h = await harness(); t.after(() => h.dispose());
-  assert.deepEqual([...h.providers.keys()].sort(), Object.values(VIEW_IDS).sort());
-  const left = await h.view('left');
-  await left.send({ type: 'activate', id: 'one', cols: 80, rows: 24 });
-  const right = await h.view('right');
-  await right.send({ type: 'activate', id: 'one', cols: 100, rows: 30 });
-  await right.send({ type: 'activate', id: 'one', cols: 100, rows: 30 });
-  assert.equal(h.processes.length, 1);
-  assert.deepEqual(h.processes[0].writes, ['echo FIRST_START\r']);
-  assert.equal(left.state().sessions[0].status, 'running');
-  assert.equal(right.state().sessions[0].status, 'running');
-  // A newly resolved surface gets prior output once while the existing surface
-  // receives its pending batch once. This catches cross-view replay duplication.
-  right.dispose();
-  h.processes[0].data.fire('shared output');
-  const reopened = await h.view('right');
-  for (const view of [left, reopened])
-    assert.deepEqual(view.messages.filter(message => message.type === 'output'), [{ type: 'output', id: 'one', data: 'shared output' }]);
-});
-
-test('profile selection is independent on each surface and name/id opening retains sessions', async t => {
-  const h = await harness(); t.after(() => h.dispose());
-  const left = await h.view('left'); const right = await h.view('right');
-  await left.send({ type: 'activate', id: 'one', cols: 80, rows: 24 });
-  await right.send({ type: 'activate', id: 'two', cols: 100, rows: 30 });
-  assert.equal(left.state().activeId, 'one'); assert.equal(right.state().activeId, 'two');
-  assert.equal(h.state.get('activeProfile.left'), 'one'); assert.equal(h.state.get('activeProfile.right'), 'two');
-  assert.equal(h.processes.length, 2);
-  await h.command('terminalSidebar.openProfile', 'One');
-  assert.equal(right.state().activeId, 'one'); assert.equal(left.state().activeId, 'one');
-  await h.command('terminalSidebar.openProfile', { id: 'two', side: 'left' });
-  assert.equal(left.state().activeId, 'two'); assert.equal(right.state().activeId, 'one');
-  assert.equal(h.processes.length, 2, 'selecting an existing profile does not restart either process');
-  assert.deepEqual(h.processes.map(pty => pty.writes), [['echo FIRST_START\r'], ['echo SECOND_START\r']]);
-});
-
-test('the focused visible surface owns resize and hidden surfaces cannot steal it', async t => {
-  const h = await harness(); t.after(() => h.dispose());
-  const left = await h.view('left'); const right = await h.view('right');
-  await left.send({ type: 'activate', id: 'one', cols: 80, rows: 24 });
-  await right.send({ type: 'activate', id: 'one', cols: 100, rows: 30 });
-  const pty = h.processes[0];
-  assert.deepEqual(pty.sizes, [], 'showing another surface does not override the current size owner');
-  await right.send({ type: 'resize', id: 'one', cols: 101, rows: 31 });
-  assert.deepEqual(pty.sizes, []);
-  await right.send({ type: 'focus', id: 'one' });
-  assert.deepEqual(pty.sizes, [[101, 31]], 'focus applies the stored dimensions of that surface');
-  await left.send({ type: 'resize', id: 'one', cols: 81, rows: 25 });
-  assert.deepEqual(pty.sizes, [[101, 31]]);
-  right.hide();
-  await right.send({ type: 'resize', id: 'one', cols: 5, rows: 2 });
-  await left.send({ type: 'focus', id: 'one' });
-  assert.deepEqual(pty.sizes, [[101, 31], [81, 25]]);
-  await right.send({ type: 'focus', id: 'one' });
-  await right.send({ type: 'resize', id: 'one', cols: 6, rows: 3 });
-  await left.send({ type: 'resize', id: 'one', cols: 82, rows: 26 });
-  assert.deepEqual(pty.sizes, [[101, 31], [81, 25], [82, 26]], 'a queued focus from the hidden view cannot take ownership');
-});
-
-test('both configuration gears open the left editor, and draft actions target that editor', async t => {
-  const h = await harness(); t.after(() => h.dispose());
-  const left = await h.view('left'); const right = await h.view('right');
-  for (const side of ['left', 'right'] as const) {
-    await h.command(`terminalSidebar.${side}.configure`);
-    assert.equal(h.executions.at(-1)?.id, 'terminalSidebar.left.focus');
-  }
-  assert.equal(left.messages.filter(message => message.type === 'configure').length, 2);
-  assert.equal(right.messages.filter(message => message.type === 'configure').length, 0);
-  await right.send({ type: 'configure' });
-  assert.equal(left.messages.filter(message => message.type === 'configure').length, 3);
-  await left.send({ type: 'draftState', configuring: true, canUndo: true, canRedo: false });
-  assert.deepEqual(h.executions.slice(-3).map(item => item.args), [
-    ['terminalSidebar.left.configuring', true], ['terminalSidebar.left.canUndo', true], ['terminalSidebar.left.canRedo', false]
+test('sidebars own separate processes even with the same profile and runtime IDs; every startup tab starts once', async test_case => {
+  const runtime = await harness();
+  test_case.after(() => runtime.dispose());
+  assert.deepEqual([...runtime.providers.keys()].sort(), Object.values(view_ids).sort());
+  assert.equal(runtime.processes.length, 0, 'activation alone runs no shell');
+  const left = await runtime.view('left');
+  assert.deepEqual(runtime.processes.map(terminal => terminal.writes), [['echo LEFT_START\r'], ['echo LEFT_SECOND\r']]);
+  const right = await runtime.view('right');
+  assert.equal(left.state().tabs[0].id, right.state().tabs[0].id, 'IDs may safely repeat across isolated sides');
+  assert.deepEqual(runtime.processes.map(terminal => terminal.writes), [
+    ['echo LEFT_START\r'], ['echo LEFT_SECOND\r'], ['echo RIGHT_START\r'], ['echo RIGHT_SECOND\r'],
   ]);
-  for (const action of ['save', 'undo', 'redo', 'close']) await h.command(`terminalSidebar.left.${action}`);
-  assert.deepEqual(left.messages.filter(message => message.type === 'action'), ['save', 'undo', 'redo', 'close'].map(action => ({ type: 'action', action })));
+  for (const view of [left, right]) {
+    await view.send({ type: 'activate', id: view.state().tabs[0].id, cols: 80, rows: 24 });
+    view.hide();
+    view.show();
+  }
+  assert.equal(runtime.processes.length, 4, 'reactivation and visibility changes retain all running processes');
+  runtime.processes[0].data.fire('LEFT_OUTPUT');
+  runtime.processes[2].data.fire('RIGHT_OUTPUT');
+  await delay(20);
+  assert.deepEqual(left.output().map(message => message.data), ['LEFT_OUTPUT']);
+  assert.deepEqual(right.output().map(message => message.data), ['RIGHT_OUTPUT']);
 });
 
-test('stale configuration drafts cannot overwrite changes from another settings surface', async t => {
-  const h = await harness(); t.after(() => h.dispose());
-  const left = await h.view('left');
-  const baseline = h.profiles();
-  const elsewhere = baseline.map(profile => ({ ...profile, name: `${profile.name} elsewhere` }));
-  h.replaceProfiles(elsewhere);
-  const draft = baseline.map(profile => ({ ...profile, name: `${profile.name} draft` }));
-  await left.send({ type: 'save', profiles: draft, baseProfiles: baseline });
-  assert.deepEqual(h.updates, []);
-  assert.deepEqual(h.profiles(), elsewhere);
-  assert.ok(left.messages.some(message => message.type === 'error' && message.message.includes('Profiles changed elsewhere')));
-  assert.ok(!left.messages.some(message => message.type === 'saved'));
-  await left.send({ type: 'save', profiles: draft, baseProfiles: elsewhere });
-  assert.deepEqual(h.updates, [draft]);
-  assert.deepEqual(h.profiles(), draft);
+test('adding, renaming and closing runtime tabs never rewrites startup settings', async test_case => {
+  const runtime = await harness();
+  test_case.after(() => runtime.dispose());
+  const right = await runtime.view('right');
+  const startup_tab = right.state().tabs[0];
+  await right.send({ type: 'close_tab', id: startup_tab.id });
+  assert.equal(runtime.processes[0].killed, 1);
+  assert.ok(!right.state().tabs.some(tab => tab.id === startup_tab.id));
+  assert.deepEqual(right.state().configuration, initial_configuration);
+  await right.send({ type: 'add_tab' });
+  const temporary_tab = right.state().tabs.at(-1)!;
+  assert.equal(temporary_tab.name, 'Term 0');
+  assert.equal(temporary_tab.command, '');
+  assert.deepEqual(runtime.processes.at(-1)?.writes, [], 'temporary tabs are ordinary shells');
+  await right.send({ type: 'rename_tab', id: temporary_tab.id, name: 'Scratch' });
+  await right.send({ type: 'close_tab', id: temporary_tab.id });
+  await right.send({ type: 'add_tab' });
+  assert.equal(right.state().tabs.at(-1)?.name, 'Term 1');
+  assert.deepEqual(runtime.updates, []);
+  assert.deepEqual(runtime.configuration(), initial_configuration);
+  const left = await runtime.view('left');
+  await left.send({ type: 'add_tab' });
+  assert.equal(left.state().tabs.at(-1)?.name, 'Term 0', 'each side owns its numbering');
+});
+
+test('saving startup settings preserves live terminal names, processes and commands until the next window', async test_case => {
+  const runtime = await harness();
+  test_case.after(() => runtime.dispose());
+  const left = await runtime.view('left');
+  const right = await runtime.view('right');
+  const previous_tabs = right.state().tabs;
+  const updated_configuration: sidebar_configuration = {
+    left: [],
+    right: [{ id: 'replacement', name: 'Replacement', command: 'echo NEXT_WINDOW', shell: '' }],
+  };
+  await left.send({ type: 'save', configuration: updated_configuration, base_configuration: initial_configuration });
+  assert.deepEqual(runtime.updates, [updated_configuration]);
+  assert.deepEqual(right.state().tabs, previous_tabs);
+  assert.equal(runtime.processes.length, 4);
+  assert.ok(runtime.processes.every(terminal => terminal.killed === 0));
   assert.ok(left.messages.some(message => message.type === 'saved'));
+  const next_window = await harness({ configuration: updated_configuration, memory: runtime.memory });
+  test_case.after(() => next_window.dispose());
+  const next_right = await next_window.view('right');
+  assert.deepEqual(next_right.state().tabs.map(tab => tab.name), ['Replacement']);
+  assert.deepEqual(next_window.processes[0].writes, ['echo NEXT_WINDOW\r']);
 });
 
-test('untrusted workspaces cannot start a PTY, and extension disposal cleans both views and processes', async t => {
-  const h = await harness(); t.after(() => h.dispose());
-  const left = await h.view('left'); const right = await h.view('right');
-  h.api.workspace.isTrusted = false;
-  await left.send({ type: 'activate', id: 'one', cols: 80, rows: 24 });
-  assert.equal(h.processes.length, 0);
+test('stale startup drafts cannot overwrite another settings surface', async test_case => {
+  const runtime = await harness();
+  test_case.after(() => runtime.dispose());
+  const left = await runtime.view('left');
+  const elsewhere = structuredClone(initial_configuration);
+  elsewhere.right[0].name = 'Edited elsewhere';
+  runtime.replace_configuration(elsewhere);
+  const draft = structuredClone(initial_configuration);
+  draft.right[0].name = 'My draft';
+  await left.send({ type: 'save', configuration: draft, base_configuration: initial_configuration });
+  assert.deepEqual(runtime.updates, []);
+  assert.deepEqual(runtime.configuration(), elsewhere);
+  assert.ok(left.messages.some(message => message.type === 'error' && message.message.includes('changed elsewhere')));
+  await left.send({ type: 'save', configuration: draft, base_configuration: elsewhere });
+  assert.deepEqual(runtime.updates, [draft]);
+});
+
+test('workspace memory restores tab names and selection but stores neither typed input, output nor commands', async test_case => {
+  const runtime = await harness();
+  test_case.after(() => runtime.dispose());
+  const right = await runtime.view('right');
+  const startup_tab = right.state().tabs[0];
+  await right.send({ type: 'close_tab', id: startup_tab.id });
+  await right.send({ type: 'add_tab' });
+  const temporary_tab = right.state().tabs.at(-1)!;
+  await right.send({ type: 'rename_tab', id: temporary_tab.id, name: 'Scratch' });
+  await right.send({ type: 'input', id: temporary_tab.id, data: 'TYPED_SECRET\r' });
+  runtime.processes.at(-1)!.data.fire('OUTPUT_SECRET');
+  assert.deepEqual(runtime.processes.at(-1)?.writes, ['TYPED_SECRET\r']);
+  const serialized_memory = JSON.stringify([...runtime.memory.entries()]);
+  assert.doesNotMatch(serialized_memory, /TYPED_SECRET|OUTPUT_SECRET|echo RIGHT_START|command|shell/);
+  const next_window = await harness({ memory: runtime.memory });
+  test_case.after(() => next_window.dispose());
+  const reopened = await next_window.view('right');
+  assert.deepEqual(reopened.state().tabs.map(tab => tab.name), ['Right Two', 'Scratch', 'Right One']);
+  assert.equal(reopened.state().tabs.find(tab => tab.id === reopened.state().active_id)?.name, 'Scratch');
+  assert.deepEqual(next_window.processes.map(terminal => terminal.writes), [
+    ['echo RIGHT_SECOND\r'], [], ['echo RIGHT_START\r'],
+  ], 'startup settings reopen while remembered temporary tabs start clean shells');
+  await reopened.send({ type: 'add_tab' });
+  assert.equal(reopened.state().tabs.at(-1)?.name, 'Term 1');
+});
+
+test('hidden or collapsed surfaces cannot resize or type into their terminal', async test_case => {
+  const runtime = await harness();
+  test_case.after(() => runtime.dispose());
+  const left = await runtime.view('left');
+  const right = await runtime.view('right');
+  const left_identifier = left.state().tabs[0].id;
+  const right_identifier = right.state().tabs[0].id;
+  await left.send({ type: 'resize', id: left_identifier, cols: 91, rows: 31 });
+  await right.send({ type: 'resize', id: right_identifier, cols: 101, rows: 41 });
+  assert.deepEqual(runtime.processes[0].sizes, [[91, 31]]);
+  assert.deepEqual(runtime.processes[2].sizes, [[101, 41]]);
+  await left.send({ type: 'expanded', id: left_identifier, expanded: false });
+  await left.send({ type: 'resize', id: left_identifier, cols: 5, rows: 2 });
+  await left.send({ type: 'input', id: left_identifier, data: 'hidden input' });
+  right.hide();
+  await right.send({ type: 'resize', id: right_identifier, cols: 6, rows: 3 });
+  await right.send({ type: 'focus', id: right_identifier });
+  assert.deepEqual(runtime.processes[0].sizes, [[91, 31]]);
+  assert.deepEqual(runtime.processes[0].writes, ['echo LEFT_START\r']);
+  assert.deepEqual(runtime.processes[2].sizes, [[101, 41]]);
+  right.show();
+  await right.send({ type: 'select', id: right.state().tabs[1].id });
+  await right.send({ type: 'resize', id: right_identifier, cols: 7, rows: 4 });
+  assert.deepEqual(runtime.processes[2].sizes, [[101, 41]], 'inactive right tabs do not resize');
+  await left.send({ type: 'expanded', id: left_identifier, expanded: true });
+  await left.send({ type: 'resize', id: left_identifier, cols: 92, rows: 32 });
+  assert.deepEqual(runtime.processes[0].sizes, [[91, 31], [92, 32]]);
+});
+
+test('recreated views replay pending output once and retain their existing processes', async test_case => {
+  const runtime = await harness();
+  test_case.after(() => runtime.dispose());
+  const original = await runtime.view('right');
+  runtime.processes[0].data.fire('BEFORE_DISPOSAL');
+  original.dispose();
+  runtime.processes[0].data.fire('AFTER_DISPOSAL');
+  const recreated = await runtime.view('right');
+  await delay(20);
+  assert.deepEqual(recreated.output().map(message => message.data), ['BEFORE_DISPOSALAFTER_DISPOSAL']);
+  assert.equal(runtime.processes.length, 2);
+  runtime.processes[0].data.fire('NEW_OUTPUT');
+  await delay(20);
+  assert.deepEqual(recreated.output().map(message => message.data), ['BEFORE_DISPOSALAFTER_DISPOSAL', 'NEW_OUTPUT']);
+});
+
+test('both gears route to the left editor and opening configuration alone starts no terminal', async test_case => {
+  const runtime = await harness();
+  test_case.after(() => runtime.dispose());
+  await runtime.command('terminalSidebar.right.configure');
+  const left = await runtime.view('left');
+  assert.equal(runtime.processes.length, 0);
+  assert.ok(left.messages.some(message => message.type === 'configure'));
+  await left.send({ type: 'draft_state', configuring: true, can_undo: true, can_redo: false });
+  assert.deepEqual(runtime.executions.slice(-3).map(item => item.args), [
+    ['terminalSidebar.left.configuring', true],
+    ['terminalSidebar.left.canUndo', true],
+    ['terminalSidebar.left.canRedo', false],
+  ]);
+  for (const side of ['left', 'right'] as const) {
+    await runtime.command(`terminalSidebar.${side}.configure`);
+    assert.equal(runtime.executions.at(-1)?.id, 'terminalSidebar.left.focus');
+  }
+  for (const action of ['save', 'undo', 'redo', 'close']) {
+    await runtime.command(`terminalSidebar.left.${action}`);
+  }
+  assert.deepEqual(left.messages.filter(message => message.type === 'action'), [
+    { type: 'action', action: 'save' }, { type: 'action', action: 'undo' },
+    { type: 'action', action: 'redo' }, { type: 'action', action: 'close' },
+  ]);
+  assert.equal(runtime.processes.length, 0);
+  await left.send({ type: 'draft_state', configuring: false, can_undo: false, can_redo: false });
+  assert.equal(runtime.processes.length, 2, 'leaving configuration opens startup terminals once');
+});
+
+test('named startup commands select or reopen only their target side without changing configuration', async test_case => {
+  const runtime = await harness();
+  test_case.after(() => runtime.dispose());
+  const left = await runtime.view('left');
+  const right = await runtime.view('right');
+  await runtime.command('terminalSidebar.openProfile', 'Right Two');
+  assert.equal(right.state().tabs.find(tab => tab.id === right.state().active_id)?.profile_id, 'two');
+  assert.equal(left.state().tabs.find(tab => tab.id === left.state().active_id)?.profile_id, 'one');
+  const closed_identifier = left.state().tabs[0].id;
+  await left.send({ type: 'close_tab', id: closed_identifier });
+  await runtime.command('terminalSidebar.openProfile', { id: 'one', side: 'left' });
+  assert.equal(left.state().tabs.find(tab => tab.id === left.state().active_id)?.profile_id, 'one');
+  assert.equal(runtime.processes.length, 5);
+  assert.deepEqual(runtime.processes.at(-1)?.writes, ['echo LEFT_START\r']);
+  assert.deepEqual(runtime.updates, []);
+});
+
+test('workspace trust gates all startup terminals and disposal releases both sides once', async test_case => {
+  const runtime = await harness({ trusted: false });
+  test_case.after(() => runtime.dispose());
+  const left = await runtime.view('left');
+  const right = await runtime.view('right');
+  await left.send({ type: 'activate', id: left.state().tabs[0].id, cols: 80, rows: 24 });
+  assert.equal(runtime.processes.length, 0);
   assert.ok(left.messages.some(message => message.type === 'error' && message.message.includes('Trust')));
-  h.api.workspace.isTrusted = true;
-  await left.send({ type: 'activate', id: 'one', cols: 80, rows: 24 });
-  await right.send({ type: 'activate', id: 'two', cols: 100, rows: 30 });
-  assert.equal(h.processes.length, 2);
-  h.dispose();
-  assert.ok(h.processes.every(pty => pty.killed === 1));
-  assert.ok(h.processes.every(pty => pty.data.listeners.size === 0 && pty.exit.listeners.size === 0));
-  assert.equal(left.incoming.listeners.size, 0); assert.equal(right.incoming.listeners.size, 0);
-  assert.equal(h.commands.size, 0); assert.equal(h.providers.size, 0);
+  await runtime.grant_trust();
+  assert.equal(runtime.processes.length, 4);
+  await runtime.grant_trust();
+  assert.equal(runtime.processes.length, 4);
+  runtime.dispose();
+  assert.ok(runtime.processes.every(terminal => terminal.killed === 1));
+  assert.ok(runtime.processes.every(terminal => terminal.data.listeners.size === 0 && terminal.exit.listeners.size === 0));
+  assert.equal(left.incoming.listeners.size, 0);
+  assert.equal(right.incoming.listeners.size, 0);
+  assert.equal(runtime.commands.size, 0);
+  assert.equal(runtime.providers.size, 0);
+});
+
+test('legacy startup settings migrate to the right side without writing user settings', async test_case => {
+  const runtime = await harness({ legacy_profiles: initial_configuration.right });
+  test_case.after(() => runtime.dispose());
+  const left = await runtime.view('left');
+  const right = await runtime.view('right');
+  assert.deepEqual(left.state().tabs, []);
+  assert.deepEqual(right.state().tabs.map(tab => tab.name), ['Right One', 'Right Two']);
+  assert.equal(runtime.processes.length, 2);
+  assert.deepEqual(runtime.updates, []);
 });

@@ -59,7 +59,7 @@ app.innerHTML = `
   <div id="error-banner" role="alert" hidden><span id="error-message"></span><button id="dismiss-error" type="button" aria-label="Dismiss error">×</button></div>
   <main id="terminal-content">
     <div id="trust-panel" class="empty-panel" hidden><p>Trust this workspace to run terminals.</p><button id="trust-button" class="primary" type="button">Manage Workspace Trust</button></div>
-    <div id="empty-panel" class="empty-panel" hidden><p>No open terminals. Your startup configuration is unchanged.</p><button id="add-first-tab" class="primary" type="button">New terminal</button></div>
+    <div id="empty-panel" class="empty-panel" hidden><p>No open terminals. Your startup configuration is unchanged.</p><button id="add-first-tab" class="primary" type="button">New terminal</button><button id="configure-empty" class="secondary" type="button">Configure startup terminals</button></div>
     <div id="terminal-host"></div>
   </main>
   <footer id="session-status" role="status" aria-live="polite"><span id="status-dot"></span><span id="status-text">Loading terminals…</span></footer>
@@ -74,7 +74,9 @@ app.innerHTML = `
 
 function element<element_type extends HTMLElement = HTMLElement>(id: string): element_type {
   const found = document.getElementById(id);
-  if (!found) throw new Error(`Missing UI element: ${id}`);
+  if (!found) {
+    throw new Error(`Missing UI element: ${id}`);
+  }
   return found as element_type;
 }
 
@@ -114,6 +116,7 @@ let shells: shell_choice[] = [];
 let last_draft_state = '';
 let focused_terminal: string | undefined;
 let fit_frame = 0;
+let pending_focus: { operation: 'add' | 'close'; id?: string; previous_ids: Set<string> } | undefined;
 let appearance: terminal_appearance = {
   font_family: 'monospace', font_size: 13, cursor_blink: false, scrollback: 1000,
 };
@@ -146,6 +149,7 @@ function update_appearance(): void {
   const theme = terminal_theme();
   // Set this on #app, outside the theme observer, to avoid a mutation loop.
   app.style.setProperty('--view-background', theme.background ?? '#1e1e1e');
+  app.style.setProperty('--terminal-foreground', theme.foreground ?? '#cccccc');
   for (const { terminal } of terminal_views.values()) {
     terminal.options.fontFamily = appearance.font_family;
     terminal.options.fontSize = appearance.font_size;
@@ -157,7 +161,9 @@ function update_appearance(): void {
 }
 
 function is_visible_tab(id: string): boolean {
-  if (configuring || !trusted || document.hidden) return false;
+  if (configuring || !trusted || document.hidden) {
+    return false;
+  }
   return side === 'left' ? expanded_ids.has(id) : active_id === id;
 }
 
@@ -175,15 +181,21 @@ function ensure_terminal(tab: terminal_tab): terminal_view {
   pane.setAttribute('aria-label', tab.name);
   pane.hidden = !is_visible_tab(tab.id);
   pane.addEventListener('focusin', () => {
-    if (!trusted) return;
-    if (active_id !== tab.id) select_tab(tab.id);
+    if (!trusted) {
+      return;
+    }
+    if (active_id !== tab.id) {
+      select_tab(tab.id);
+    }
     if (focused_terminal !== tab.id) {
       focused_terminal = tab.id;
       send({ type: 'focus', id: tab.id });
     }
   });
   pane.addEventListener('focusout', event => {
-    if (!pane.contains(event.relatedTarget as Node | null)) focused_terminal = undefined;
+    if (!pane.contains(event.relatedTarget as Node | null)) {
+      focused_terminal = undefined;
+    }
   });
   terminal_host.append(pane);
 
@@ -201,23 +213,37 @@ function ensure_terminal(tab: terminal_tab): terminal_view {
   terminal.loadAddon(fit);
   terminal.open(pane);
   terminal.onData(data => {
-    if (trusted) send({ type: 'input', id: tab.id, data });
+    if (trusted) {
+      send({ type: 'input', id: tab.id, data });
+    }
   });
   terminal.onResize(({ cols, rows }) => {
-    if (is_visible_tab(tab.id)) send({ type: 'resize', id: tab.id, cols, rows });
+    if (is_visible_tab(tab.id)) {
+      send({ type: 'resize', id: tab.id, cols, rows });
+    }
   });
   // No audible bell handler or audio addon is installed.
   terminal.attachCustomKeyEventHandler(event => {
-    if (event.type !== 'keydown') return true;
+    if (event.type !== 'keydown') {
+      return true;
+    }
     const shortcut = is_mac
       ? event.metaKey && !event.ctrlKey && !event.altKey
       : event.ctrlKey && event.shiftKey && !event.altKey && !event.metaKey;
-    if (!shortcut) return true;
+    if (!shortcut) {
+      return true;
+    }
     const key = event.key.toLowerCase();
-    if (key !== 'c' && key !== 'v') return true;
+    if (key !== 'c' && key !== 'v') {
+      return true;
+    }
     event.preventDefault();
-    if (key === 'c') copy_selection(tab.id);
-    else if (trusted) send({ type: 'paste', id: tab.id });
+    if (key === 'c') {
+      copy_selection(tab.id);
+    }
+    else if (trusted) {
+      send({ type: 'paste', id: tab.id });
+    }
     return false;
   });
 
@@ -228,14 +254,22 @@ function ensure_terminal(tab: terminal_tab): terminal_view {
 
 /** Fit expanded left sections or the selected right tab, never a hidden pane. */
 function schedule_fit(): void {
-  if (fit_frame) return;
+  if (fit_frame) {
+    return;
+  }
   fit_frame = requestAnimationFrame(() => {
     fit_frame = 0;
-    if (configuring || !trusted || !terminal_host.clientWidth || !terminal_host.clientHeight) return;
+    if (configuring || !trusted || !terminal_host.clientWidth || !terminal_host.clientHeight) {
+      return;
+    }
     for (const tab of open_tabs) {
-      if (!is_visible_tab(tab.id)) continue;
+      if (!is_visible_tab(tab.id)) {
+        continue;
+      }
       const view = terminal_views.get(tab.id);
-      if (!view || view.pane.hidden || !view.pane.clientWidth || !view.pane.clientHeight) continue;
+      if (!view || view.pane.hidden || !view.pane.clientWidth || !view.pane.clientHeight) {
+        continue;
+      }
       view.fit.fit();
       if (!activated_views.has(tab.id) && view.terminal.cols > 0 && view.terminal.rows > 0) {
         activated_views.add(tab.id);
@@ -247,13 +281,19 @@ function schedule_fit(): void {
 
 function focus_terminal(id: string): void {
   requestAnimationFrame(() => {
-    if (is_visible_tab(id)) terminal_views.get(id)?.terminal.focus();
+    if (is_visible_tab(id)) {
+      terminal_views.get(id)?.terminal.focus();
+    } else if (side === 'left' && !configuring) {
+      terminal_views.get(id)?.section_button?.focus();
+    }
   });
 }
 
 /** User selection is sent once. Rendering a host selection does not send it back. */
 function select_tab(id: string, focus = false): void {
-  if (!open_tabs.some(tab => tab.id === id)) return;
+  if (!open_tabs.some(tab => tab.id === id)) {
+    return;
+  }
   if (active_id !== id) {
     active_id = id;
     send({ type: 'select', id });
@@ -262,30 +302,50 @@ function select_tab(id: string, focus = false): void {
   update_status();
   update_actions();
   schedule_fit();
-  if (focus) focus_terminal(id);
+  if (focus) {
+    focus_terminal(id);
+  }
 }
 
 function close_tab(id: string | undefined): void {
-  if (id && !saving) send({ type: 'close_tab', id });
+  if (!id || saving) {
+    return;
+  }
+  if (id === active_id) {
+    pending_focus = { operation: 'close', id, previous_ids: new Set() };
+  }
+  send({ type: 'close_tab', id });
 }
 
 function add_tab(): void {
-  if (trusted && !configuring && !saving) send({ type: 'add_tab' });
+  if (!trusted || configuring || saving) {
+    return;
+  }
+  pending_focus = { operation: 'add', previous_ids: new Set(open_tabs.map(tab => tab.id)) };
+  send({ type: 'add_tab' });
 }
 
 function set_expanded(id: string, expanded: boolean): void {
-  if (expanded) expanded_ids.add(id);
-  else expanded_ids.delete(id);
+  if (expanded) {
+    expanded_ids.add(id);
+  }
+  else {
+    expanded_ids.delete(id);
+  }
   send({ type: 'expanded', id, expanded });
   select_tab(id);
 }
 
 function attach_middle_close(button: HTMLElement, id: string): void {
   button.addEventListener('mousedown', event => {
-    if (event.button === 1) event.preventDefault();
+    if (event.button === 1) {
+      event.preventDefault();
+    }
   });
   button.addEventListener('auxclick', event => {
-    if (event.button !== 1) return;
+    if (event.button !== 1) {
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     close_tab(id);
@@ -315,15 +375,25 @@ function render_tabs(): void {
     button.addEventListener('keydown', event => {
       const current_index = open_tabs.findIndex(item => item.id === tab.id);
       let next_index: number;
-      if (event.key === 'ArrowRight') next_index = (current_index + 1) % open_tabs.length;
-      else if (event.key === 'ArrowLeft') next_index = (current_index - 1 + open_tabs.length) % open_tabs.length;
-      else if (event.key === 'Home') next_index = 0;
-      else if (event.key === 'End') next_index = open_tabs.length - 1;
+      if (event.key === 'ArrowRight') {
+        next_index = (current_index + 1) % open_tabs.length;
+      }
+      else if (event.key === 'ArrowLeft') {
+        next_index = (current_index - 1 + open_tabs.length) % open_tabs.length;
+      }
+      else if (event.key === 'Home') {
+        next_index = 0;
+      }
+      else if (event.key === 'End') {
+        next_index = open_tabs.length - 1;
+      }
       else if (event.key === 'Delete') {
         event.preventDefault();
         close_tab(tab.id);
         return;
-      } else return;
+      } else {
+        return;
+      }
       event.preventDefault();
       const next_id = open_tabs[next_index]!.id;
       select_tab(next_id);
@@ -331,8 +401,12 @@ function render_tabs(): void {
     });
     return button;
   }));
-  if (focused_id && open_tabs.some(tab => tab.id === focused_id)) element(`tab-${focused_id}`).focus();
-  if (active_id) document.getElementById(`tab-${active_id}`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  if (focused_id && open_tabs.some(tab => tab.id === focused_id)) {
+    element(`tab-${focused_id}`).focus();
+  }
+  if (active_id) {
+    document.getElementById(`tab-${active_id}`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }
 }
 
 function ensure_section(tab: terminal_tab, view: terminal_view): void {
@@ -366,11 +440,21 @@ function ensure_section(tab: terminal_tab, view: terminal_view): void {
       }
       const index = open_tabs.findIndex(item => item.id === tab.id);
       let next_index: number;
-      if (event.key === 'ArrowDown') next_index = (index + 1) % open_tabs.length;
-      else if (event.key === 'ArrowUp') next_index = (index - 1 + open_tabs.length) % open_tabs.length;
-      else if (event.key === 'Home') next_index = 0;
-      else if (event.key === 'End') next_index = open_tabs.length - 1;
-      else return;
+      if (event.key === 'ArrowDown') {
+        next_index = (index + 1) % open_tabs.length;
+      }
+      else if (event.key === 'ArrowUp') {
+        next_index = (index - 1 + open_tabs.length) % open_tabs.length;
+      }
+      else if (event.key === 'Home') {
+        next_index = 0;
+      }
+      else if (event.key === 'End') {
+        next_index = open_tabs.length - 1;
+      }
+      else {
+        return;
+      }
       event.preventDefault();
       element(`section-${open_tabs[next_index]!.id}`).focus();
     });
@@ -394,7 +478,6 @@ function ensure_section(tab: terminal_tab, view: terminal_view): void {
   const close_button = view.section!.querySelector<HTMLButtonElement>('.section-close')!;
   close_button.title = `Close ${tab.name}`;
   close_button.setAttribute('aria-label', close_button.title);
-  terminal_host.append(view.section!);
 }
 
 function render_terminals(): void {
@@ -407,12 +490,25 @@ function render_terminals(): void {
       activated_views.delete(id);
     }
   }
-  if (side === 'right') render_tabs();
-  else tab_strip.replaceChildren();
-  if (!trusted) return;
-  for (const tab of open_tabs) {
+  if (side === 'right') {
+    render_tabs();
+  }
+  else {
+    tab_strip.replaceChildren();
+  }
+  if (!trusted) {
+    return;
+  }
+  for (const [index, tab] of open_tabs.entries()) {
     const view = ensure_terminal(tab);
-    if (side === 'left') ensure_section(tab, view);
+    if (side === 'left') {
+      ensure_section(tab, view);
+      // Preserve focused descendants when the section is already in place.
+      const current_section = terminal_host.children[index] ?? null;
+      if (current_section !== view.section) {
+        terminal_host.insertBefore(view.section!, current_section);
+      }
+    }
     view.pane.hidden = !is_visible_tab(tab.id);
   }
 }
@@ -447,17 +543,31 @@ function update_status(): void {
   const session = active_id ? sessions.get(active_id) : undefined;
   const status = element('status-text');
   element('status-dot').dataset.status = trusted ? session?.status ?? 'idle' : 'idle';
-  if (!received_state) status.textContent = 'Loading terminals…';
-  else if (!trusted) status.textContent = 'Workspace trust required';
-  else if (!active_id) status.textContent = 'No open terminals';
-  else if (session?.message) status.textContent = session.message;
-  else if (session?.status === 'running') status.textContent = 'Running';
+  if (!received_state) {
+    status.textContent = 'Loading terminals…';
+  }
+  else if (!trusted) {
+    status.textContent = 'Workspace trust required';
+  }
+  else if (!active_id) {
+    status.textContent = 'No open terminals';
+  }
+  else if (session?.message) {
+    status.textContent = session.message;
+  }
+  else if (session?.status === 'running') {
+    status.textContent = 'Running';
+  }
   else if (session?.status === 'exited') {
     status.textContent = session.exit_code === undefined
       ? 'Stopped · Restart to run again'
       : `Exited (${session.exit_code}) · Restart to run again`;
-  } else if (session?.status === 'error') status.textContent = 'Terminal could not start';
-  else status.textContent = 'Starting terminal…';
+  } else if (session?.status === 'error') {
+    status.textContent = 'Terminal could not start';
+  }
+  else {
+    status.textContent = 'Starting terminal…';
+  }
   status.title = status.textContent ?? '';
 }
 
@@ -480,12 +590,16 @@ function show_error(message: string): void {
 
 function copy_selection(id = active_id): void {
   const selection = id ? terminal_views.get(id)?.terminal.getSelection() : undefined;
-  if (selection) send({ type: 'copy', text: selection });
+  if (selection) {
+    send({ type: 'copy', text: selection });
+  }
 }
 
 function new_profile(profile_side: sidebar_side): terminal_profile {
   let number = draft.value[profile_side].length;
-  while (draft.value[profile_side].some(profile => profile.name === `${side_label(profile_side)} #${number}`)) number++;
+  while (draft.value[profile_side].some(profile => profile.name === `${side_label(profile_side)} #${number}`)) {
+    number++;
+  }
   return { id: crypto.randomUUID(), name: `${side_label(profile_side)} #${number}`, command: '', shell: '' };
 }
 
@@ -505,7 +619,9 @@ function open_configuration(): void {
 }
 
 function close_configuration(): void {
-  if (saving) return;
+  if (saving) {
+    return;
+  }
   configuring = false;
   draft.reset(startup_configuration);
   custom_shells.clear();
@@ -513,11 +629,15 @@ function close_configuration(): void {
   save_button.textContent = 'Save';
   render_content();
   schedule_fit();
-  if (active_id) focus_terminal(active_id);
+  if (active_id) {
+    focus_terminal(active_id);
+  }
 }
 
 function restore_draft_focus(previous: Element | null, start: number | null, end: number | null): void {
-  if (!(previous instanceof HTMLElement) || !previous.id) return;
+  if (!(previous instanceof HTMLElement) || !previous.id) {
+    return;
+  }
   const next = document.getElementById(previous.id);
   next?.focus();
   if (start !== null && end !== null && (next instanceof HTMLInputElement || next instanceof HTMLTextAreaElement)) {
@@ -528,7 +648,9 @@ function restore_draft_focus(previous: Element | null, start: number | null, end
 function update_draft(profile_side: sidebar_side, id: string, key: 'name' | 'command' | 'shell', value: string): void {
   draft.change(configuration => {
     const profile = configuration[profile_side].find(item => item.id === id);
-    if (profile) profile[key] = value;
+    if (profile) {
+      profile[key] = value;
+    }
   }, `${profile_side}:${id}:${key}`);
   update_actions();
 }
@@ -594,7 +716,9 @@ function render_profile_row(profile_side: sidebar_side, profile: terminal_profil
       input.maxLength = 8192;
       input.title = 'Runs once when a terminal is created from this startup profile, or restarted.';
     }
-    if (input instanceof HTMLTextAreaElement) input.rows = 1;
+    if (input instanceof HTMLTextAreaElement) {
+      input.rows = 1;
+    }
     input.addEventListener('input', () => update_draft(profile_side, profile.id, key, input.value));
     input.addEventListener('blur', () => draft.end_group());
     label.htmlFor = input.id;
@@ -620,28 +744,38 @@ function render_profile_row(profile_side: sidebar_side, profile: terminal_profil
     const item = document.createElement('option');
     item.value = value;
     item.textContent = text;
-    if (title) item.title = title;
+    if (title) {
+      item.title = title;
+    }
     select.append(item);
   }
 
   option('', 'Default shell');
-  for (const shell of shells) option(shell.path, `${shell.name} — ${shell.path}`, `${shell.source}: ${shell.path}`);
+  for (const shell of shells) {
+    option(shell.path, `${shell.name} — ${shell.path}`, `${shell.source}: ${shell.path}`);
+  }
   const matched_path = shells.some(shell => shell.path === profile.shell);
   const matched_name = profile.shell && shells.some(shell => shell.name.toLowerCase() === profile.shell.toLowerCase());
-  if (matched_name && !matched_path) option(profile.shell, `${profile.shell} (configured)`);
+  if (matched_name && !matched_path) {
+    option(profile.shell, `${profile.shell} (configured)`);
+  }
   const custom_key = `${profile_side}:${profile.id}`;
   const is_custom = custom_shells.has(custom_key) || Boolean(profile.shell && !matched_path && !matched_name);
   option('__custom__', 'Custom executable…');
   select.value = is_custom ? '__custom__' : profile.shell;
   select.addEventListener('change', () => {
     draft.end_group();
-    if (select.value === '__custom__') custom_shells.add(custom_key);
+    if (select.value === '__custom__') {
+      custom_shells.add(custom_key);
+    }
     else {
       custom_shells.delete(custom_key);
       update_draft(profile_side, profile.id, 'shell', select.value);
     }
     render_draft();
-    if (select.value === '__custom__') element<HTMLInputElement>(`${prefix}-shell`).focus();
+    if (select.value === '__custom__') {
+      element<HTMLInputElement>(`${prefix}-shell`).focus();
+    }
   });
   shell_group.append(label, select);
   if (is_custom) {
@@ -691,7 +825,9 @@ function render_draft(): void {
     add_button.textContent = `+ Add ${profile_side} startup profile`;
     add_button.disabled = saving || draft.value[profile_side].length >= maximum_profiles;
     add_button.addEventListener('click', () => {
-      if (saving || draft.value[profile_side].length >= maximum_profiles) return;
+      if (saving || draft.value[profile_side].length >= maximum_profiles) {
+        return;
+      }
       draft.change(configuration => configuration[profile_side].push(new_profile(profile_side)));
       render_draft();
       profile_groups.querySelector<HTMLInputElement>(`[data-side="${profile_side}"] .profile-row:last-of-type input`)?.focus();
@@ -711,7 +847,9 @@ function render_draft(): void {
 }
 
 function save_configuration(): void {
-  if (saving) return;
+  if (saving) {
+    return;
+  }
   const profiles = [...draft.value.left, ...draft.value.right];
   if (profiles.some(profile => !profile.name.trim())) {
     show_error('Give each startup profile a name before saving.');
@@ -733,19 +871,31 @@ function save_configuration(): void {
 }
 
 function export_output(): void {
-  if (!active_id) return;
+  if (!active_id) {
+    return;
+  }
   const buffer = terminal_views.get(active_id)?.terminal.buffer.active;
-  if (!buffer) return;
+  if (!buffer) {
+    return;
+  }
   // Join wrapped rows without inserting line breaks into long commands.
   const lines: string[] = [];
   for (let index = 0; index < buffer.length; index++) {
     const line = buffer.getLine(index);
-    if (!line) continue;
+    if (!line) {
+      continue;
+    }
     const text = line.translateToString(!buffer.getLine(index + 1)?.isWrapped);
-    if (line.isWrapped && lines.length) lines[lines.length - 1] += text;
-    else lines.push(text);
+    if (line.isWrapped && lines.length) {
+      lines[lines.length - 1] += text;
+    }
+    else {
+      lines.push(text);
+    }
   }
-  while (lines.length && !lines[lines.length - 1]) lines.pop();
+  while (lines.length && !lines[lines.length - 1]) {
+    lines.pop();
+  }
   const text = lines.join('\n') + (lines.length ? '\n' : '');
   if (text.length > maximum_export_characters) {
     show_error('Terminal text exceeds the 1 MiB export limit. Reduce scrollback before exporting.');
@@ -755,14 +905,26 @@ function export_output(): void {
 }
 
 function run_action(action: 'save' | 'undo' | 'redo' | 'close' | 'add'): void {
-  if (saving) return;
-  if (action === 'add') add_tab();
+  if (saving) {
+    return;
+  }
+  if (action === 'add') {
+    add_tab();
+  }
   else if (action === 'save') {
-    if (configuring) save_configuration();
-    else export_output();
+    if (configuring) {
+      save_configuration();
+    }
+    else {
+      export_output();
+    }
   } else if (action === 'close') {
-    if (configuring) close_configuration();
-    else close_tab(active_id);
+    if (configuring) {
+      close_configuration();
+    }
+    else {
+      close_tab(active_id);
+    }
   } else if (configuring && draft[action]()) {
     custom_shells.clear();
     render_draft();
@@ -785,6 +947,7 @@ tab_strip.addEventListener('wheel', event => {
 element('add-tab').addEventListener('click', add_tab);
 element('close-tab').addEventListener('click', () => close_tab(active_id));
 element('add-first-tab').addEventListener('click', add_tab);
+element('configure-empty').addEventListener('click', () => send({ type: 'configure' }));
 element('trust-button').addEventListener('click', () => send({ type: 'trust' }));
 element('dismiss-error').addEventListener('click', () => show_error(''));
 for (const action of ['save', 'undo', 'redo', 'close'] as const) {
@@ -798,7 +961,9 @@ element<HTMLFormElement>('profile-form').addEventListener('submit', event => {
 });
 configuration_panel.addEventListener('keydown', event => {
   const modifier = is_mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
-  if (!modifier || event.altKey || event.isComposing || saving) return;
+  if (!modifier || event.altKey || event.isComposing || saving) {
+    return;
+  }
   const key = event.key.toLowerCase();
   if (key === 's') {
     event.preventDefault();
@@ -814,7 +979,9 @@ configuration_panel.addEventListener('keydown', event => {
 
 window.addEventListener('message', (event: MessageEvent<host_message>) => {
   const message = event.data;
-  if (!message || typeof message.type !== 'string') return;
+  if (!message || typeof message.type !== 'string') {
+    return;
+  }
   switch (message.type) {
     case 'state': {
       received_state = true;
@@ -827,33 +994,58 @@ window.addEventListener('message', (event: MessageEvent<host_message>) => {
       appearance = message.appearance;
       shells = message.shells;
       sessions.clear();
-      for (const session of message.sessions) sessions.set(session.id, session);
+      for (const session of message.sessions) {
+        sessions.set(session.id, session);
+      }
       if (configuring && !saving) {
-        if (!draft.dirty && JSON.stringify(draft.base) !== JSON.stringify(startup_configuration)) draft.reset(startup_configuration);
+        if (!draft.dirty && JSON.stringify(draft.base) !== JSON.stringify(startup_configuration)) {
+          draft.reset(startup_configuration);
+        }
         render_draft();
       }
       render_content();
       update_appearance();
       schedule_fit();
+      if (pending_focus) {
+        const operation_finished = pending_focus.operation === 'add'
+          ? Boolean(active_id && !pending_focus.previous_ids.has(active_id))
+          : !open_tabs.some(tab => tab.id === pending_focus?.id);
+        if (operation_finished) {
+          pending_focus = undefined;
+          if (active_id && !configuring) {
+            focus_terminal(active_id);
+          } else if (!configuring) {
+            element('add-tab').focus();
+          }
+        }
+      }
       break;
     }
     case 'output': {
       const tab = open_tabs.find(item => item.id === message.id);
-      if (tab && trusted) ensure_terminal(tab).terminal.write(message.data);
+      if (tab && trusted) {
+        ensure_terminal(tab).terminal.write(message.data);
+      }
       break;
     }
     case 'session': {
       sessions.set(message.session.id, message.session);
       update_status();
       const tab = document.getElementById(`tab-${message.session.id}`);
-      if (tab) tab.dataset.status = message.session.status;
+      if (tab) {
+        tab.dataset.status = message.session.status;
+      }
       const section = terminal_views.get(message.session.id)?.section;
-      if (section) section.dataset.status = message.session.status;
+      if (section) {
+        section.dataset.status = message.session.status;
+      }
       break;
     }
     case 'reset': terminal_views.get(message.id)?.terminal.reset(); break;
     case 'paste':
-      if (trusted) terminal_views.get(message.id)?.terminal.paste(message.data);
+      if (trusted) {
+        terminal_views.get(message.id)?.terminal.paste(message.data);
+      }
       break;
     case 'saved':
       startup_configuration = message.configuration;
@@ -862,6 +1054,7 @@ window.addEventListener('message', (event: MessageEvent<host_message>) => {
       show_error('');
       break;
     case 'error':
+      pending_focus = undefined;
       show_error(message.message);
       if (saving) {
         saving = false;
@@ -882,13 +1075,17 @@ theme_observer.observe(document.body, { attributes: true, attributeFilter: ['cla
 theme_observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style'] });
 document.fonts?.ready.then(schedule_fit).catch(() => undefined);
 document.addEventListener('visibilitychange', () => {
-  for (const [id, view] of terminal_views) view.pane.hidden = !is_visible_tab(id);
+  for (const [id, view] of terminal_views) {
+    view.pane.hidden = !is_visible_tab(id);
+  }
   schedule_fit();
 });
 window.addEventListener('beforeunload', () => {
   resize_observer.disconnect();
   theme_observer.disconnect();
-  for (const view of terminal_views.values()) view.terminal.dispose();
+  for (const view of terminal_views.values()) {
+    view.terminal.dispose();
+  }
 });
 render_content();
 send({ type: 'ready' });
