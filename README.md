@@ -2,7 +2,7 @@
 
 Terminal Sidebar brings independent terminals into the VS Code side bars. The **Primary Side Bar** organises terminals as collapsible sections; the **Secondary Side Bar** uses a compact tab strip. Each terminal runs its own shell, leaving the ordinary terminal panel available for other work. These side bars are on the left and right by default, respectively, but VS Code allows their positions to change.
 
-**Version 0.5.0 is a pre-release for testing.** It requires VS Code **1.106 or later** and a desktop or remote Node.js extension host. Browser-only and virtual workspaces are unsupported.
+**Version 0.6.0 is a pre-release for testing.** It requires VS Code **1.106 or later** and a desktop or remote Node.js extension host. Browser-only and virtual workspaces are unsupported.
 
 ## Getting started
 
