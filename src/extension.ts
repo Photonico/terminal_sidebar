@@ -3,7 +3,7 @@ import * as operating_system from 'node:os';
 import * as path from 'node:path';
 import { randomBytes as random_bytes } from 'node:crypto';
 import { existsSync as exists_sync } from 'node:fs';
-import { is_client_message, parse_configuration, read_configuration } from './profiles';
+import { is_client_message, is_tab_name, parse_configuration, read_configuration } from './profiles';
 import { resolve_shell, type shell_options } from './shell';
 import { discover_shells } from './discovery';
 import { session_manager, type session_launch } from './sessions';
@@ -141,6 +141,7 @@ class terminal_sidebar implements vscode.Disposable {
   private shells: shell_choice[] = [];
   private focused_side: sidebar_side = 'right';
   private save_in_progress = false;
+  private rename_in_progress = false;
   private shell_detection?: Promise<void>;
   private output_timer?: ReturnType<typeof setTimeout>;
   private disposed = false;
@@ -473,10 +474,14 @@ class terminal_sidebar implements vscode.Disposable {
         this.send_state(view);
         await this.remember_layout(view);
         return;
+      case 'request_rename':
+        await this.request_rename(view, tab.id);
+        return;
       case 'rename_tab':
-        layout.rename_tab(tab.id, message.name);
-        this.send_state(view);
-        await this.remember_layout(view);
+        if (layout.rename_tab(tab.id, message.name)) {
+          this.send_state(view);
+          await this.remember_layout(view);
+        }
         return;
       case 'move_tab':
         if (layout.move_tab(tab.id, message.target_id, message.placement)) {
@@ -549,6 +554,41 @@ class terminal_sidebar implements vscode.Disposable {
         }
         break;
       }
+    }
+  }
+
+  private async request_rename(view: sidebar_view, id: string): Promise<void> {
+    // VS Code shares one Quick Input surface across both sidebars.
+    if (this.rename_in_progress) {
+      return;
+    }
+    const layout = this.ensure_layout(view);
+    const tab = layout.tabs.find(item => item.id === id);
+    if (!tab) {
+      return;
+    }
+    this.rename_in_progress = true;
+    try {
+      const name = await vscode.window.showInputBox({
+        title: 'Rename terminal',
+        value: tab.name,
+        valueSelection: [0, tab.name.length],
+        ignoreFocusOut: true,
+        validateInput: value => is_tab_name(value)
+          ? undefined : 'Enter a name of 1–80 characters without control characters.',
+      });
+      // Runtime IDs are never reused within a layout. Do not revive a closed tab
+      // or overwrite a newer rename while this input was awaiting a response.
+      const current_tab = view.tab_layout?.tabs.find(item => item.id === id);
+      if (this.disposed || view.tab_layout !== layout || current_tab?.name !== tab.name || !is_tab_name(name)) {
+        return;
+      }
+      if (layout.rename_tab(id, name)) {
+        this.send_state(view);
+        await this.remember_layout(view);
+      }
+    } finally {
+      this.rename_in_progress = false;
     }
   }
 

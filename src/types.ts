@@ -64,6 +64,7 @@ export type client_message =
   | { type: 'select'; id: string }
   | { type: 'close_tab'; id: string }
   | { type: 'add_tab' }
+  | { type: 'request_rename'; id: string }
   | { type: 'rename_tab'; id: string; name: string }
   | { type: 'move_tab'; id: string; target_id: string; placement: 'before' | 'after' }
   | { type: 'expanded'; id: string; expanded: boolean }

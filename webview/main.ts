@@ -22,8 +22,13 @@ const vscode = acquireVsCodeApi();
 const is_mac = /Mac|iPhone|iPad/.test(navigator.platform);
 const maximum_profiles = 32;
 const maximum_export_characters = 1024 * 1024;
+/*! Codicons edit icon, unmodified path, Copyright Microsoft Corporation.
+ * Source: https://github.com/microsoft/vscode-codicons/blob/main/src/icons/edit.svg
+ * Licensed under CC BY 4.0: https://creativecommons.org/licenses/by/4.0/
+ */
 const icons = {
   add: '<path d="M8 3v10M3 8h10"/>',
+  edit: '<path fill="currentColor" stroke="none" d="M14.236 1.76386C13.2123 0.740172 11.5525 0.740171 10.5289 1.76386L2.65722 9.63549C2.28304 10.0097 2.01623 10.4775 1.88467 10.99L1.01571 14.3755C0.971767 14.5467 1.02148 14.7284 1.14646 14.8534C1.27144 14.9783 1.45312 15.028 1.62432 14.9841L5.00978 14.1151C5.52234 13.9836 5.99015 13.7168 6.36433 13.3426L14.236 5.47097C15.2596 4.44728 15.2596 2.78755 14.236 1.76386ZM11.236 2.47097C11.8691 1.8378 12.8957 1.8378 13.5288 2.47097C14.162 3.10413 14.162 4.1307 13.5288 4.76386L12.75 5.54269L10.4571 3.24979L11.236 2.47097ZM9.75002 3.9569L12.0429 6.24979L5.65722 12.6355C5.40969 12.883 5.10023 13.0595 4.76117 13.1465L2.19447 13.8053L2.85327 11.2386C2.9403 10.8996 3.1168 10.5901 3.36433 10.3426L9.75002 3.9569Z"/>',
   restart: '<path d="M3.1 5.1a5.5 5.5 0 1 1-.6 5.1M3 1.8v3.8h3.8"/>',
   close: '<path d="m4 4 8 8M4 12l8-8"/>',
   save: '<path d="M3 2h8l3 3v9H2V2Zm2 0v4h5V2M5 14V9h6v5"/>',
@@ -49,6 +54,7 @@ app.innerHTML = `
     <span id="left-heading">Terminals</span>
     <div id="tab-actions" role="toolbar" aria-label="Tab actions">
       <button id="add-tab" class="icon-button" type="button" aria-label="New terminal" title="New terminal">${icon('add')}</button>
+      <button id="rename_tab" class="icon-button" type="button" aria-label="Rename terminal" title="Rename terminal" disabled>${icon('edit')}</button>
       <button id="close-tab" class="icon-button" type="button" aria-label="Close active terminal" title="Close active terminal">${icon('close')}</button>
     </div>
     <div id="configuration-toolbar" role="toolbar" aria-label="Configuration actions" hidden>
@@ -366,6 +372,13 @@ function add_tab(): void {
   send({ type: 'add_tab' });
 }
 
+function request_rename(id: string | undefined): void {
+  if (!id || configuring || saving || !open_tabs.some(tab => tab.id === id)) {
+    return;
+  }
+  send({ type: 'request_rename', id });
+}
+
 function set_expanded(id: string, expanded: boolean): void {
   if (expanded) {
     expanded_ids.add(id);
@@ -512,12 +525,18 @@ function ensure_section(tab: terminal_tab, view: terminal_view): void {
       element(`section-${visible_order[next_index]!.id}`).focus();
     });
     attach_middle_close(button, tab.id);
+    const rename_button = document.createElement('button');
+    rename_button.type = 'button';
+    rename_button.className = 'icon-button section_rename';
+    rename_button.title = 'Rename terminal';
+    rename_button.innerHTML = icon('edit');
+    rename_button.addEventListener('click', () => request_rename(tab.id));
     const close_button = document.createElement('button');
     close_button.type = 'button';
     close_button.className = 'icon-button section-close';
     close_button.innerHTML = icon('close');
     close_button.addEventListener('click', () => close_tab(tab.id));
-    heading.append(button, close_button);
+    heading.append(button, rename_button, close_button);
     section.append(heading, view.pane);
     view.section = section;
     view.section_button = button;
@@ -529,6 +548,9 @@ function ensure_section(tab: terminal_tab, view: terminal_view): void {
   view.section!.dataset.active = String(active_id === tab.id);
   view.section!.dataset.expanded = String(expanded_ids.has(tab.id));
   view.section!.dataset.status = sessions.get(tab.id)?.status ?? 'idle';
+  const rename_button = view.section!.querySelector<HTMLButtonElement>('.section_rename')!;
+  rename_button.setAttribute('aria-label', `Rename terminal: ${tab.name}`);
+  rename_button.disabled = saving;
   const close_button = view.section!.querySelector<HTMLButtonElement>('.section-close')!;
   close_button.title = `Close ${tab.name}`;
   close_button.setAttribute('aria-label', close_button.title);
@@ -588,6 +610,7 @@ function render_terminals(): void {
 
 function update_actions(): void {
   element<HTMLButtonElement>('add-tab').disabled = !trusted || saving;
+  element<HTMLButtonElement>('rename_tab').disabled = !active_id || saving;
   element<HTMLButtonElement>('close-tab').disabled = !active_id || saving;
   element<HTMLButtonElement>('save-action').disabled = saving;
   element<HTMLButtonElement>('close-action').disabled = saving;
@@ -1068,6 +1091,7 @@ tab_strip.addEventListener('wheel', event => {
   }
 }, { passive: false });
 element('add-tab').addEventListener('click', add_tab);
+element('rename_tab').addEventListener('click', () => request_rename(active_id));
 element('close-tab').addEventListener('click', () => close_tab(active_id));
 element('add-first-tab').addEventListener('click', add_tab);
 element('open-other-sidebar').addEventListener('click', () => send({ type: 'open_other_sidebar' }));

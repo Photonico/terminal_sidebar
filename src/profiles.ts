@@ -87,6 +87,7 @@ export function is_client_message(value: unknown): value is client_message {
     case 'input':
       return valid_identifier && typeof message.data === 'string' && message.data.length <= 1024 * 1024;
     case 'close_tab':
+    case 'request_rename':
     case 'paste':
     case 'focus':
     case 'select':

@@ -135,6 +135,7 @@ interface harness_options {
   memory?: Map<string, unknown>;
   trusted?: boolean;
   settings?: Record<string, unknown>;
+  input?: (options: vscode.InputBoxOptions) => string | undefined | Promise<string | undefined>;
 }
 
 async function harness(options: harness_options = {}) {
@@ -154,6 +155,7 @@ async function harness(options: harness_options = {}) {
   const memory = new Map<string, unknown>(structuredClone(options.memory ?? new Map()));
   const settings = new Map(Object.entries(options.settings ?? {}));
   const errors: string[] = [];
+  const input_boxes: vscode.InputBoxOptions[] = [];
   const api = {
     ConfigurationTarget: { Global: 1 },
     Uri: {
@@ -204,6 +206,10 @@ async function harness(options: harness_options = {}) {
       showErrorMessage: async (message: string) => { errors.push(message); },
       showWarningMessage: async (_message: string, _options: unknown, first: string) => first,
       showQuickPick: async () => undefined,
+      showInputBox: async (input_options: vscode.InputBoxOptions) => {
+        input_boxes.push(input_options);
+        return options.input?.(input_options);
+      },
     },
   };
   const context = {
@@ -240,7 +246,7 @@ async function harness(options: harness_options = {}) {
   await next_turn();
 
   return {
-    api, commands, providers, executions, processes, spawns, updates, memory, errors,
+    api, commands, providers, executions, processes, spawns, updates, memory, errors, input_boxes,
     configuration: () => structuredClone(configuration_value),
     change_setting: (name: string, value: unknown) => {
       if (value === undefined) settings.delete(name);
@@ -401,6 +407,110 @@ test('adding, renaming and closing runtime tabs never rewrites startup settings'
   const left = await runtime.view('left');
   await left.send({ type: 'add_tab' });
   assert.equal(left.state().tabs.at(-1)?.name, 'Term 0', 'each side owns its numbering');
+});
+
+test('native rename changes only the requested terminal and remembers names on both sides', async test_case => {
+  const runtime = await harness({ input: options => ` ${options.value} renamed ` });
+  test_case.after(() => runtime.dispose());
+  const views = { left: await runtime.view('left'), right: await runtime.view('right') };
+  const original_processes = [...runtime.processes];
+  const original_writes = runtime.processes.map(terminal => [...terminal.writes]);
+  // The Primary button belongs to its own section, including a collapsed,
+  // inactive section. The Secondary button belongs to the selected tab.
+  await views.left.send({ type: 'select', id: views.left.state().tabs[1].id });
+  await views.left.send({ type: 'expanded', id: views.left.state().tabs[0].id, expanded: false });
+
+  for (const side of ['left', 'right'] as const) {
+    const view = views[side];
+    const previous = view.state();
+    const target = previous.tabs[0];
+    const other = views[side === 'left' ? 'right' : 'left'];
+    const other_state = other.state();
+    await view.send({ type: 'request_rename', id: target.id });
+    const prompt = runtime.input_boxes.at(-1)!;
+    assert.equal(prompt.title, 'Rename terminal');
+    assert.equal(prompt.value, target.name);
+    assert.deepEqual([...prompt.valueSelection!], [0, target.name.length]);
+    assert.deepEqual(view.state().tabs, previous.tabs.map(tab => tab.id === target.id
+      ? { ...tab, name: `${target.name} renamed` } : tab));
+    assert.equal(view.state().active_id, previous.active_id);
+    assert.deepEqual(view.state().expanded_ids, previous.expanded_ids);
+    assert.deepEqual(other.state(), other_state);
+  }
+  assert.deepEqual(runtime.processes, original_processes);
+  assert.deepEqual(runtime.processes.map(terminal => terminal.writes), original_writes);
+  assert.ok(runtime.processes.every(terminal => terminal.killed === 0));
+  assert.deepEqual(runtime.updates, []);
+  assert.deepEqual(runtime.configuration(), initial_configuration);
+  const reopened_runtime = await harness({ memory: runtime.memory });
+  test_case.after(() => reopened_runtime.dispose());
+  for (const side of ['left', 'right'] as const) {
+    const reopened = await reopened_runtime.view(side);
+    assert.deepEqual(reopened.state().tabs, views[side].state().tabs);
+    assert.equal(reopened.state().active_id, views[side].state().active_id);
+    assert.deepEqual(reopened.state().expanded_ids, views[side].state().expanded_ids);
+  }
+});
+
+test('native rename rejects invalid values and treats cancel or unchanged names as no action', async test_case => {
+  let response: string | undefined;
+  const runtime = await harness({ input: () => response });
+  test_case.after(() => runtime.dispose());
+  const view = await runtime.view('right');
+  const target = view.state().tabs[0];
+  const initial_state = view.state();
+  const initial_memory = structuredClone(runtime.memory);
+  const initial_message_count = view.messages.length;
+  const invalid_names = ['', '  ', 'x'.repeat(81), 'two\nlines', 'control\u007f'];
+  for (response of [undefined, target.name, ` ${target.name} `, ...invalid_names]) {
+    await view.send({ type: 'request_rename', id: target.id });
+  }
+  assert.deepEqual(view.state(), initial_state);
+  assert.equal(view.messages.length, initial_message_count, 'cancel and no-op results do not repaint the terminal');
+  assert.deepEqual(runtime.memory, initial_memory);
+  const validate = runtime.input_boxes[0].validateInput!;
+  assert.equal(await validate('部署 terminal'), undefined);
+  assert.equal(await validate('x'.repeat(80)), undefined);
+  for (const name of invalid_names) assert.ok(await validate(name), JSON.stringify(name));
+  const previous_prompt_count = runtime.input_boxes.length;
+  await view.send({ type: 'request_rename', id: 'missing_tab' });
+  assert.equal(runtime.input_boxes.length, previous_prompt_count, 'unknown tabs never open a prompt');
+  response = 'Accepted after cancellation';
+  await view.send({ type: 'request_rename', id: target.id });
+  assert.equal(view.state().tabs[0].name, response, 'the next valid request remains usable');
+});
+
+test('pending rename cannot target a replacement tab or open duplicate native prompts', async test_case => {
+  let finish_input!: (name: string | undefined) => void;
+  const runtime = await harness({ input: () => new Promise(resolve => { finish_input = resolve; }) });
+  test_case.after(() => runtime.dispose());
+  const left = await runtime.view('left');
+  const right = await runtime.view('right');
+  const target = right.state().tabs[0];
+  await right.send({ type: 'request_rename', id: target.id });
+  await right.send({ type: 'request_rename', id: target.id });
+  await left.send({ type: 'request_rename', id: left.state().tabs[0].id });
+  assert.equal(runtime.input_boxes.length, 1, 'both views share one native rename prompt');
+  await right.send({ type: 'close_tab', id: target.id });
+  await runtime.command('terminalSidebar.openProfile', target.profile_id);
+  const replacement = right.state().tabs.find(tab => tab.profile_id === target.profile_id)!;
+  assert.notEqual(replacement.id, target.id);
+  const previous = right.state();
+  const previous_memory = structuredClone(runtime.memory);
+  const previous_processes = [...runtime.processes];
+  finish_input('Stale name');
+  await next_turn();
+  assert.deepEqual(right.state(), previous);
+  assert.deepEqual(runtime.memory, previous_memory);
+  assert.deepEqual(runtime.processes, previous_processes);
+  assert.deepEqual(runtime.updates, []);
+
+  await right.send({ type: 'request_rename', id: replacement.id });
+  assert.equal(runtime.input_boxes.length, 2, 'a later request can open normally');
+  await right.send({ type: 'rename_tab', id: replacement.id, name: 'Newer name' });
+  finish_input('Older dialog result');
+  await next_turn();
+  assert.equal(right.state().tabs.find(tab => tab.id === replacement.id)?.name, 'Newer name');
 });
 
 test('saving startup settings preserves live terminal names, processes and commands until the next window', async test_case => {

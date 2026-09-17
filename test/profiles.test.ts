@@ -38,6 +38,7 @@ test('webview boundary rejects unbounded data, malformed saves, and invalid term
   assert.equal(is_client_message({ type: 'activate', id: 'a', cols: 80, rows: 24 }), true);
   assert.equal(is_client_message({ type: 'save', configuration: { left: [], right: [profile] }, base_configuration: { left: [], right: [] } }), true);
   assert.equal(is_client_message({ type: 'rename_tab', id: 'a', name: 'Term 1' }), true);
+  assert.equal(is_client_message({ type: 'request_rename', id: 'a' }), true);
   assert.equal(is_client_message({ type: 'open_other_sidebar' }), true);
   for (const value of [
     { type: 'execute', command: 'x' },
@@ -47,6 +48,8 @@ test('webview boundary rejects unbounded data, malformed saves, and invalid term
     { type: 'save', configuration: { left: [], right: [] } },
     { type: 'save', configuration: { left: [], right: [{ id: 'a' }] }, base_configuration: { left: [], right: [] } },
     { type: 'rename_tab', id: 'a', name: '\u001b[0m' },
+    { type: 'request_rename' },
+    { type: 'request_rename', id: '../a' },
     { type: 'expanded', id: 'a', expanded: 'yes' },
     { type: 'close_tab', id: '../a' },
     { type: 'draft_state', configuring: true, can_undo: true },

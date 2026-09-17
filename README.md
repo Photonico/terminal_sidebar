@@ -23,6 +23,8 @@ An **open terminal** belongs to the current workspace window. A **startup profil
 
 The Secondary Side Bar's tab strip has a **+** button to create a terminal and a **×** button to close the selected one. A middle click closes the tab beneath the pointer. Double-click blank tab-strip space to create a terminal. New ordinary shells are named **Term 0**, **Term 1**, and so on, with an independent counter on each side. Closing all ordinary tabs resets that side's counter to **Term 0**, even when startup tabs remain. Existing names are skipped.
 
+The pencil button immediately before **×** opens **Rename terminal**. In the Primary Side Bar it renames that section's terminal; in the Secondary Side Bar it renames the selected terminal. Press **Enter** to confirm or **Esc** to cancel. Names are remembered for this workspace, without changing startup profiles, selection, expanded sections, or running processes.
+
 The Primary Side Bar presents an Explorer-style list of collapsible terminal sections. Several sections can be expanded at once and share the available height. Expanding or collapsing keeps their order; when all sections are collapsed, they form a compact list at the top with consistent header styling. Collapsing a section hides its terminal and preserves the process; its close control ends the process. The status row follows the terminal background when an expanded terminal sits directly above it, and the side bar background otherwise. Empty side bars show guidance and buttons at the top. This layout uses a single Webview View and is not a collection of native Explorer panes.
 
 Drag a tab or section heading to change its position on the same side. A marker shows whether it will move before or after the target. With a heading focused, **Alt+Shift+Left/Right** in the Secondary Side Bar or **Alt+Shift+Up/Down** in the Primary Side Bar moves it one position. Reordering preserves the running process, current selection, and expanded sections; it does not edit startup settings.
@@ -118,3 +120,5 @@ The logo assets, font provenance, and regeneration instructions are described in
 ## Licence
 
 [MIT](LICENSE) © 2026 Lu Niu (Photonico).
+
+The [Codicons edit icon](https://github.com/microsoft/vscode-codicons/blob/main/src/icons/edit.svg) is Copyright Microsoft Corporation, used with its original path under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
