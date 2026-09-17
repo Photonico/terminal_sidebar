@@ -1,9 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.6.0 — Pre-release
 
 - Use the official Primary Side Bar and Secondary Side Bar names while preserving existing command identifiers and settings keys.
-- Add a toolbar control in the Primary Side Bar to open the Secondary Side Bar, between **+** and **Save**.
+- Add **+** to the Secondary Side Bar's title toolbar. In both title toolbars, place **Open Secondary Terminal** or **Open Primary Terminal** immediately after **+**, using circled right or left arrows, respectively.
 - Add a button in each empty state to open and focus the other Side Terminal view, including when it is hidden.
 
 ## 0.5.0 — Pre-release

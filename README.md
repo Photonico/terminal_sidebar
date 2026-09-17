@@ -11,7 +11,7 @@ Terminal Sidebar brings independent terminals into the VS Code side bars. The **
 3. Use **+** to open an ordinary shell. In the Secondary Side Bar, double-clicking blank space in the tab strip also creates a terminal.
 4. Use either gear to open the configuration editor in the Primary Side Bar. Add any terminals that should open automatically when their side bar starts.
 
-The Primary Side Bar's title toolbar includes **Open Secondary Side Bar** between **+** and **Save**. When either side bar has no tabs, **Open secondary side bar** or **Open primary side bar** appears between **New terminal** and **Configure startup terminals**. These controls open and focus the other Side Terminal view, including when it is hidden; they do not toggle it closed.
+Both title toolbars include **+**, followed by **Open Secondary Terminal** in the Primary Side Bar or **Open Primary Terminal** in the Secondary Side Bar, then **Save**. The navigation buttons use circled right and left arrows, respectively. When either side bar has no tabs, **Open secondary side bar** or **Open primary side bar** appears between **New terminal** and **Configure startup terminals**. These controls open and focus the other Side Terminal view, including when it is hidden; they do not toggle it closed.
 
 For example, add **Neovim** as a startup name and `nvim` as its command. You can use `vim`, `nano`, or any other installed command-line tool in the same way. Each tool keeps its own configuration and works as it would in an ordinary terminal.
 
