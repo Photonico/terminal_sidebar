@@ -474,6 +474,12 @@ class terminal_sidebar implements vscode.Disposable {
         this.send_state(view);
         await this.remember_layout(view);
         return;
+      case 'move_tab':
+        if (layout.move_tab(tab.id, message.target_id, message.placement)) {
+          this.send_state(view);
+          await this.remember_layout(view);
+        }
+        return;
       case 'select':
         layout.select_tab(tab.id);
         this.send_state(view);

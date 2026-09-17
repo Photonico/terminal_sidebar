@@ -21,7 +21,7 @@ test('configuration history groups typing across both sides, preserves its basel
   assert.deepEqual(history.value, original());
   assert.equal(history.dirty, false);
   assert.equal(history.redo(), true);
-  history.change(draft => { draft.right[0].command = 'grok'; });
+  history.change(draft => { draft.right[0].command = 'nvim'; });
   assert.equal(history.can_redo, false);
   assert.deepEqual(history.base, original());
   history.value.right[0].name = 'Mutation outside history';

@@ -65,6 +65,7 @@ export type client_message =
   | { type: 'close_tab'; id: string }
   | { type: 'add_tab' }
   | { type: 'rename_tab'; id: string; name: string }
+  | { type: 'move_tab'; id: string; target_id: string; placement: 'before' | 'after' }
   | { type: 'expanded'; id: string; expanded: boolean }
   | { type: 'save'; configuration: sidebar_configuration; base_configuration: sidebar_configuration }
   | { type: 'select_profile' }

@@ -86,6 +86,8 @@ def circular_dashes(radius: float, body_width: float, outline_width: float) -> l
 
 def build_logo(font_path: Path, output: Path) -> None:
     """Write SVG, vector EPS and 512-pixel PNG from the same source geometry."""
+    # Scale the complete prompt, including its spacing and layered strokes.
+    prompt_scale = 0.9
     font_bytes = font_path.read_bytes()
     with TTFont(font_path) as font:
         family = font['name'].getDebugName(1) or ''
@@ -114,14 +116,13 @@ def build_logo(font_path: Path, output: Path) -> None:
         minimum_y = min(bounds[1] for bounds in glyph_bounds)
         maximum_x = max(bounds[2] for bounds in glyph_bounds)
         maximum_y = max(bounds[3] for bounds in glyph_bounds)
-        glyph_scale = 0.137
+        glyph_scale = 0.137 * prompt_scale
         horizontal_offset = 256 - (minimum_x + maximum_x) * glyph_scale / 2
         vertical_offset = 256 + (minimum_y + maximum_y) * glyph_scale / 2
         outline_pen = SVGPathPen(glyph_set, ntos=format_number)
-        prompt_inset = 10
+        prompt_inset = 10 * prompt_scale
         for (glyph_name, position), bounds in zip(positioned_glyphs, glyph_bounds):
-            # Move each original glyph ten canvas units towards the circle centre.
-            # Translation preserves its contours, size, proportions, and orientation.
+            # Preserve the original inward translation under uniform scaling.
             centre_x = horizontal_offset + (bounds[0] + bounds[2]) * glyph_scale / 2
             centre_y = vertical_offset - (bounds[1] + bounds[3]) * glyph_scale / 2
             distance_to_centre = math.hypot(256 - centre_x, 256 - centre_y)
@@ -138,12 +139,14 @@ def build_logo(font_path: Path, output: Path) -> None:
         underscore_bounds = glyph_bounds[1]
         original_body_width = (underscore_bounds[3] - underscore_bounds[1]) * glyph_scale
 
-    ring_radius = 194
-    ring_body_width = 28
-    prompt_body_width = 34
-    outline_width = 6
-    # Keep the ring weight unchanged. Add weight to the original font outline
-    # with layered strokes: prompt white width = 28, complete width = 40.
+    prompt_body_width = 34 * prompt_scale
+    outline_width = 6 * prompt_scale
+    ring_body_width = prompt_body_width
+    # Keep the previous frame's inner ink edge fixed and add weight outwards.
+    # Both frame and prompt now have 25.2 units of white and 36 units overall.
+    ring_inner_radius = 194 - (28 + 6) / 2
+    ring_radius = ring_inner_radius + (ring_body_width + outline_width) / 2
+    # Add weight to the original font outline with layered strokes.
     # No replacement font, outline redrawing, or non-uniform scaling is used.
     added_glyph_width = prompt_body_width - original_body_width
     grey_glyph_stroke = added_glyph_width + outline_width
@@ -160,8 +163,8 @@ def build_logo(font_path: Path, output: Path) -> None:
     svg = f'''<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title description">
   <title id="title">Terminal Sidebar</title>
-  <desc id="description">Twelve longer rounded white circular dashes, rotated three degrees clockwise, surround heavier Photonico Code greater-than and underscore glyphs moved slightly towards the centre. Original font contours, matching #646464 outlines, and a transparent background.</desc>
-  <metadata>Glyph source: {escape(family)} Regular, {escape(version)}. Font SHA-256: {font_hash}. Original glyph contours at unchanged scale 0.137, each translated 10 units towards the centre and widened to a nominal 34-unit body. Frame body: 28 units. Frame and prompt grey borders: 6 units. Twelve dashes: visible 22-degree ink and 8-degree gap on radius 194, with round-cap outline compensation and 3-degree clockwise rotation. No embedded font.</metadata>
+  <desc id="description">Twelve rounded white circular dashes, rotated three degrees clockwise, surround Photonico Code greater-than and underscore glyphs reduced ten per cent around the centre. Matching line weights and #646464 outlines, with a transparent background.</desc>
+  <metadata>Glyph source: {escape(family)} Regular, {escape(version)}. Font SHA-256: {font_hash}. Original glyph contours at scale {format_number(glyph_scale)}, each translated {format_number(prompt_inset)} units towards the centre. Complete prompt scaled by {format_number(prompt_scale)} from the previous design. Frame and prompt nominal bodies: {format_number(prompt_body_width)} units; grey borders: {format_number(outline_width)} units; complete widths: {format_number(prompt_body_width + outline_width)} units. Frame inner radius remains {format_number(ring_inner_radius)}; outer radius grows to {format_number(ring_radius + (ring_body_width + outline_width) / 2)}. Twelve dashes: visible 22-degree ink and 8-degree gap on radius {format_number(ring_radius)}, with round-cap outline compensation and 3-degree clockwise rotation. No embedded font.</metadata>
   <g id="frame" fill="#ffffff" stroke="#646464" stroke-width="{outline_width}" stroke-linejoin="round">
 {frame_elements}
   </g>

@@ -7,11 +7,11 @@ Terminal Sidebar brings independent terminals into the VS Code sidebars. The lef
 ## Getting started
 
 1. Install **Terminal Sidebar** by **Luke Niu** (`ConAntares.terminal-sidebar`) from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=ConAntares.terminal-sidebar), choosing the pre-release version. A matching VSIX can also be installed through **Extensions: Install from VSIX…**.
-2. Open **Side Term** from the Activity Bar, or **Side Terminal** in the right Secondary Side Bar.
+2. Open **Side Terminal** from the Activity Bar or the right Secondary Side Bar.
 3. Use **+** to open an ordinary shell. On the right, double-clicking blank space in the tab strip also creates a terminal.
 4. Use either gear to open the configuration editor on the left. Add any terminals that should open automatically when their sidebar starts.
 
-For example, if `grok` is already installed and signed in, add **Grok Build** as a startup name and `grok` as its command. The same arrangement applies to other command-line tools. Each tool retains responsibility for its installation, login, and credentials.
+For example, add **Neovim** as a startup name and `nvim` as its command. You can use `vim`, `nano`, or any other installed command-line tool in the same way. Each tool keeps its own configuration and works as it would in an ordinary terminal.
 
 After updating the extension, reload the VS Code window to load the new code.
 
@@ -21,7 +21,9 @@ An **open terminal** belongs to the current workspace window. A **startup profil
 
 The right tab strip has a **+** button to create a terminal and a **×** button to close the selected one. A middle click closes the tab beneath the pointer. Double-click blank tab-strip space to create a terminal. New ordinary shells are named **Term 0**, **Term 1**, and so on, with an independent counter on each side. Closing all ordinary tabs resets that side's counter to **Term 0**, even when startup tabs remain. Existing names are skipped.
 
-The left sidebar presents an Explorer-style list of collapsible terminal sections. Several sections can be expanded at once and share the available height. Collapsed sections sit below them, at the bottom of the view; if all sections are collapsed, the list remains at the bottom. Collapsing a section hides its terminal and preserves the process; its close control ends the process. This layout uses a single Webview View and is not a collection of native Explorer panes.
+The left sidebar presents an Explorer-style list of collapsible terminal sections. Several sections can be expanded at once and share the available height. Expanding or collapsing keeps their order; when all sections are collapsed, they form a compact list at the top with consistent header styling. Collapsing a section hides its terminal and preserves the process; its close control ends the process. The status badge sits on the sidebar background. This layout uses a single Webview View and is not a collection of native Explorer panes.
+
+Drag a tab or section heading to change its position on the same side. A marker shows whether it will move before or after the target. With a heading focused, **Alt+Shift+Left/Right** on the right or **Alt+Shift+Up/Down** on the left moves it one position. Reordering preserves the running process, current selection, and expanded sections; it does not edit startup settings.
 
 The two sides have separate startup lists, open tabs, selections, terminal dimensions, and processes. Even terminals with the same name run independently. A command-line tool may still share its own global login or files between processes.
 
@@ -52,7 +54,7 @@ The application-scoped User setting is `terminalSidebar.sidebars`:
   "left": [],
   "right": [
     { "id": "shell", "name": "Terminal", "command": "", "shell": "" },
-    { "id": "grok", "name": "Grok Build", "command": "grok", "shell": "" }
+    { "id": "neovim", "name": "Neovim", "command": "nvim", "shell": "" }
   ]
 }
 ```
@@ -61,9 +63,9 @@ The editor generates stable identifiers. Ordering and names can change without c
 
 ## Memory and process lifetime
 
-The extension remembers each side's open-tab order, names, selected tab, expanded sections, and next ordinary-terminal number in VS Code workspace state. This memory is local to the workspace window's VS Code storage and is separate from synced User settings.
+The extension remembers each side's open-tab order, names, selected tab, expanded sections, and next ordinary-terminal number in VS Code workspace state. After reopening the same workspace, the tabs return in their saved order on each side, including drag changes. This memory is local to the workspace window's VS Code storage and is separate from synced User settings.
 
-When the workspace is reopened, remembered ordinary tabs return as new shells. All currently configured startup profiles also return, including those closed during the previous window. Restoring a tab creates a new process; it does not resume a previous shell, restore its working directory, or replay commands typed into it. Startup commands come only from the current startup settings.
+When the workspace is reopened, remembered ordinary tabs return as new shells. All currently configured startup profiles also return, including those closed during the previous window; profiles absent from the remembered tabs are appended in startup-setting order. Restoring a tab creates a new process; it does not resume a previous shell, restore its working directory, or replay commands typed into it. Startup commands come only from the current startup settings.
 
 Typed input and terminal output are not written into layout memory. **Save** while a terminal is selected explicitly exports its displayed plain text to a chosen file. The extension does not create a continuous terminal log, although a shell or command-line tool may maintain its own history.
 
@@ -76,7 +78,7 @@ Reloading VS Code, restarting the extension host, or closing the window ends all
 ```json
 {
   "command": "terminalSidebar.openProfile",
-  "args": { "id": "grok", "side": "right" }
+  "args": { "id": "neovim", "side": "right" }
 }
 ```
 

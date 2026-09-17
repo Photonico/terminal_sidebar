@@ -28,7 +28,7 @@ The Activity Bar continues to open the extension's left sidebar. Its terminal ar
 
 ```text
 > Terminal
-v Grok Build
+v Neovim
   [interactive terminal]
 > Development server
 ```
@@ -78,7 +78,7 @@ Independence applies to the extension's configuration and terminal sessions. A c
 
 ## Right sidebar appearance
 
-Change the right native container's visible title from **Side Term** to **Side Terminal**. Preserve its existing identifier so that shortcuts and view placement continue to work. The extension's Marketplace name remains **Terminal Sidebar**.
+Use **Side Terminal** for both native container titles. Preserve their existing identifiers so that shortcuts and view placement continue to work. The extension's Marketplace name remains **Terminal Sidebar**.
 
 The initial dimensions for the inner profile tabs are:
 

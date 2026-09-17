@@ -2,10 +2,11 @@
 
 ## 0.5.0 — Pre-release
 
-- Compact headers, bottom-aligned collapsed sections, and no left gutter.
+- Reorder tabs by dragging or keyboard; restore each sidebar's saved order.
+- Keep collapsed sections at the top with consistent headers and a status badge.
 - Theme-based scrollbars, rounded controls, and collapsible startup groups.
 - Reset numbering after all ordinary tabs close.
-- Refine the logo and Activity Bar icon.
+- Unify Side Terminal naming; refine the logo and Activity Bar icon.
 - Store platform VSIX packages in `release/`.
 
 ## 0.3.0 — Pre-release

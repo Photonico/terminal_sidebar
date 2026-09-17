@@ -195,6 +195,24 @@ export class sidebar_tabs {
     return true;
   }
 
+  /** Move relative to a still-open tab, preserving selection, expansion, and runtime identity. */
+  move_tab(identifier: string, target_identifier: string, placement: 'before' | 'after'): boolean {
+    const source_index = this.current_tabs.findIndex(tab => tab.id === identifier);
+    const target_index = this.current_tabs.findIndex(tab => tab.id === target_identifier);
+    if (source_index < 0 || target_index < 0 || source_index === target_index) {
+      return false;
+    }
+    // Removing the source shifts every later target left by one position.
+    const destination_index = target_index + (placement === 'after' ? 1 : 0)
+      - (source_index < target_index ? 1 : 0);
+    if (source_index === destination_index) {
+      return false;
+    }
+    const [tab] = this.current_tabs.splice(source_index, 1);
+    this.current_tabs.splice(destination_index, 0, tab);
+    return true;
+  }
+
   select_tab(identifier: string): boolean {
     if (!this.current_tabs.some(tab => tab.id === identifier)) {
       return false;

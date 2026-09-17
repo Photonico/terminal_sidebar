@@ -1,6 +1,7 @@
 import { Terminal, type ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { configuration_draft } from '../src/draft';
+import { tab_reordering } from './reordering';
 import type {
   appearance as terminal_appearance,
   client_message,
@@ -63,7 +64,7 @@ app.innerHTML = `
     <div id="empty-panel" class="empty-panel" hidden><p>No open terminals. Your startup configuration is unchanged.</p><button id="add-first-tab" class="primary" type="button">New terminal</button><button id="configure-empty" class="secondary" type="button">Configure startup terminals</button></div>
     <div id="terminal-host"></div>
   </main>
-  <footer id="session-status" role="status" aria-live="polite"><span id="status-dot"></span><span id="status-text">Loading terminals…</span></footer>
+  <footer id="session-status" role="status" aria-live="polite"><span id="status-badge"><span id="status-dot"></span><span id="status-text">Loading terminals…</span></span></footer>
   <section id="configuration" aria-labelledby="configuration-title" hidden>
     <div class="configuration-heading"><h2 id="configuration-title">Startup terminals</h2><button id="refresh-shells" class="icon-button" type="button" aria-label="Detect shells again" title="Detect shells again">${icon('restart')}</button></div>
     <p class="configuration-intro">These profiles open at startup. Closing or adding a terminal during use does not change them. Blank Shell uses the default; keep secrets out of synced commands.</p>
@@ -125,6 +126,16 @@ let appearance: terminal_appearance = {
   editor_scrollbar_vertical: 'auto', editor_scrollbar_horizontal: 'auto',
   editor_scrollbar_vertical_size: 14, editor_scrollbar_horizontal_size: 12,
 };
+
+const reorder_controllers = (['left', 'right'] as const).map(sidebar => new tab_reordering({
+  container: sidebar === 'left' ? terminal_host : tab_strip,
+  axis: sidebar === 'left' ? 'vertical' : 'horizontal',
+  get_ids: () => open_tabs.map(tab => tab.id),
+  enabled: () => side === sidebar && trusted && !configuring && !saving,
+  move: (id, target_id, placement) => {
+    send({ type: 'move_tab', id, target_id, placement });
+  },
+}));
 
 /** Resolve the same terminal colours for xterm and the selected tab. */
 function terminal_theme(): ITheme {
@@ -385,6 +396,8 @@ function render_tabs(): void {
     button.type = 'button';
     button.className = 'terminal-tab';
     button.dataset.tabId = tab.id;
+    button.dataset.reorderId = tab.id;
+    button.draggable = true;
     button.setAttribute('role', 'tab');
     button.setAttribute('aria-controls', `terminal-${tab.id}`);
     button.setAttribute('aria-selected', String(tab.id === active_id));
@@ -393,11 +406,14 @@ function render_tabs(): void {
     label.className = 'tab-label';
     label.textContent = tab.name;
     button.append(label);
-    button.title = `${tab.name} · Middle-click to close`;
+    button.title = `${tab.name} · Drag to reorder · Alt+Shift+Left/Right to move · Middle-click to close`;
     button.dataset.status = sessions.get(tab.id)?.status ?? 'idle';
     button.addEventListener('click', () => select_tab(tab.id, true));
     attach_middle_close(button, tab.id);
     button.addEventListener('keydown', event => {
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.isComposing) {
+        return;
+      }
       const current_index = open_tabs.findIndex(item => item.id === tab.id);
       let next_index: number;
       if (event.key === 'ArrowRight') {
@@ -429,8 +445,9 @@ function render_tabs(): void {
   if (focused_id && open_tabs.some(tab => tab.id === focused_id)) {
     element(`tab-${focused_id}`).focus();
   }
-  if (active_id) {
-    document.getElementById(`tab-${active_id}`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  const visible_header_id = focused_id ?? active_id;
+  if (visible_header_id) {
+    document.getElementById(`tab-${visible_header_id}`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
 }
 
@@ -446,6 +463,8 @@ function ensure_section(tab: terminal_tab, view: terminal_view): void {
     button.className = 'section-toggle';
     button.type = 'button';
     button.dataset.tabId = tab.id;
+    button.dataset.reorderId = tab.id;
+    button.draggable = true;
     button.setAttribute('aria-controls', view.pane.id);
     button.innerHTML = `<span class="section-chevron">${icon('chevron')}</span>`;
     const label = document.createElement('span');
@@ -453,6 +472,9 @@ function ensure_section(tab: terminal_tab, view: terminal_view): void {
     button.append(label);
     button.addEventListener('click', () => set_expanded(tab.id, !expanded_ids.has(tab.id)));
     button.addEventListener('keydown', event => {
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.isComposing) {
+        return;
+      }
       if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
         event.preventDefault();
         set_expanded(tab.id, event.key === 'ArrowRight');
@@ -463,7 +485,7 @@ function ensure_section(tab: terminal_tab, view: terminal_view): void {
         close_tab(tab.id);
         return;
       }
-      const visible_order = left_tab_order();
+      const visible_order = open_tabs;
       const index = visible_order.findIndex(item => item.id === tab.id);
       let next_index: number;
       if (event.key === 'ArrowDown') {
@@ -497,27 +519,24 @@ function ensure_section(tab: terminal_tab, view: terminal_view): void {
     view.section_label = label;
   }
   view.section_button!.setAttribute('aria-expanded', String(expanded_ids.has(tab.id)));
-  view.section_button!.title = `${tab.name} · Middle-click to close`;
+  view.section_button!.title = `${tab.name} · Drag to reorder · Alt+Shift+Up/Down to move · Middle-click to close`;
   view.section_label!.textContent = tab.name;
   view.section!.dataset.active = String(active_id === tab.id);
   view.section!.dataset.expanded = String(expanded_ids.has(tab.id));
-  view.section!.dataset.firstCollapsed = String(open_tabs.find(item => !expanded_ids.has(item.id))?.id === tab.id);
   view.section!.dataset.status = sessions.get(tab.id)?.status ?? 'idle';
   const close_button = view.section!.querySelector<HTMLButtonElement>('.section-close')!;
   close_button.title = `Close ${tab.name}`;
   close_button.setAttribute('aria-label', close_button.title);
 }
 
-/** Match keyboard movement to the visual accordion order without moving live
- *  terminal DOM nodes or changing the saved order of the user's tabs. */
-function left_tab_order(): terminal_tab[] {
-  return [
-    ...open_tabs.filter(tab => expanded_ids.has(tab.id)),
-    ...open_tabs.filter(tab => !expanded_ids.has(tab.id)),
-  ];
-}
-
 function render_terminals(): void {
+  // Replacing or removing a drag source can prevent dragend from bubbling. An
+  // authoritative redraw cancels the gesture before touching those DOM nodes.
+  for (const controller of reorder_controllers) {
+    controller.cancel();
+  }
+  const previous_focus = document.activeElement;
+  let sections_moved = false;
   document.body.dataset.side = side;
   for (const [id, view] of terminal_views) {
     if (!open_tabs.some(tab => tab.id === id)) {
@@ -544,9 +563,21 @@ function render_terminals(): void {
       const current_section = terminal_host.children[index] ?? null;
       if (current_section !== view.section) {
         terminal_host.insertBefore(view.section!, current_section);
+        sections_moved = true;
       }
     }
     view.pane.hidden = !is_visible_tab(tab.id);
+  }
+  // Moving a section can blur its terminal textarea even though the process and
+  // xterm instance are unchanged. Restore focus only if that same pane is visible.
+  if (side === 'left' && previous_focus instanceof HTMLElement && previous_focus.isConnected
+      && terminal_host.contains(previous_focus) && !previous_focus.closest('[hidden]')
+      && document.activeElement !== previous_focus) {
+    previous_focus.focus({ preventScroll: true });
+  }
+  if (sections_moved && previous_focus instanceof HTMLElement && previous_focus.dataset.reorderId
+      && previous_focus.isConnected) {
+    previous_focus.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
 }
 
@@ -1167,6 +1198,9 @@ document.addEventListener('visibilitychange', () => {
   schedule_fit();
 });
 window.addEventListener('beforeunload', () => {
+  for (const controller of reorder_controllers) {
+    controller.cancel();
+  }
   resize_observer.disconnect();
   theme_observer.disconnect();
   for (const view of terminal_views.values()) {

@@ -394,6 +394,78 @@ test('workspace memory restores tab names and selection but stores neither typed
   assert.equal(reopened.state().tabs.at(-1)?.name, 'Term 1');
 });
 
+test('both sidebars persist rapid tab moves and collapsed state without changing their running processes', async test_case => {
+  const runtime = await harness();
+  test_case.after(() => runtime.dispose());
+  const views = { left: await runtime.view('left'), right: await runtime.view('right') };
+  for (const view of Object.values(views)) await view.send({ type: 'add_tab' });
+  const original_processes = [...runtime.processes];
+  const original_writes = runtime.processes.map(terminal => [...terminal.writes]);
+  const expected_states = new Map<sidebar_side, ReturnType<fake_view['state']>>();
+
+  for (const side of ['left', 'right'] as const) {
+    const view = views[side];
+    const [first, second, temporary] = view.state().tabs;
+    await view.send({ type: 'select', id: second.id });
+    for (const tab of view.state().tabs) await view.send({ type: 'expanded', id: tab.id, expanded: false });
+    const other_side = side === 'left' ? 'right' : 'left';
+    const other_state = views[other_side].state();
+    // Deliver a burst before awaiting any handler, as quick repeated drags can do.
+    await Promise.all([
+      view.send({ type: 'move_tab', id: temporary.id, target_id: first.id, placement: 'before' }),
+      view.send({ type: 'move_tab', id: first.id, target_id: second.id, placement: 'after' }),
+      view.send({ type: 'move_tab', id: temporary.id, target_id: first.id, placement: 'after' }),
+    ]);
+    assert.deepEqual(view.state().tabs.map(tab => tab.id), [second.id, first.id, temporary.id]);
+    assert.equal(view.state().active_id, second.id);
+    assert.deepEqual(view.state().expanded_ids, []);
+    assert.deepEqual(views[other_side].state(), other_state, 'a move remains local to its originating sidebar');
+    expected_states.set(side, view.state());
+  }
+  assert.deepEqual(runtime.processes, original_processes);
+  assert.deepEqual(runtime.processes.map(terminal => terminal.writes), original_writes);
+  assert.ok(runtime.processes.every(terminal => terminal.killed === 0));
+  assert.deepEqual(runtime.updates, []);
+
+  const next_window = await harness({ memory: runtime.memory });
+  test_case.after(() => next_window.dispose());
+  for (const side of ['left', 'right'] as const) {
+    const restored = (await next_window.view(side)).state();
+    const expected = expected_states.get(side)!;
+    assert.deepEqual(restored.tabs, expected.tabs);
+    assert.equal(restored.active_id, expected.active_id);
+    assert.deepEqual(restored.expanded_ids, []);
+  }
+  assert.deepEqual(next_window.processes.map(terminal => terminal.writes), [
+    ['echo LEFT_SECOND\r'], ['echo LEFT_START\r'], [],
+    ['echo RIGHT_SECOND\r'], ['echo RIGHT_START\r'], [],
+  ]);
+});
+
+test('stale or malformed tab moves leave open tabs, stored layout, and processes untouched', async test_case => {
+  const runtime = await harness();
+  test_case.after(() => runtime.dispose());
+  const left = await runtime.view('left');
+  const [closed, remaining] = left.state().tabs;
+  await left.send({ type: 'close_tab', id: closed.id });
+  const original_state = left.state();
+  const original_memory = structuredClone(runtime.memory);
+  const messages: unknown[] = [
+    { type: 'move_tab', id: closed.id, target_id: remaining.id, placement: 'before' },
+    { type: 'move_tab', id: remaining.id, target_id: closed.id, placement: 'after' },
+    { type: 'move_tab', id: remaining.id, target_id: remaining.id, placement: 'before' },
+    { type: 'move_tab', id: remaining.id, target_id: '../invalid', placement: 'after' },
+    { type: 'move_tab', id: remaining.id, target_id: closed.id, placement: 'middle' },
+  ];
+  for (const message of messages) left.incoming.fire(message);
+  await next_turn();
+  assert.deepEqual(left.state(), original_state);
+  assert.deepEqual(runtime.memory, original_memory);
+  assert.equal(runtime.processes.length, 2);
+  assert.deepEqual(runtime.processes.map(terminal => terminal.killed), [1, 0]);
+  assert.deepEqual(runtime.errors, []);
+});
+
 test('hidden or collapsed surfaces cannot resize or type into their terminal', async test_case => {
   const runtime = await harness();
   test_case.after(() => runtime.dispose());

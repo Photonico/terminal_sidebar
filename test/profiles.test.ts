@@ -5,8 +5,8 @@ import { parse_profiles, parse_configuration, read_configuration, is_client_mess
 const profile = { id: 'a', name: 'Terminal', command: '', shell: '' };
 
 test('profile IDs retain startup identity when names and order change', () => {
-  const profiles = parse_profiles([{ id: 'b', name: ' CLI B ' }, { id: 'a', name: 'CLI A', command: 'grok', shell: ' zsh ' }]);
-  assert.deepEqual(profiles, [{ id: 'b', name: 'CLI B', command: '', shell: '' }, { id: 'a', name: 'CLI A', command: 'grok', shell: 'zsh' }]);
+  const profiles = parse_profiles([{ id: 'b', name: ' CLI B ' }, { id: 'a', name: 'CLI A', command: 'nvim', shell: ' zsh ' }]);
+  assert.deepEqual(profiles, [{ id: 'b', name: 'CLI B', command: '', shell: '' }, { id: 'a', name: 'CLI A', command: 'nvim', shell: 'zsh' }]);
 });
 
 test('rejects duplicate IDs, invalid shells, NUL commands, and malformed profiles atomically', () => {
@@ -50,4 +50,20 @@ test('webview boundary rejects unbounded data, malformed saves, and invalid term
     { type: 'close_tab', id: '../a' },
     { type: 'draft_state', configuring: true, can_undo: true },
   ]) assert.equal(is_client_message(value), false, JSON.stringify(value).slice(0, 120));
+});
+
+test('tab moves require two distinct valid identifiers and an explicit placement', () => {
+  for (const placement of ['before', 'after']) {
+    assert.equal(is_client_message({ type: 'move_tab', id: 'tab_0', target_id: 'tab_1', placement }), true);
+  }
+  for (const value of [
+    { id: 'tab_0', target_id: 'tab_1' },
+    { id: 'tab_0', target_id: 'tab_1', placement: 'middle' },
+    { id: 'tab_0', target_id: 'tab_1', placement: true },
+    { id: 'tab_0', placement: 'before' },
+    { id: 'tab_0', target_id: '../tab_1', placement: 'before' },
+    { id: '../tab_0', target_id: 'tab_1', placement: 'before' },
+    { id: 'tab_0', target_id: 'tab_0', placement: 'after' },
+    { id: 'tab_0', target_id: 1, placement: 'after' },
+  ]) assert.equal(is_client_message({ type: 'move_tab', ...value }), false, JSON.stringify(value));
 });

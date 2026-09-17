@@ -5,7 +5,7 @@ import type { terminal_profile } from '../src/types';
 
 function startup_profiles(): terminal_profile[] {
   return [
-    { id: 'grok', name: 'Grok', command: 'grok', shell: '/bin/zsh' },
+    { id: 'nvim', name: 'Neovim', command: 'nvim', shell: '/bin/zsh' },
     { id: 'shell', name: 'Shell', command: '', shell: '' },
   ];
 }
@@ -13,18 +13,18 @@ function startup_profiles(): terminal_profile[] {
 test('closing, renaming, and reopening runtime tabs never changes startup settings', () => {
   const profiles = startup_profiles();
   const model = new sidebar_tabs(profiles);
-  const grok = model.tabs[0];
-  assert.equal(model.rename_tab(grok.id, 'My conversation'), true);
-  assert.equal(profiles[0].name, 'Grok');
-  assert.equal(model.open_profile(profiles[0]).id, grok.id);
+  const nvim = model.tabs[0];
+  assert.equal(model.rename_tab(nvim.id, 'My editor'), true);
+  assert.equal(profiles[0].name, 'Neovim');
+  assert.equal(model.open_profile(profiles[0]).id, nvim.id);
   assert.equal(model.tabs.length, 2);
-  assert.equal(model.close_tab(grok.id), true);
+  assert.equal(model.close_tab(nvim.id), true);
   assert.equal(model.tabs.length, 1);
   assert.deepEqual(profiles, startup_profiles());
   const reopened = model.open_profile(profiles[0]);
-  assert.notEqual(reopened.id, grok.id);
-  assert.equal(reopened.command, 'grok');
-  assert.equal(reopened.name, 'Grok');
+  assert.notEqual(reopened.id, nvim.id);
+  assert.equal(reopened.command, 'nvim');
+  assert.equal(reopened.name, 'Neovim');
 });
 
 test('temporary names advance while ordinary tabs remain, avoiding collisions and startup commands', () => {
@@ -50,7 +50,7 @@ test('closing every temporary tab resets numbering even while startup profiles r
   model.close_tab(first.id);
   assert.equal(model.remember().next_number, 2);
   model.close_tab(second.id);
-  assert.deepEqual(model.tabs.map(tab => tab.profile_id), ['grok', 'shell']);
+  assert.deepEqual(model.tabs.map(tab => tab.profile_id), ['nvim', 'shell']);
   assert.equal(model.remember().next_number, 0);
   assert.equal(new sidebar_tabs(profiles, model.remember()).add_tab().name, 'Term 0');
   assert.equal(model.add_tab().name, 'Term 0');
@@ -71,7 +71,7 @@ test('restarting temporary numbering skips names occupied by startup profiles', 
 test('stale remembered numbering resets when no temporary tabs can be restored', () => {
   for (const tabs of [
     [],
-    [{ id: 'grok_tab', name: 'Grok', profile_id: 'grok' }],
+    [{ id: 'nvim_tab', name: 'Neovim', profile_id: 'nvim' }],
     [{ id: '../invalid', name: 'Term 5' }, { id: 'removed', name: 'Old profile', profile_id: 'deleted' }],
   ]) {
     const restored = new sidebar_tabs(startup_profiles(), {
@@ -111,18 +111,85 @@ test('memory restores order, runtime names, selection, and expansion, and reopen
   model.close_tab(model.tabs[0].id);
   model.select_tab(temporary.id);
   const restored = new sidebar_tabs(profiles, model.remember());
-  assert.deepEqual(restored.tabs.map(tab => tab.name), ['Shell', 'Scratch', 'Grok']);
+  assert.deepEqual(restored.tabs.map(tab => tab.name), ['Shell', 'Scratch', 'Neovim']);
   assert.equal(restored.active_id, temporary.id);
   assert.equal(restored.expanded_ids.includes(shell.id), false);
   assert.equal(restored.expanded_ids.includes(temporary.id), true);
-  assert.equal(restored.tabs[2].command, 'grok');
+  assert.equal(restored.tabs[2].command, 'nvim');
+});
+
+test('tab moves handle both directions and adjacency without changing names, selection, or expansion', () => {
+  const cases: Array<[number, number, 'before' | 'after', number[], boolean]> = [
+    [0, 3, 'after', [1, 2, 3, 0], true],
+    [0, 3, 'before', [1, 2, 0, 3], true],
+    [3, 0, 'before', [3, 0, 1, 2], true],
+    [3, 0, 'after', [0, 3, 1, 2], true],
+    [1, 2, 'after', [0, 2, 1, 3], true],
+    [2, 1, 'before', [0, 2, 1, 3], true],
+    [1, 2, 'before', [0, 1, 2, 3], false],
+    [2, 1, 'after', [0, 1, 2, 3], false],
+    [1, 1, 'after', [0, 1, 2, 3], false],
+  ];
+  for (const [source, target, placement, order, changed] of cases) {
+    const model = new sidebar_tabs(startup_profiles());
+    model.add_tab();
+    model.add_tab();
+    const original_tabs = model.tabs;
+    model.select_tab(original_tabs[1].id);
+    model.set_expanded(original_tabs[0].id, false);
+    const expanded = new Set(model.expanded_ids);
+    const next_number = model.remember().next_number;
+    assert.equal(model.move_tab(original_tabs[source].id, original_tabs[target].id, placement), changed);
+    assert.deepEqual(model.tabs, order.map(index => original_tabs[index]));
+    assert.equal(model.active_id, original_tabs[1].id);
+    assert.deepEqual(new Set(model.expanded_ids), expanded);
+    assert.equal(model.remember().next_number, next_number);
+  }
+});
+
+test('reordered collapsed tabs return in the same order and absent startup tabs append on reopening', () => {
+  const profiles = startup_profiles();
+  const model = new sidebar_tabs(profiles);
+  const [nvim, shell] = model.tabs;
+  const temporary = model.add_tab();
+  model.rename_tab(nvim.id, 'My Neovim');
+  model.move_tab(temporary.id, nvim.id, 'before');
+  model.move_tab(shell.id, nvim.id, 'before');
+  for (const tab of model.tabs) model.set_expanded(tab.id, false);
+  model.select_tab(shell.id);
+  const reopened = new sidebar_tabs(profiles, model.remember());
+  assert.deepEqual(reopened.tabs, model.tabs);
+  assert.equal(reopened.active_id, shell.id);
+  assert.deepEqual(reopened.expanded_ids, []);
+  assert.equal(reopened.remember().tabs.at(-1)?.renamed, true);
+
+  reopened.close_tab(shell.id);
+  const next_window = new sidebar_tabs(profiles, reopened.remember());
+  assert.deepEqual(next_window.tabs.map(tab => tab.name), ['Term 0', 'My Neovim', 'Shell']);
+  assert.deepEqual(next_window.expanded_ids, [next_window.tabs[2].id]);
+});
+
+test('stale tab moves cannot remove or duplicate any remaining tab', () => {
+  const model = new sidebar_tabs(startup_profiles());
+  const closed = model.add_tab();
+  model.close_tab(closed.id);
+  const before = model.remember();
+  for (const [source, target] of [
+    [closed.id, model.tabs[0].id],
+    [model.tabs[0].id, closed.id],
+    ['absent', 'also_absent'],
+  ]) {
+    assert.equal(model.move_tab(source, target, 'before'), false);
+    assert.equal(model.move_tab(source, target, 'after'), false);
+    assert.deepEqual(model.remember(), before);
+  }
 });
 
 test('persisted memory excludes credentials, commands, shells, and arbitrary injected fields', () => {
   const restored = new sidebar_tabs(startup_profiles(), {
     version: 1,
     tabs: [
-      { id: 'first', name: 'Grok', profile_id: 'grok', command: 'stale secret', shell: 'wrong shell' },
+      { id: 'first', name: 'Neovim', profile_id: 'nvim', command: 'stale secret', shell: 'wrong shell' },
       { id: 'scratch', name: 'Scratch', command: 'injected command', shell: '/malicious/program', output: 'private text' },
       { id: 'removed', name: 'Removed', profile_id: 'deleted', command: 'old command' },
     ],
@@ -131,7 +198,7 @@ test('persisted memory excludes credentials, commands, shells, and arbitrary inj
     next_number: 8,
     history: 'private history',
   });
-  assert.equal(restored.tabs[0].command, 'grok');
+  assert.equal(restored.tabs[0].command, 'nvim');
   assert.equal(restored.tabs[0].shell, '/bin/zsh');
   assert.equal(restored.tabs[1].command, '');
   assert.equal(restored.tabs[1].shell, '');
@@ -145,7 +212,7 @@ test('new startup names take effect next window while deliberate runtime renames
   const profiles = startup_profiles();
   const model = new sidebar_tabs(profiles);
   model.rename_tab(model.tabs[0].id, 'Personal name');
-  profiles[0].name = 'New Grok default';
+  profiles[0].name = 'New Neovim default';
   profiles[1].name = 'New Shell default';
   const restored = new sidebar_tabs(profiles, model.remember());
   assert.equal(restored.tabs[0].name, 'Personal name');

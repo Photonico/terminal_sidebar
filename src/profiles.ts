@@ -92,6 +92,9 @@ export function is_client_message(value: unknown): value is client_message {
       return valid_identifier;
     case 'rename_tab':
       return valid_identifier && is_tab_name(message.name);
+    case 'move_tab':
+      return valid_identifier && is_identifier(message.target_id) && message.id !== message.target_id
+        && (message.placement === 'before' || message.placement === 'after');
     case 'expanded':
       return valid_identifier && typeof message.expanded === 'boolean';
     case 'export':

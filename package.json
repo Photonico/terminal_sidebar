@@ -55,7 +55,7 @@
       "activitybar": [
         {
           "id": "terminalSidebarLeft",
-          "title": "Side Term",
+          "title": "Side Terminal",
           "icon": "assets/logo.svg"
         }
       ]
