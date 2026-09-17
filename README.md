@@ -2,7 +2,7 @@
 
 Terminal Sidebar brings independent terminals into the VS Code sidebars. The left side organises terminals as collapsible sections; the right side uses a compact tab strip. Each terminal runs its own shell, leaving the ordinary terminal panel available for other work.
 
-**Version 0.3.0 is a pre-release for testing.** It requires VS Code **1.106 or later** and a desktop or remote Node.js extension host. Browser-only and virtual workspaces are unsupported.
+**Version 0.5.0 is a pre-release for testing.** It requires VS Code **1.106 or later** and a desktop or remote Node.js extension host. Browser-only and virtual workspaces are unsupported.
 
 ## Getting started
 
@@ -21,11 +21,15 @@ An **open terminal** belongs to the current workspace window. A **startup profil
 
 The right tab strip has a **+** button to create a terminal and a **×** button to close the selected one. A middle click closes the tab beneath the pointer. Double-click blank tab-strip space to create a terminal. New ordinary shells are named **Term 0**, **Term 1**, and so on, with an independent counter on each side. Numbers continue from the remembered layout and skip existing names.
 
-The left sidebar presents an Explorer-style list of collapsible terminal sections. Several sections can be expanded at once. Collapsing a section hides its terminal and preserves the process; its close control ends the process. This layout uses a single Webview View and is not a collection of native Explorer panes.
+The left sidebar presents an Explorer-style list of collapsible terminal sections. Several sections can be expanded at once and share the available height. Collapsed sections sit below them, at the bottom of the view; if all sections are collapsed, the list remains at the bottom. Collapsing a section hides its terminal and preserves the process; its close control ends the process. This layout uses a single Webview View and is not a collection of native Explorer panes.
 
 The two sides have separate startup lists, open tabs, selections, terminal dimensions, and processes. Even terminals with the same name run independently. A command-line tool may still share its own global login or files between processes.
 
 Each side supports up to **32 startup profiles** and **32 additional ordinary terminals**. Terminals begin when their sidebar is first used in a trusted workspace, including background startup tabs. Opening configuration alone does not run commands. Switching tabs, folding sections, or hiding a sidebar does not restart processes or repeat startup commands.
+
+Both sides use compact 24 px headers and the VS Code interface font. Colours and corner radii come from the current theme. Terminal scrollbars use the editor's scrollbar sizes and visibility together with its normal, hover, and active slider colours. Theme and setting changes update open terminals without restarting their processes. Terminal text continues to follow the integrated-terminal font settings.
+
+The view uses documented [Webview theme variables](https://code.visualstudio.com/api/extension-guides/webview#theming-webview-content) and public terminal APIs. It follows the host's appearance where those APIs expose it; it cannot inherit arbitrary private editor styling or guarantee pixel-identical behaviour across future VS Code releases.
 
 ## Configuration
 
@@ -98,6 +102,8 @@ The check runs type checking, tests, and the production build. Press **F5** to o
 ```sh
 npm run package -- --target darwin-arm64
 ```
+
+Packages are stored in the repository's `release/` folder as `terminal-sidebar-<platform>-<version>.vsix`. The folder is created when needed, and CI uses the same location and naming. An explicit `--out <path>` or `-o <path>` overrides this default.
 
 The backend includes native code. CI checks and packages macOS, Linux, and Windows independently; Marketplace publication is a separate step. Automated process and host tests do not establish that every platform's interface has been visually verified.
 

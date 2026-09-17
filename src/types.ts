@@ -32,6 +32,10 @@ export interface appearance {
   font_size: number;
   cursor_blink: boolean;
   scrollback: number;
+  editor_scrollbar_vertical: 'auto' | 'visible' | 'hidden';
+  editor_scrollbar_horizontal: 'auto' | 'visible' | 'hidden';
+  editor_scrollbar_vertical_size: number;
+  editor_scrollbar_horizontal_size: number;
 }
 
 export interface shell_choice {

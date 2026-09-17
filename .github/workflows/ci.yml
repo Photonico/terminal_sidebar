@@ -28,16 +28,26 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
-      - name: Determine VSIX target
+      - name: Determine VSIX target and output path
         id: target
         run: |
-          node -e 'const fs = require("node:fs"); const os = require("node:os"); const target = `${os.platform()}-${os.arch()}`; if (!["darwin-arm64", "darwin-x64", "linux-x64", "win32-x64"].includes(target)) throw new Error(`Unsupported package target: ${target}`); fs.appendFileSync(process.env.GITHUB_OUTPUT, `target=${target}\n`);'
+          node <<'NODE'
+          const { appendFileSync: append_file_sync } = require('node:fs');
+          const { name, version } = require('./package.json');
+          const target_platform = `${process.platform}-${process.arch}`;
+          const supported_targets = ['darwin-arm64', 'darwin-x64', 'linux-x64', 'win32-x64'];
+          if (!supported_targets.includes(target_platform)) {
+            throw new Error(`Unsupported package target: ${target_platform}`);
+          }
+          const package_path = `release/${name}-${target_platform}-${version}.vsix`;
+          append_file_sync(process.env.GITHUB_OUTPUT, `target=${target_platform}\npackage_path=${package_path}\n`);
+          NODE
       - name: Package VSIX
         env:
           VSIX_TARGET: ${{ steps.target.outputs.target }}
-        run: npm run package -- --target "$VSIX_TARGET" --out "terminal-sidebar-$VSIX_TARGET.vsix"
+        run: npm run package -- --target "$VSIX_TARGET"
       - uses: actions/upload-artifact@v6
         with:
           name: terminal-sidebar-${{ steps.target.outputs.target }}
-          path: terminal-sidebar-${{ steps.target.outputs.target }}.vsix
+          path: ${{ steps.target.outputs.package_path }}
           if-no-files-found: error

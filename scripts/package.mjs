@@ -1,4 +1,5 @@
 import { spawnSync as spawn_sync } from 'node:child_process';
+import { mkdirSync as make_directory, readFileSync as read_file } from 'node:fs';
 import path from 'node:path';
 
 const arguments_list = process.argv.slice(2);
@@ -14,6 +15,18 @@ if (target_argument_index !== -1) {
 }
 if (arguments_list.some(argument => argument.startsWith('--target='))) {
   throw new Error('Use --target followed by the platform name.');
+}
+
+// Keep each platform and version identifiable without replacing an explicit output path.
+const has_output_path = arguments_list.some(argument =>
+  argument === '--out' || argument.startsWith('--out=') || argument.startsWith('-o'),
+);
+if (!has_output_path) {
+  const package_manifest = JSON.parse(read_file(path.resolve('package.json'), 'utf8'));
+  const output_directory = path.resolve('release');
+  const output_filename = `${package_manifest.name}-${target_platform}-${package_manifest.version}.vsix`;
+  make_directory(output_directory, { recursive: true });
+  arguments_list.push('--out', path.join(output_directory, output_filename));
 }
 
 const package_arguments = [

@@ -56,9 +56,9 @@ def circular_dash_path(radius: float, body_width: float, start: float, end: floa
 
 
 def circular_dashes(radius: float, body_width: float, outline_width: float) -> list[str]:
-    """Build 12 dashes with a visible 2:1 solid-to-gap ratio on the centreline.
+    """Build 12 longer dashes, rotated three degrees clockwise.
 
-    Each 30-degree interval contains 20 degrees of visible ink and 10 degrees
+    Each 30-degree interval contains 22 degrees of visible ink and 8 degrees
     of transparent gap. A round cap, including the grey outline, extends
     beyond the underlying arc. Its angular reach on the reference circle is
     2 * asin(cap_radius / (2 * radius)); subtract both ends before drawing.
@@ -66,7 +66,8 @@ def circular_dashes(radius: float, body_width: float, outline_width: float) -> l
     """
     number_of_dashes = 12
     interval_angle = 2 * math.pi / number_of_dashes
-    visible_dash_angle = interval_angle * 2 / 3
+    visible_dash_angle = math.radians(22)
+    rotation_angle = math.radians(3)
     outside_cap_radius = (body_width + outline_width) / 2
     cap_angle = 2 * math.asin(outside_cap_radius / (2 * radius))
     arc_angle = visible_dash_angle - 2 * cap_angle
@@ -75,8 +76,8 @@ def circular_dashes(radius: float, body_width: float, outline_width: float) -> l
 
     paths = []
     for index in range(number_of_dashes):
-        # Centre a dash at twelve o'clock, then repeat every thirty degrees.
-        centre_angle = -math.pi / 2 + index * interval_angle
+        # Offset twelve o'clock clockwise, then repeat every thirty degrees.
+        centre_angle = -math.pi / 2 + rotation_angle + index * interval_angle
         start_angle = centre_angle - arc_angle / 2
         end_angle = centre_angle + arc_angle / 2
         paths.append(circular_dash_path(radius, body_width, start_angle, end_angle))
@@ -117,26 +118,40 @@ def build_logo(font_path: Path, output: Path) -> None:
         horizontal_offset = 256 - (minimum_x + maximum_x) * glyph_scale / 2
         vertical_offset = 256 + (minimum_y + maximum_y) * glyph_scale / 2
         outline_pen = SVGPathPen(glyph_set, ntos=format_number)
-        for glyph_name, position in positioned_glyphs:
-            transform = (glyph_scale, 0, 0, -glyph_scale, horizontal_offset + position * glyph_scale, vertical_offset)
+        prompt_inset = 10
+        for (glyph_name, position), bounds in zip(positioned_glyphs, glyph_bounds):
+            # Move each original glyph ten canvas units towards the circle centre.
+            # Translation preserves its contours, size, proportions, and orientation.
+            centre_x = horizontal_offset + (bounds[0] + bounds[2]) * glyph_scale / 2
+            centre_y = vertical_offset - (bounds[1] + bounds[3]) * glyph_scale / 2
+            distance_to_centre = math.hypot(256 - centre_x, 256 - centre_y)
+            inset_fraction = min(1, prompt_inset / distance_to_centre) if distance_to_centre else 0
+            inset_x = (256 - centre_x) * inset_fraction
+            inset_y = (256 - centre_y) * inset_fraction
+            transform = (
+                glyph_scale, 0, 0, -glyph_scale,
+                horizontal_offset + position * glyph_scale + inset_x,
+                vertical_offset + inset_y,
+            )
             glyph_set[glyph_name].draw(TransformPen(outline_pen, transform))
         prompt_path = outline_pen.getCommands()
         underscore_bounds = glyph_bounds[1]
         original_body_width = (underscore_bounds[3] - underscore_bounds[1]) * glyph_scale
 
     ring_radius = 194
-    body_width = 28
+    ring_body_width = 28
+    prompt_body_width = 34
     outline_width = 6
-    # Both shapes have a nominal 28-unit body and a centred 6-unit outline:
-    # visible white width = 22; total width including the outline = 34.
-    # Widen the actual font outline by 8.82 units, without stretching it.
-    added_glyph_width = body_width - original_body_width
+    # Keep the ring weight unchanged. Add weight to the original font outline
+    # with layered strokes: prompt white width = 28, complete width = 40.
+    # No replacement font, outline redrawing, or non-uniform scaling is used.
+    added_glyph_width = prompt_body_width - original_body_width
     grey_glyph_stroke = added_glyph_width + outline_width
     white_glyph_stroke = added_glyph_width - outline_width
     if white_glyph_stroke < 0:
         raise ValueError('This font weight is too heavy for the outlined prompt geometry.')
 
-    dash_paths = circular_dashes(ring_radius, body_width, outline_width)
+    dash_paths = circular_dashes(ring_radius, ring_body_width, outline_width)
     frame_elements = '\n'.join(
         f'    <path id="frame-dash-{index:02d}" d="{path}"/>'
         for index, path in enumerate(dash_paths)
@@ -145,8 +160,8 @@ def build_logo(font_path: Path, output: Path) -> None:
     svg = f'''<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title description">
   <title id="title">Terminal Sidebar</title>
-  <desc id="description">Twelve rounded white circular dashes, with a visible two-to-one dash-to-gap ratio, surround a bold, compact Photonico Code greater-than and underscore. Matching #646464 outlines and a transparent background.</desc>
-  <metadata>Glyph source: {escape(family)} Regular, {escape(version)}. Font SHA-256: {font_hash}. Actual font outlines, widened to the nominal 28-unit frame body. Frame and prompt grey borders: 6 units. Twelve dashes: visible 20-degree ink and 10-degree gap on radius 194, including round-cap outline compensation. No embedded font.</metadata>
+  <desc id="description">Twelve longer rounded white circular dashes, rotated three degrees clockwise, surround heavier Photonico Code greater-than and underscore glyphs moved slightly towards the centre. Original font contours, matching #646464 outlines, and a transparent background.</desc>
+  <metadata>Glyph source: {escape(family)} Regular, {escape(version)}. Font SHA-256: {font_hash}. Original glyph contours at unchanged scale 0.137, each translated 10 units towards the centre and widened to a nominal 34-unit body. Frame body: 28 units. Frame and prompt grey borders: 6 units. Twelve dashes: visible 22-degree ink and 8-degree gap on radius 194, with round-cap outline compensation and 3-degree clockwise rotation. No embedded font.</metadata>
   <g id="frame" fill="#ffffff" stroke="#646464" stroke-width="{outline_width}" stroke-linejoin="round">
 {frame_elements}
   </g>

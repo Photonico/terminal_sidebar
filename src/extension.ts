@@ -22,6 +22,18 @@ const history_character_limit = 1024 * 1024;
 const output_delay_ms = 12;
 type sidebar_action = 'save' | 'undo' | 'redo' | 'close' | 'add';
 
+function read_scrollbar_visibility(value: unknown): 'auto' | 'visible' | 'hidden' {
+  return value === 'visible' || value === 'hidden' ? value : 'auto';
+}
+
+/** Match the editor's integer scrollbar dimensions, measured in CSS pixels. */
+function read_scrollbar_size(value: unknown, default_size: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return default_size;
+  }
+  return Math.max(0, Math.min(1000, Math.trunc(value)));
+}
+
 /** One view owns its layout and process manager; no terminal belongs to both sides. */
 class sidebar_view implements vscode.WebviewViewProvider, vscode.Disposable {
   view?: vscode.WebviewView;
@@ -146,10 +158,12 @@ class terminal_sidebar implements vscode.Disposable {
           || event.affectsConfiguration('terminalSidebar.profiles')) {
           this.reload_configuration();
         }
-        if (event.affectsConfiguration('terminal.integrated')
-          || event.affectsConfiguration('editor.fontFamily')) {
+        if (event.affectsConfiguration('terminal.integrated')) {
           this.send_state();
           void this.refresh_shells();
+        } else if (event.affectsConfiguration('editor.fontFamily')
+          || event.affectsConfiguration('editor.scrollbar')) {
+          this.send_state();
         }
       }),
       vscode.workspace.onDidGrantWorkspaceTrust(() => {
@@ -211,6 +225,18 @@ class terminal_sidebar implements vscode.Disposable {
       font_size: Math.max(8, Math.min(40, terminal_settings.get<number>('fontSize', 14))),
       cursor_blink: terminal_settings.get<boolean>('cursorBlinking', false),
       scrollback: Math.max(100, Math.min(10000, terminal_settings.get<number>('scrollback', 1000))),
+      editor_scrollbar_vertical: read_scrollbar_visibility(
+        editor_settings.get<unknown>('scrollbar.vertical'),
+      ),
+      editor_scrollbar_horizontal: read_scrollbar_visibility(
+        editor_settings.get<unknown>('scrollbar.horizontal'),
+      ),
+      editor_scrollbar_vertical_size: read_scrollbar_size(
+        editor_settings.get<unknown>('scrollbar.verticalScrollbarSize'), 14,
+      ),
+      editor_scrollbar_horizontal_size: read_scrollbar_size(
+        editor_settings.get<unknown>('scrollbar.horizontalScrollbarSize'), 12,
+      ),
     };
   }
 

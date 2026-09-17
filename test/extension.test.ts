@@ -134,6 +134,7 @@ interface harness_options {
   legacy_profiles?: terminal_profile[];
   memory?: Map<string, unknown>;
   trusted?: boolean;
+  settings?: Record<string, unknown>;
 }
 
 async function harness(options: harness_options = {}) {
@@ -151,6 +152,7 @@ async function harness(options: harness_options = {}) {
   const configuration_changed = new event_source<{ affectsConfiguration(section: string): boolean }>();
   const trust_granted = new event_source<void>();
   const memory = new Map<string, unknown>(structuredClone(options.memory ?? new Map()));
+  const settings = new Map(Object.entries(options.settings ?? {}));
   const errors: string[] = [];
   const api = {
     ConfigurationTarget: { Global: 1 },
@@ -164,7 +166,8 @@ async function harness(options: harness_options = {}) {
       onDidChangeConfiguration: configuration_changed.subscribe,
       onDidGrantWorkspaceTrust: trust_granted.subscribe,
       getConfiguration: (section: string) => ({
-        get: (_key: string, fallback?: unknown) => fallback,
+        get: (key: string, fallback?: unknown) => settings.has(`${section}.${key}`)
+          ? settings.get(`${section}.${key}`) : fallback,
         inspect: (key: string) => {
           if (section !== 'terminalSidebar') return undefined;
           if (key === 'sidebars') return { globalValue: configuration_value };
@@ -239,6 +242,13 @@ async function harness(options: harness_options = {}) {
   return {
     api, commands, providers, executions, processes, spawns, updates, memory, errors,
     configuration: () => structuredClone(configuration_value),
+    change_setting: (name: string, value: unknown) => {
+      if (value === undefined) settings.delete(name);
+      else settings.set(name, value);
+      configuration_changed.fire({
+        affectsConfiguration: section => name === section || name.startsWith(`${section}.`),
+      });
+    },
     replace_configuration: (next_configuration: sidebar_configuration) => {
       configuration_value = structuredClone(next_configuration);
       configuration_changed.fire({ affectsConfiguration: item => item === 'terminalSidebar.sidebars' });
@@ -505,4 +515,81 @@ test('legacy startup settings migrate to the right side without writing user set
   assert.deepEqual(right.state().tabs.map(tab => tab.name), ['Right One', 'Right Two']);
   assert.equal(runtime.processes.length, 2);
   assert.deepEqual(runtime.updates, []);
+});
+
+test('both sidebars inherit editor scrollbar defaults and terminal text settings', async test_case => {
+  const runtime = await harness({ settings: {
+    'editor.fontFamily': 'Editor Mono',
+    'terminal.integrated.fontSize': 16,
+  } });
+  test_case.after(() => runtime.dispose());
+  const left = await runtime.view('left');
+  const right = await runtime.view('right');
+  const expected_appearance = {
+    font_family: 'Editor Mono', font_size: 16, cursor_blink: false, scrollback: 1000,
+    editor_scrollbar_vertical: 'auto', editor_scrollbar_horizontal: 'auto',
+    editor_scrollbar_vertical_size: 14, editor_scrollbar_horizontal_size: 12,
+  };
+  assert.deepEqual(left.state().appearance, expected_appearance);
+  assert.deepEqual(right.state().appearance, expected_appearance);
+  runtime.change_setting('terminal.integrated.fontFamily', 'Terminal Mono');
+  assert.equal(left.state().appearance.font_family, 'Terminal Mono');
+  assert.equal(right.state().appearance.font_family, 'Terminal Mono');
+});
+
+test('editor scrollbar changes update open sidebars without restarting terminals or rewriting settings', async test_case => {
+  const runtime = await harness({ settings: {
+    'editor.scrollbar.vertical': 'visible',
+    'editor.scrollbar.horizontal': 'hidden',
+    'editor.scrollbar.verticalScrollbarSize': 20,
+    'editor.scrollbar.horizontalScrollbarSize': 9,
+  } });
+  test_case.after(() => runtime.dispose());
+  const left = await runtime.view('left');
+  const right = await runtime.view('right');
+  assert.equal(left.state().appearance.editor_scrollbar_vertical, 'visible');
+  assert.equal(right.state().appearance.editor_scrollbar_horizontal, 'hidden');
+  assert.equal(left.state().appearance.editor_scrollbar_vertical_size, 20);
+  assert.equal(right.state().appearance.editor_scrollbar_horizontal_size, 9);
+
+  runtime.change_setting('editor.scrollbar.vertical', 'hidden');
+  runtime.change_setting('editor.scrollbar.horizontal', 'visible');
+  runtime.change_setting('editor.scrollbar.verticalScrollbarSize', 0);
+  runtime.change_setting('editor.scrollbar.horizontalScrollbarSize', 18);
+  for (const view of [left, right]) {
+    assert.equal(view.state().appearance.editor_scrollbar_vertical, 'hidden');
+    assert.equal(view.state().appearance.editor_scrollbar_horizontal, 'visible');
+    assert.equal(view.state().appearance.editor_scrollbar_vertical_size, 0);
+    assert.equal(view.state().appearance.editor_scrollbar_horizontal_size, 18);
+  }
+  runtime.change_setting('editor.scrollbar.vertical', undefined);
+  runtime.change_setting('editor.scrollbar.verticalScrollbarSize', undefined);
+  assert.equal(left.state().appearance.editor_scrollbar_vertical, 'auto');
+  assert.equal(right.state().appearance.editor_scrollbar_vertical_size, 14);
+  assert.equal(runtime.processes.length, 4);
+  assert.ok(runtime.processes.every(terminal => terminal.killed === 0));
+  assert.deepEqual(runtime.updates, []);
+});
+
+test('malformed scrollbar preferences fall back and numeric dimensions follow editor bounds', async test_case => {
+  const runtime = await harness({ settings: {
+    'editor.scrollbar.vertical': 'unexpected',
+    'editor.scrollbar.horizontal': false,
+    'editor.scrollbar.verticalScrollbarSize': Number.NaN,
+    'editor.scrollbar.horizontalScrollbarSize': 'large',
+  } });
+  test_case.after(() => runtime.dispose());
+  const right = await runtime.view('right');
+  assert.equal(right.state().appearance.editor_scrollbar_vertical, 'auto');
+  assert.equal(right.state().appearance.editor_scrollbar_horizontal, 'auto');
+  assert.equal(right.state().appearance.editor_scrollbar_vertical_size, 14);
+  assert.equal(right.state().appearance.editor_scrollbar_horizontal_size, 12);
+  runtime.change_setting('editor.scrollbar.verticalScrollbarSize', -2);
+  runtime.change_setting('editor.scrollbar.horizontalScrollbarSize', 2000);
+  assert.equal(right.state().appearance.editor_scrollbar_vertical_size, 0);
+  assert.equal(right.state().appearance.editor_scrollbar_horizontal_size, 1000);
+  runtime.change_setting('editor.scrollbar.verticalScrollbarSize', 10.9);
+  runtime.change_setting('editor.scrollbar.horizontalScrollbarSize', Number.POSITIVE_INFINITY);
+  assert.equal(right.state().appearance.editor_scrollbar_vertical_size, 10);
+  assert.equal(right.state().appearance.editor_scrollbar_horizontal_size, 12);
 });

@@ -6,6 +6,9 @@ body {
   --view-foreground: var(--vscode-foreground, #cccccc);
   --view-border: var(--vscode-panel-border, var(--vscode-widget-border, #80808035));
   --tab-radius: var(--vscode-cornerRadius-small, 4px);
+  --tab-height: 24px;
+  --scrollbar-vertical-size: 14px;
+  --scrollbar-horizontal-size: 12px;
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -20,13 +23,14 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 #app { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; background: var(--view-background); }
 
 /* The selected tab and terminal share one background, without a dividing rule. */
-#terminal-header { flex: 0 0 auto; display: flex; min-width: 0; min-height: 24px; background: var(--vscode-sideBar-background, var(--view-background)); }
+#terminal-header { flex: 0 0 auto; display: flex; min-width: 0; min-height: var(--tab-height); background: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-sideBar-background, var(--view-background))); }
 #terminal-tabs { display: flex; flex: 1 1 0; min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
 #terminal-tabs::-webkit-scrollbar { height: 0; }
-.terminal-tab { flex: 0 0 auto; max-width: 200px; height: 24px; position: relative; isolation: isolate; padding: 2px 6px; border: 0; border-radius: var(--tab-radius) var(--tab-radius) 0 0; background: transparent; color: var(--vscode-tab-inactiveForeground, var(--view-foreground)); font-size: 12px; line-height: 20px; white-space: nowrap; }
+.terminal-tab { flex: 0 0 auto; max-width: 200px; height: var(--tab-height); position: relative; isolation: isolate; padding: 2px 6px; border: 0; border-radius: var(--tab-radius) var(--tab-radius) 0 0; background: transparent; color: var(--vscode-tab-inactiveForeground, var(--view-foreground)); font-size: inherit; font-weight: normal; line-height: 20px; white-space: nowrap; }
 .tab-label { display: block; overflow: hidden; text-overflow: ellipsis; }
 .terminal-tab::before { content: ''; position: absolute; z-index: -1; inset: 2px; border-radius: var(--tab-radius); background: transparent; pointer-events: none; }
-.terminal-tab:hover:not([aria-selected="true"])::before { background: var(--vscode-toolbar-hoverBackground, #80808020); }
+.terminal-tab:hover:not([aria-selected="true"])::before { background: var(--vscode-tab-hoverBackground, var(--vscode-toolbar-hoverBackground, #80808020)); }
+.terminal-tab:hover:not([aria-selected="true"]) { color: var(--vscode-tab-hoverForeground, var(--vscode-tab-inactiveForeground, var(--view-foreground))); }
 .terminal-tab[aria-selected="true"] { color: var(--terminal-foreground, var(--view-foreground)); background: var(--view-background); }
 .terminal-tab[data-status="error"] { color: var(--vscode-errorForeground, #f48771); }
 #tab-actions, #configuration-toolbar { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; margin-left: auto; }
@@ -37,23 +41,48 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 
 #terminal-content { flex: 1 1 auto; min-height: 0; min-width: 0; position: relative; }
 #terminal-host { height: 100%; width: 100%; position: relative; overflow: hidden; }
-.terminal-pane { position: absolute; inset: 0; padding: 4px 2px 2px 5px; background: var(--view-background); }
-.terminal-pane .xterm { height: 100%; }
-.xterm .xterm-viewport { background-color: var(--view-background); scrollbar-width: thin; scrollbar-color: var(--vscode-scrollbarSlider-background, #80808055) transparent; }
+.terminal-pane { position: absolute; inset: 0; min-width: 0; background: var(--view-background); }
+/* FitAddon measures padding on .xterm, so the last column stays inside the pane. */
+.terminal-pane .xterm { height: 100%; padding: 4px 2px 2px 5px; }
+.xterm .xterm-viewport { background-color: var(--view-background); }
+
+/* xterm owns its Monaco-style scrollbar geometry; its public theme supplies
+   slider colours. These overrides only select visibility and the track colour. */
+.xterm .xterm-scrollable-element > .scrollbar { background: var(--vscode-scrollbar-background, transparent); }
+.xterm .xterm-scrollable-element > .scrollbar > .slider { border-radius: var(--vscode-cornerRadius-small, 0); }
+#app[data-vertical-scrollbar="hidden"] .xterm .xterm-scrollable-element > .scrollbar.vertical { display: none !important; }
+#app[data-vertical-scrollbar="visible"] .xterm .xterm-scrollable-element > .scrollbar.vertical { opacity: 1 !important; visibility: visible !important; pointer-events: auto !important; }
+
+/* Overflow outside xterm uses the same theme colours, corner radius and sizes.
+   Keep dimensions fixed while hovering so terminals never refit on pointer moves. */
+#terminal-host, #configuration { scrollbar-color: auto; scrollbar-width: auto; }
+#terminal-host::-webkit-scrollbar, #configuration::-webkit-scrollbar { width: var(--scrollbar-vertical-size); height: var(--scrollbar-horizontal-size); }
+#terminal-host::-webkit-scrollbar-track, #configuration::-webkit-scrollbar-track { background: var(--vscode-scrollbar-background, transparent); }
+#terminal-host::-webkit-scrollbar-thumb, #configuration::-webkit-scrollbar-thumb { border: 0; border-radius: var(--vscode-cornerRadius-small, 0); background: var(--vscode-scrollbarSlider-background, #79797966); }
+#terminal-host::-webkit-scrollbar-thumb:hover, #configuration::-webkit-scrollbar-thumb:hover { background: var(--vscode-scrollbarSlider-hoverBackground, #646464b3); }
+#terminal-host::-webkit-scrollbar-thumb:active, #configuration::-webkit-scrollbar-thumb:active { background: var(--vscode-scrollbarSlider-activeBackground, #bfbfbf66); }
+#terminal-host::-webkit-scrollbar-corner, #configuration::-webkit-scrollbar-corner { background: transparent; }
+#app[data-vertical-scrollbar="auto"] #terminal-host:not(:hover):not(:focus-within)::-webkit-scrollbar-thumb,
+#app[data-vertical-scrollbar="auto"] #configuration:not(:hover):not(:focus-within)::-webkit-scrollbar-thumb { background: transparent; }
 
 /* Left terminals are independent, collapsible sections like Explorer groups. */
-body[data-side="left"] #terminal-host { overflow-y: auto; scrollbar-width: thin; scrollbar-gutter: stable; }
-.terminal-section { min-width: 0; background: var(--vscode-sideBar-background, var(--view-background)); }
-.section-heading { display: flex; height: 28px; min-width: 0; background: var(--vscode-sideBarSectionHeader-background, var(--vscode-sideBar-background, var(--view-background))); border-top: 1px solid var(--vscode-sideBarSectionHeader-border, var(--view-border)); }
-.section-toggle { display: flex; flex: 1 1 auto; align-items: center; min-width: 0; padding: 2px 4px; gap: 4px; border: 0; background: transparent; text-align: left; color: var(--vscode-sideBarSectionHeader-foreground, var(--view-foreground)); font-weight: 600; }
-.section-toggle:hover { background: var(--vscode-toolbar-hoverBackground, #80808020); }
+body[data-side="left"] #terminal-host { display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden; background: var(--vscode-sideBar-background, var(--view-background)); }
+.terminal-section { display: flex; flex-direction: column; flex: 0 0 var(--tab-height); min-width: 0; min-height: var(--tab-height); background: var(--vscode-sideBar-background, var(--view-background)); }
+.terminal-section[data-expanded="true"] { order: 0; flex: 1 0 72px; }
+.terminal-section[data-expanded="false"] { order: 1; }
+.terminal-section[data-first-collapsed="true"] { margin-top: auto; }
+.section-heading { display: flex; flex: 0 0 var(--tab-height); height: var(--tab-height); min-width: 0; position: relative; isolation: isolate; border: 0; border-radius: var(--tab-radius); color: var(--vscode-sideBarSectionHeader-foreground, var(--view-foreground)); background: var(--vscode-sideBarSectionHeader-background, var(--vscode-sideBar-background, var(--view-background))); }
+.section-heading::before { content: ''; position: absolute; z-index: -1; inset: 2px; border-radius: var(--tab-radius); background: transparent; pointer-events: none; }
+.terminal-section[data-active="true"] .section-heading { color: var(--vscode-tab-activeForeground, var(--view-foreground)); background: var(--vscode-tab-activeBackground, var(--view-background)); }
+.terminal-section:not([data-active="true"]) .section-heading:hover::before { background: var(--vscode-list-hoverBackground, var(--vscode-tab-hoverBackground, #80808020)); }
+.section-toggle { display: flex; flex: 1 1 auto; align-items: center; min-width: 0; padding: 2px 4px; gap: 4px; border: 0; border-radius: var(--tab-radius); background: transparent; text-align: left; color: inherit; font-size: inherit; font-weight: normal; line-height: 20px; }
+.terminal-section:not([data-active="true"]) .section-heading:hover { color: var(--vscode-list-hoverForeground, var(--vscode-sideBarSectionHeader-foreground, var(--view-foreground))); }
 .section-chevron { display: flex; flex: 0 0 16px; align-items: center; justify-content: center; }
 .section-toggle[aria-expanded="true"] .section-chevron { transform: rotate(90deg); }
 .section-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .section-close { align-self: center; }
 .terminal-section[data-status="error"] .section-label { color: var(--vscode-errorForeground, #f48771); }
-.terminal-section .terminal-pane { position: relative; inset: auto; height: clamp(180px, 44vh, 420px); min-width: 0; }
-.terminal-section:only-child .terminal-pane { height: max(180px, calc(100vh - 74px)); }
+.terminal-section .terminal-pane { position: relative; inset: auto; flex: 1 1 0; min-height: 48px; }
 
 #session-status { flex: 0 0 auto; display: flex; align-items: center; gap: 5px; min-height: 20px; padding: 2px 6px; border-top: 1px solid var(--view-border); font-size: 11px; color: var(--vscode-descriptionForeground, var(--view-foreground)); }
 #status-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

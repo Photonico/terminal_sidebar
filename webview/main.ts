@@ -119,6 +119,8 @@ let fit_frame = 0;
 let pending_focus: { operation: 'add' | 'close'; id?: string; previous_ids: Set<string> } | undefined;
 let appearance: terminal_appearance = {
   font_family: 'monospace', font_size: 13, cursor_blink: false, scrollback: 1000,
+  editor_scrollbar_vertical: 'auto', editor_scrollbar_horizontal: 'auto',
+  editor_scrollbar_vertical_size: 14, editor_scrollbar_horizontal_size: 12,
 };
 
 /** Resolve the same terminal colours for xterm and the selected tab. */
@@ -135,6 +137,9 @@ function terminal_theme(): ITheme {
     cursorAccent: colour('terminalCursor-background', colour('editor-background', dark ? '#1e1e1e' : '#ffffff')),
     selectionBackground: colour('terminal-selectionBackground', dark ? '#ffffff40' : '#00000030'),
     selectionInactiveBackground: colour('terminal-inactiveSelectionBackground', dark ? '#ffffff20' : '#00000018'),
+    scrollbarSliderBackground: colour('scrollbarSlider-background'),
+    scrollbarSliderHoverBackground: colour('scrollbarSlider-hoverBackground'),
+    scrollbarSliderActiveBackground: colour('scrollbarSlider-activeBackground'),
     black: colour('terminal-ansiBlack'), red: colour('terminal-ansiRed'), green: colour('terminal-ansiGreen'),
     yellow: colour('terminal-ansiYellow'), blue: colour('terminal-ansiBlue'), magenta: colour('terminal-ansiMagenta'),
     cyan: colour('terminal-ansiCyan'), white: colour('terminal-ansiWhite'),
@@ -150,14 +155,30 @@ function update_appearance(): void {
   // Set this on #app, outside the theme observer, to avoid a mutation loop.
   app.style.setProperty('--view-background', theme.background ?? '#1e1e1e');
   app.style.setProperty('--terminal-foreground', theme.foreground ?? '#cccccc');
+  app.dataset.verticalScrollbar = appearance.editor_scrollbar_vertical_size === 0 ? 'hidden' : appearance.editor_scrollbar_vertical;
+  app.dataset.horizontalScrollbar = appearance.editor_scrollbar_horizontal_size === 0 ? 'hidden' : appearance.editor_scrollbar_horizontal;
+  app.style.setProperty('--scrollbar-vertical-size', `${app.dataset.verticalScrollbar === 'hidden' ? 0 : appearance.editor_scrollbar_vertical_size}px`);
+  app.style.setProperty('--scrollbar-horizontal-size', `${app.dataset.horizontalScrollbar === 'hidden' ? 0 : appearance.editor_scrollbar_horizontal_size}px`);
   for (const { terminal } of terminal_views.values()) {
     terminal.options.fontFamily = appearance.font_family;
     terminal.options.fontSize = appearance.font_size;
     terminal.options.cursorBlink = appearance.cursor_blink;
     terminal.options.scrollback = appearance.scrollback;
     terminal.options.theme = theme;
+    terminal.options.overviewRuler = terminal_scrollbar_options();
   }
   schedule_fit();
+}
+
+/** xterm and FitAddon share this public width option. Zero would select xterm's
+ *  default width, so a hidden scrollbar retains a one-pixel, themed reservation. */
+function terminal_scrollbar_options(): { width: number; showTopBorder: boolean; showBottomBorder: boolean } {
+  const hidden = appearance.editor_scrollbar_vertical === 'hidden' || appearance.editor_scrollbar_vertical_size === 0;
+  return {
+    width: hidden ? 1 : appearance.editor_scrollbar_vertical_size,
+    showTopBorder: false,
+    showBottomBorder: false,
+  };
 }
 
 function is_visible_tab(id: string): boolean {
@@ -207,6 +228,7 @@ function ensure_terminal(tab: terminal_tab): terminal_view {
     screenReaderMode: false,
     allowProposedApi: false,
     theme: terminal_theme(),
+    overviewRuler: terminal_scrollbar_options(),
     convertEol: false,
   });
   const fit = new FitAddon();
@@ -438,25 +460,26 @@ function ensure_section(tab: terminal_tab, view: terminal_view): void {
         close_tab(tab.id);
         return;
       }
-      const index = open_tabs.findIndex(item => item.id === tab.id);
+      const visible_order = left_tab_order();
+      const index = visible_order.findIndex(item => item.id === tab.id);
       let next_index: number;
       if (event.key === 'ArrowDown') {
-        next_index = (index + 1) % open_tabs.length;
+        next_index = (index + 1) % visible_order.length;
       }
       else if (event.key === 'ArrowUp') {
-        next_index = (index - 1 + open_tabs.length) % open_tabs.length;
+        next_index = (index - 1 + visible_order.length) % visible_order.length;
       }
       else if (event.key === 'Home') {
         next_index = 0;
       }
       else if (event.key === 'End') {
-        next_index = open_tabs.length - 1;
+        next_index = visible_order.length - 1;
       }
       else {
         return;
       }
       event.preventDefault();
-      element(`section-${open_tabs[next_index]!.id}`).focus();
+      element(`section-${visible_order[next_index]!.id}`).focus();
     });
     attach_middle_close(button, tab.id);
     const close_button = document.createElement('button');
@@ -474,10 +497,21 @@ function ensure_section(tab: terminal_tab, view: terminal_view): void {
   view.section_button!.title = `${tab.name} · Middle-click to close`;
   view.section_label!.textContent = tab.name;
   view.section!.dataset.active = String(active_id === tab.id);
+  view.section!.dataset.expanded = String(expanded_ids.has(tab.id));
+  view.section!.dataset.firstCollapsed = String(open_tabs.find(item => !expanded_ids.has(item.id))?.id === tab.id);
   view.section!.dataset.status = sessions.get(tab.id)?.status ?? 'idle';
   const close_button = view.section!.querySelector<HTMLButtonElement>('.section-close')!;
   close_button.title = `Close ${tab.name}`;
   close_button.setAttribute('aria-label', close_button.title);
+}
+
+/** Match keyboard movement to the visual accordion order without moving live
+ *  terminal DOM nodes or changing the saved order of the user's tabs. */
+function left_tab_order(): terminal_tab[] {
+  return [
+    ...open_tabs.filter(tab => expanded_ids.has(tab.id)),
+    ...open_tabs.filter(tab => !expanded_ids.has(tab.id)),
+  ];
 }
 
 function render_terminals(): void {
@@ -523,6 +557,7 @@ function update_actions(): void {
   element<HTMLButtonElement>('refresh-shells').disabled = saving;
   element('tab-actions').hidden = configuring;
   element('configuration-toolbar').hidden = !configuring;
+  element('terminal-header').hidden = side === 'left' && !configuring;
   tab_strip.hidden = configuring || side === 'left';
   element('left-heading').hidden = !configuring && side !== 'left';
   element('left-heading').textContent = configuring ? 'Startup configuration' : 'Terminals';
@@ -1015,7 +1050,7 @@ window.addEventListener('message', (event: MessageEvent<host_message>) => {
           if (active_id && !configuring) {
             focus_terminal(active_id);
           } else if (!configuring) {
-            element('add-tab').focus();
+          element(side === 'left' ? 'add-first-tab' : 'add-tab').focus();
           }
         }
       }

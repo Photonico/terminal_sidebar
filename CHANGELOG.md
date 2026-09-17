@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0 — Pre-release
+
+- Remove the reserved scrollbar gutter and redundant inner heading from the left terminal view.
+- Let expanded terminals share the available height and place collapsed sections at the bottom.
+- Match left and right header heights, using the VS Code interface font and rounded active and hover states.
+- Follow the editor's scrollbar dimensions and visibility, and use live theme colours for normal, hovered, and dragged sliders.
+- Keep the original Photonico Code glyph contours, add weight and move them inward, and lengthen and rotate the twelve rounded ring segments.
+- Store packaged VSIX files in `release/`, with platform and version in each filename.
+
 ## 0.3.0 — Pre-release
 
 - Separate left and right startup profiles, open tabs, and terminal processes.
