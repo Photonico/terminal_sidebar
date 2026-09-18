@@ -1325,6 +1325,12 @@ document.addEventListener('keydown', event => {
   if (is_replace_shortcut(event, is_mac)) {
     event.preventDefault();
     event.stopPropagation();
+    const heading = target?.closest<HTMLElement>('.terminal-tab, .section-heading');
+    const id = heading?.dataset.tabId ?? heading?.closest<HTMLElement>('.terminal-section')?.dataset.tabId;
+    if (id) {
+      if (side === 'left' && !expanded_ids.has(id)) set_expanded(id, true);
+      else select_tab(id);
+    }
     replace_copy();
   } else if (is_find_shortcut(event, is_mac)) {
     marker_picker.close(false);

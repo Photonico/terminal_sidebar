@@ -456,10 +456,22 @@ test('closing running or unknown commands requires confirmation; an integrated i
   await view.send({ type: 'close_tab', id: first.id });
   assert.equal(runtime.processes[0].killed, 1);
   runtime.processes[1].data.fire('\x1b]133;A\x07');
+  await view.send({ type: 'input', id: second.id, data: 'not submitted' });
   const before = runtime.warnings.length;
   await view.send({ type: 'close_tab', id: second.id });
   assert.equal(runtime.warnings.length, before, 'a shell-reported idle prompt needs no dialog');
   assert.equal(runtime.processes[1].killed, 1);
+  await view.send({ type: 'add_tab' });
+  const unknown = view.state().tabs[0];
+  response = undefined;
+  await view.send({ type: 'close_tab', id: unknown.id });
+  assert.match(runtime.warnings.at(-1)!, /cannot confirm that it is idle/);
+  assert.ok(view.state().tabs.some(tab => tab.id === unknown.id), 'unknown state remains protected');
+  runtime.processes[2].exit.fire({ exitCode: 0 });
+  const after_unknown = runtime.warnings.length;
+  await view.send({ type: 'close_tab', id: unknown.id });
+  assert.equal(runtime.warnings.length, after_unknown, 'an exited process needs no dialog');
+  assert.equal(view.state().tabs.length, 0);
 });
 
 test('directory notifications persist per terminal while hidden and restore with a missing-directory fallback', async test_case => {
@@ -580,7 +592,7 @@ test('tab markers are local, independent by side, validated, and removable', asy
   const right = await runtime.view('right');
   const id = left.state().tabs[0].id;
   const right_before = right.state();
-  const marker = { shape: 'hexagon' as const, color: 'ansiBlue' as const };
+  const marker = { shape: 'diamond' as const, color: 'ansiBlue' as const };
   await left.send({ type: 'set_tab_marker', id, marker });
   assert.deepEqual(left.state().tabs[0].marker, marker);
   assert.deepEqual(right.state(), right_before);

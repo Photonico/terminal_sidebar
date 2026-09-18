@@ -38,12 +38,4 @@ export const marker_shape_descriptors: Readonly<Record<tab_marker_shape, marker_
     label: 'Square',
     glyph: '■',
   },
-  pentagon_right: {
-    label: 'Right-pointing pentagon',
-    glyph: '⭓',
-  },
-  hexagon: {
-    label: 'Hexagon',
-    glyph: '⬢',
-  },
 };

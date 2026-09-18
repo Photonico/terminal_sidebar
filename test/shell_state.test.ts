@@ -44,6 +44,8 @@ test('input never proves completion, invalidates stale idle, and startup command
   tracker.input();
   assert.equal(tracker.state.command_state, 'unknown');
   tracker.consume(osc('133;A'));
+  tracker.input('echo not submitted 中文');
+  assert.equal(tracker.state.command_state, 'idle');
   tracker.input();
   assert.equal(tracker.state.command_state, 'unknown');
   tracker.started_command();

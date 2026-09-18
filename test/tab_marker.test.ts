@@ -12,10 +12,10 @@ test('tab markers accept only declared shapes and terminal theme color tokens', 
     { shape: 'circle', color: 'red' }, { shape: 'circle', color: 'ansiRed', command: 'unsafe' },
     { shape: 'circle', color: 'ansiRed; background: url(x)' }, Object.create({ shape: 'circle', color: 'ansiRed' }),
   ]) assert.equal(is_tab_marker(marker), false);
-  const original: tab_marker = { shape: 'hexagon', color: 'ansiBrightCyan' };
+  const original: tab_marker = { shape: 'triangle', color: 'ansiBrightCyan' };
   const copy = copy_tab_marker(original);
   copy.shape = 'square';
-  assert.equal(original.shape, 'hexagon');
+  assert.equal(original.shape, 'triangle');
 });
 
 test('startup and temporary tab markers persist locally and remain isolated from every caller', () => {
@@ -27,7 +27,7 @@ test('startup and temporary tab markers persist locally and remain isolated from
   const temporary_marker: tab_marker = { shape: 'diamond', color: 'ansiBrightYellow' };
   assert.equal(model.set_marker(startup_id, startup_marker), true);
   assert.equal(model.set_marker(temporary_id, temporary_marker), true);
-  startup_marker.shape = 'hexagon';
+  startup_marker.shape = 'triangle';
   temporary_marker.color = 'ansiRed';
   model.tabs[0].marker!.color = 'ansiBlack';
   model.open_profile(profiles[0]).marker!.color = 'ansiWhite';
@@ -80,6 +80,7 @@ test('older memory and malformed marker fields retain otherwise valid tabs', () 
   for (const marker of [undefined, null, false, 'ansiBlue', { shape: 'circle', color: 'invalid' },
     { shape: 'triangle', color: 'ansiBlue', extra: true },
     { shape: 'heart', color: 'ansiBlue' }, { shape: 'music_note', color: 'ansiBlue' },
+    { shape: 'pentagon_right', color: 'ansiBlue' }, { shape: 'hexagon', color: 'ansiBlue' },
   ]) {
     const model = new sidebar_tabs([], {
       version: 1, tabs: [{ id: 'saved', name: 'Original', ...(marker === undefined ? {} : { marker }) }],

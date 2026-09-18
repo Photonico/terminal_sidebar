@@ -45,6 +45,8 @@ test('terminal links and find require platform modifiers without competing modif
   assert.equal(is_find_shortcut({ ...find, ctrlKey: true, isComposing: true }, false), false);
   assert.equal(is_find_shortcut({ ...find, ctrlKey: true, shiftKey: true }, false), false);
   assert.equal(is_replace_shortcut({ ...find, metaKey: true, altKey: true }, true), true);
+  assert.equal(is_replace_shortcut({ ...find, key: 'ƒ', code: 'KeyF', metaKey: true, altKey: true }, true), true);
+  assert.equal(is_replace_shortcut({ ...find, key: 'h', code: 'KeyH', metaKey: true }, true), false);
   assert.equal(is_replace_shortcut({ ...find, key: 'h', ctrlKey: true }, false), true);
   assert.equal(is_replace_shortcut({ ...find, key: 'h', ctrlKey: true }, true), false);
   assert.equal(is_replace_shortcut({ ...find, metaKey: true, altKey: true, isComposing: true }, true), false);

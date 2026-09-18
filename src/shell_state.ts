@@ -62,9 +62,12 @@ export class shell_state_tracker {
     delete this.current.command_exit_code;
   }
 
-  /** Input cannot prove execution or completion; invalidate a previously observed idle prompt. */
-  input(): void {
-    if (this.current.command_state === 'idle') this.current.command_state = 'unknown';
+  /** Printable typing at a known prompt is editing, not execution. Control input is uncertain
+   * until the next shell notification; input alone never proves command completion. */
+  input(data?: string): void {
+    if (this.current.command_state === 'idle' && (data === undefined || /[\x00-\x1f\x7f]/.test(data))) {
+      this.current.command_state = 'unknown';
+    }
   }
 
   consume(data: string): void {
@@ -170,7 +173,7 @@ export class shell_state_tracker {
     }
     if (sequence.startsWith('633;P;Cwd=')) {
       // VS Code escapes backslashes and ASCII bytes (including semicolons) in property values.
-      // Newer integrations append a nonce. Without installing hooks we cannot authenticate it.
+      // Newer integrations append a nonce; notifications remain advisory, not authorization.
       const [encoded_cwd, , extra] = sequence.slice('633;P;Cwd='.length).split(';');
       if (extra !== undefined) return;
       const cwd = encoded_cwd.replace(/\\(\\|x[0-9a-f]{2})/gi,

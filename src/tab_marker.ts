@@ -1,7 +1,7 @@
 /** Workspace-local tab decoration. These values name VS Code theme tokens, not colours. */
 export const tab_marker_shapes = [
   'circle', 'triangle', 'triangle_right', 'triangle_down', 'triangle_left',
-  'diamond', 'square', 'pentagon_right', 'hexagon',
+  'diamond', 'square',
 ] as const;
 export type tab_marker_shape = typeof tab_marker_shapes[number];
 export const tab_marker_colors = [

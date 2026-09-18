@@ -33,9 +33,10 @@ export function is_find_shortcut(event: Pick<KeyboardEvent, 'key' | 'metaKey' | 
     && (is_mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey);
 }
 
-export function is_replace_shortcut(event: Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'altKey' | 'shiftKey' | 'isComposing'>, is_mac: boolean): boolean {
+export function is_replace_shortcut(event: Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'altKey' | 'shiftKey' | 'isComposing'> & { code?: string }, is_mac: boolean): boolean {
   if (event.isComposing || event.shiftKey) return false;
-  return is_mac ? event.key.toLowerCase() === 'f' && event.metaKey && event.altKey && !event.ctrlKey
+  // On macOS Option+F produces "ƒ" in KeyboardEvent.key; code retains the physical shortcut.
+  return is_mac ? (event.code === 'KeyF' || event.key.toLowerCase() === 'f') && event.metaKey && event.altKey && !event.ctrlKey
     : event.key.toLowerCase() === 'h' && event.ctrlKey && !event.metaKey && !event.altKey;
 }
 

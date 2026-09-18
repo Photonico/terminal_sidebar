@@ -5,6 +5,7 @@ import { randomBytes as random_bytes } from 'node:crypto';
 import { statSync as stat_sync } from 'node:fs';
 import { is_client_message, is_tab_name, parse_configuration, read_configuration } from './profiles';
 import { resolve_shell, type shell_options } from './shell';
+import { shell_integration } from './shell_integration';
 import { discover_shells } from './discovery';
 import { session_manager, type session_launch } from './sessions';
 import { sidebar_tabs } from './tabs';
@@ -139,6 +140,7 @@ class sidebar_view implements vscode.WebviewViewProvider, vscode.Disposable {
 }
 
 class terminal_sidebar implements vscode.Disposable {
+  private readonly integration = new shell_integration(vscode.env.appRoot);
   readonly views: Record<sidebar_side, sidebar_view>;
   private configuration: sidebar_configuration = { left: [], right: [] };
   private shells: shell_choice[] = [];
@@ -793,7 +795,8 @@ class terminal_sidebar implements vscode.Disposable {
     const resolved = resolve_shell(expand_path(profile.shell), {
       env: environment_variables, default_profile, profile_args: profile.args, profile_env: profile.env,
     });
-    return { ...resolved, cwd: this.working_directory(profile) };
+    return this.integration.prepare({ ...resolved, cwd: this.working_directory(profile) },
+      settings.get<boolean>('shellIntegration.enabled', true));
   }
 
   private working_directory(profile: Pick<terminal_tab, 'cwd'>): string {
@@ -820,6 +823,7 @@ class terminal_sidebar implements vscode.Disposable {
     for (const view of Object.values(this.views)) {
       view.dispose();
     }
+    this.integration.dispose();
   }
 }
 

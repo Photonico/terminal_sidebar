@@ -30,7 +30,7 @@
 .tab_marker_picker fieldset { min-width: 0; padding: 0; margin: 0 0 12px; border: 0; }
 .tab_marker_picker legend { padding: 0; margin-bottom: 6px; }
 .tab_marker_picker fieldset:disabled { opacity: .5; }
-.tab_marker_shapes { display: grid; grid-template-columns: repeat(9, minmax(20px, 1fr)); gap: 2px; overflow-x: auto; }
+.tab_marker_shapes { display: grid; grid-template-columns: repeat(7, minmax(20px, 1fr)); gap: 2px; overflow-x: auto; }
 .tab_marker_shapes .tab_marker_choice { padding-inline: 0; }
 .tab_marker_clear { width: fit-content; margin-bottom: 6px; }
 .tab_marker_colors { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 4px; }

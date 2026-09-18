@@ -186,7 +186,7 @@ export class session_manager implements disposable {
     const session = this.sessions.get(id);
     if (!session || session.info.status !== 'running' || this.disposed) return;
     try {
-      session.tracker.input();
+      session.tracker.input(data);
       this.emit_shell_state(session);
       session.process?.write(data);
     } catch { /* Process exit can race a queued input message. */ }
