@@ -72,6 +72,16 @@ if (process.argv.includes('--watch')) {
 for (const [name, source] of [
   ['xterm', 'node_modules/@xterm/xterm/LICENSE'],
   ['xterm-addon-fit', 'node_modules/@xterm/addon-fit/LICENSE'],
+  ['xterm_addon_search', 'node_modules/@xterm/addon-search/LICENSE'],
+  ['xterm_addon_web_links', 'node_modules/@xterm/addon-web-links/LICENSE'],
+  ['xterm_addon_unicode11', 'node_modules/@xterm/addon-unicode11/LICENSE'],
+  // SerializeAddon declares MIT and shares xterm's licence; its npm tarball omits LICENSE.
+  ['xterm_addon_serialize', 'node_modules/@xterm/xterm/LICENSE'],
+  ['pdf_lib', 'node_modules/pdf-lib/LICENSE.md'],
+  ['pdf_lib_standard_fonts', 'node_modules/@pdf-lib/standard-fonts/LICENSE.md'],
+  ['pdf_lib_upng', 'node_modules/@pdf-lib/upng/LICENSE'],
+  ['pako', 'node_modules/pako/LICENSE'],
+  ['tslib', 'node_modules/tslib/LICENSE.txt'],
   ['node-pty', 'node_modules/node-pty/LICENSE'],
 ]) {
   await copy_file(source, `dist/${name}.LICENSE`);

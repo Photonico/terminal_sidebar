@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- Search retained output in a VS Code-style find overlay; open an editable transcript copy in the native editor Replace control with platform-default shortcuts.
+- Add tab context menus, inline renaming, and confirmation before closing a terminal whose command may still be running.
+- Unify tab and footer status dots; show shell-reported command results and background bell notifications.
+- Choose a local tab marker from nine shapes and sixteen live terminal theme colours.
+- Export HTML, real raster PDF, Markdown with embedded HTML, or plain text.
+- Open web links and source-file locations with Cmd-click / Ctrl-click; improve character widths with Unicode 11 data.
+- Remember directories reported by existing shell integration, with workspace/home fallback when a saved directory is unavailable.
+- Support literal shell arguments and environment overrides in startup profile JSON, preserving them in the visual editor.
+- Add CI, Marketplace, install-count, and licence badges to the README.
+
 ## 0.7.0 — Pre-release
 
 - Rename terminals from the edit button beside each sidebar's close button; preserve renamed tabs in the saved layout.

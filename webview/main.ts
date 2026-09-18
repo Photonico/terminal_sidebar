@@ -1,7 +1,19 @@
-import { Terminal, type ITheme } from '@xterm/xterm';
+import { Terminal, type ITheme, type IDisposable } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { SearchAddon } from '@xterm/addon-search';
+import { SerializeAddon } from '@xterm/addon-serialize';
+import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { configuration_draft } from '../src/draft';
 import { tab_reordering } from './reordering';
+import { terminal_menu } from './menu';
+import { tab_rename } from './rename';
+import { terminal_search, is_find_shortcut, is_replace_shortcut } from './search';
+import { create_tab_marker, tab_marker_picker } from './tab_marker';
+import { terminal_indicator, show_tab_indicator, indicator_label } from './status';
+import { install_terminal_links } from './terminal_links';
+import { terminal_text, terminal_html, terminal_markdown } from './export';
+import { terminal_pdf } from './pdf_export';
+import { is_export_payload } from '../src/export_format';
 import type {
   appearance as terminal_appearance,
   client_message,
@@ -12,16 +24,18 @@ import type {
   sidebar_side,
   terminal_profile,
   terminal_tab,
+  export_format,
 } from '../src/types';
 import '@xterm/xterm/css/xterm.css';
 import './main.css';
+import './search.css';
+import './tab_marker.css';
 
 declare function acquireVsCodeApi(): { postMessage(message: client_message): void };
 
 const vscode = acquireVsCodeApi();
 const is_mac = /Mac|iPhone|iPad/.test(navigator.platform);
 const maximum_profiles = 32;
-const maximum_export_characters = 1024 * 1024;
 /*! Codicons edit icon, unmodified path, Copyright Microsoft Corporation.
  * Source: https://github.com/microsoft/vscode-codicons/blob/main/src/icons/edit.svg
  * Licensed under CC BY 4.0: https://creativecommons.org/licenses/by/4.0/
@@ -105,6 +119,9 @@ const save_button = element<HTMLButtonElement>('save-profiles');
 interface terminal_view {
   terminal: Terminal;
   fit: FitAddon;
+  search: SearchAddon;
+  serialize: SerializeAddon;
+  links: IDisposable;
   pane: HTMLDivElement;
   section?: HTMLElement;
   section_button?: HTMLButtonElement;
@@ -114,6 +131,8 @@ interface terminal_view {
 const terminal_views = new Map<string, terminal_view>();
 const sessions = new Map<string, session_info>();
 const activated_views = new Set<string>();
+const unread_tabs = new Set<string>();
+let exporting = false;
 const custom_shells = new Set<string>();
 const configuration_group_expanded: Record<sidebar_side, boolean> = { left: true, right: true };
 const draft = new configuration_draft();
@@ -138,11 +157,35 @@ let appearance: terminal_appearance = {
   editor_scrollbar_vertical_size: 14, editor_scrollbar_horizontal_size: 12,
 };
 
+const action_menu = new terminal_menu();
+let menu_tab_id: string | undefined;
+const rename_editor = new tab_rename({
+  anchor: id => document.getElementById(`${side === 'left' ? 'section' : 'tab'}-${id}`) ?? undefined,
+  commit: (id, name) => send({ type: 'rename_tab', id, name }),
+  finished: id => focus_terminal(id),
+});
+const marker_picker = new tab_marker_picker({
+  anchor: id => document.getElementById(`${side === 'left' ? 'section' : 'tab'}-${id}`) ?? undefined,
+  commit: (id, marker) => send({ type: 'set_tab_marker', id, marker }),
+  finished: id => focus_terminal(id),
+});
+const find_widget = new terminal_search({
+  parent: terminal_content,
+  before: terminal_host,
+  target: () => {
+    const view = active_id && trusted && !configuring ? terminal_views.get(active_id) : undefined;
+    return view && active_id ? { id: active_id, search: view.search } : undefined;
+  },
+  focus: focus_terminal,
+  layout: schedule_fit,
+  replace: replace_copy,
+});
+
 const reorder_controllers = (['left', 'right'] as const).map(sidebar => new tab_reordering({
   container: sidebar === 'left' ? terminal_host : tab_strip,
   axis: sidebar === 'left' ? 'vertical' : 'horizontal',
   get_ids: () => open_tabs.map(tab => tab.id),
-  enabled: () => side === sidebar && trusted && !configuring && !saving,
+  enabled: () => side === sidebar && trusted && !configuring && !saving && !rename_editor.editing,
   move: (id, target_id, placement) => {
     send({ type: 'move_tab', id, target_id, placement });
   },
@@ -233,6 +276,7 @@ function ensure_terminal(tab: terminal_tab): terminal_view {
     if (active_id !== tab.id) {
       select_tab(tab.id);
     }
+    clear_unread(tab.id);
     if (focused_terminal !== tab.id) {
       focused_terminal = tab.id;
       send({ type: 'focus', id: tab.id });
@@ -251,14 +295,24 @@ function ensure_terminal(tab: terminal_tab): terminal_view {
     cursorBlink: appearance.cursor_blink,
     scrollback: appearance.scrollback,
     screenReaderMode: false,
-    allowProposedApi: false,
+    // Unicode11 and search decorations use xterm's documented proposed APIs.
+    allowProposedApi: true,
     theme: terminal_theme(),
     overviewRuler: terminal_scrollbar_options(),
     convertEol: false,
   });
   const fit = new FitAddon();
+  const search = new SearchAddon();
+  const serialize = new SerializeAddon();
   terminal.loadAddon(fit);
+  terminal.loadAddon(search);
+  terminal.loadAddon(serialize);
+  terminal.loadAddon(new Unicode11Addon());
+  terminal.unicode.activeVersion = '11';
   terminal.open(pane);
+  const links = install_terminal_links(terminal, is_mac,
+    uri => send({ type: 'open_link', id: tab.id, uri }),
+    link => send({ type: 'open_file', id: tab.id, path: link.path, line: link.line, ...(link.column === undefined ? {} : { column: link.column }) }));
   terminal.onData(data => {
     if (trusted) {
       send({ type: 'input', id: tab.id, data });
@@ -269,7 +323,13 @@ function ensure_terminal(tab: terminal_tab): terminal_view {
       send({ type: 'resize', id: tab.id, cols, rows });
     }
   });
-  // No audible bell handler or audio addon is installed.
+  // A bell is terminal activity, not evidence that a command completed.
+  terminal.onBell(() => {
+    if (active_id !== tab.id || !is_visible_tab(tab.id) || !document.hasFocus()) {
+      unread_tabs.add(tab.id);
+      update_unread(tab.id);
+    }
+  });
   terminal.attachCustomKeyEventHandler(event => {
     if (event.type !== 'keydown') {
       return true;
@@ -294,7 +354,7 @@ function ensure_terminal(tab: terminal_tab): terminal_view {
     return false;
   });
 
-  const view = { terminal, fit, pane };
+  const view = { terminal, fit, search, serialize, links, pane };
   terminal_views.set(tab.id, view);
   return view;
 }
@@ -330,8 +390,8 @@ function focus_terminal(id: string): void {
   requestAnimationFrame(() => {
     if (is_visible_tab(id)) {
       terminal_views.get(id)?.terminal.focus();
-    } else if (side === 'left' && !configuring) {
-      terminal_views.get(id)?.section_button?.focus();
+    } else if (!configuring) {
+      document.getElementById(`${side === 'left' ? 'section' : 'tab'}-${id}`)?.focus();
     }
   });
 }
@@ -345,6 +405,7 @@ function select_tab(id: string, focus = false): void {
     active_id = id;
     send({ type: 'select', id });
   }
+  clear_unread(id);
   render_terminals();
   update_status();
   update_actions();
@@ -376,7 +437,68 @@ function request_rename(id: string | undefined): void {
   if (!id || configuring || saving || !open_tabs.some(tab => tab.id === id)) {
     return;
   }
-  send({ type: 'request_rename', id });
+  const tab = open_tabs.find(item => item.id === id)!;
+  marker_picker.close(false);
+  action_menu.close(false);
+  find_widget.close(false);
+  rename_editor.open(id, tab.name);
+}
+
+function restart_tab(id: string): void {
+  const view = terminal_views.get(id);
+  if (trusted && view) {
+    send({ type: 'restart', id, cols: view.terminal.cols, rows: view.terminal.rows });
+    focus_terminal(id);
+  }
+}
+
+function show_tab_menu(id: string, x: number, y: number): void {
+  if (configuring || saving || !open_tabs.some(tab => tab.id === id)) {
+    return;
+  }
+  rename_editor.close(false);
+  marker_picker.close(false);
+  menu_tab_id = id;
+  action_menu.show([
+    { label: 'Rename', action: () => request_rename(id) },
+    { label: 'Change tab icon…', action: () => {
+      rename_editor.close(false);
+      marker_picker.open(id, open_tabs.find(tab => tab.id === id)?.marker);
+    } },
+    { label: 'Restart', disabled: !trusted, action: () => restart_tab(id) },
+    { label: 'Close', action: () => close_tab(id) },
+    { label: 'Export…', disabled: !trusted, action: () => export_output(id) },
+  ], x, y, () => document.getElementById(`${side === 'left' ? 'section' : 'tab'}-${id}`)?.focus());
+}
+
+function update_unread(id: string): void {
+  const header = document.getElementById(`${side === 'left' ? 'section' : 'tab'}-${id}`);
+  const badge = header?.querySelector<HTMLElement>('.terminal_unread');
+  if (badge) {
+    const session = sessions.get(id);
+    const status = terminal_indicator(session);
+    badge.dataset.status = status;
+    badge.hidden = !show_tab_indicator(session, unread_tabs.has(id));
+    badge.title = `${indicator_label(status)}${unread_tabs.has(id) ? ' · Terminal bell' : ''}`;
+    badge.setAttribute('aria-label', badge.title);
+  }
+}
+
+function clear_unread(id: string): void {
+  unread_tabs.delete(id);
+  update_unread(id);
+}
+
+function unread_badge(id: string): HTMLSpanElement {
+  const badge = document.createElement('span');
+  badge.className = 'terminal_unread status_dot';
+  const session = sessions.get(id);
+  const status = terminal_indicator(session);
+  badge.dataset.status = status;
+  badge.title = `${indicator_label(status)}${unread_tabs.has(id) ? ' · Terminal bell' : ''}`;
+  badge.setAttribute('aria-label', badge.title);
+  badge.hidden = !show_tab_indicator(session, unread_tabs.has(id));
+  return badge;
 }
 
 function set_expanded(id: string, expanded: boolean): void {
@@ -416,6 +538,7 @@ function render_tabs(): void {
     button.dataset.tabId = tab.id;
     button.dataset.reorderId = tab.id;
     button.draggable = true;
+    button.setAttribute('data-vscode-context', '{"preventDefaultContextMenuItems":true}');
     button.setAttribute('role', 'tab');
     button.setAttribute('aria-controls', `terminal-${tab.id}`);
     button.setAttribute('aria-selected', String(tab.id === active_id));
@@ -423,8 +546,9 @@ function render_tabs(): void {
     const label = document.createElement('span');
     label.className = 'tab-label';
     label.textContent = tab.name;
-    button.append(label);
-    button.title = `${tab.name} · Drag to reorder · Alt+Shift+Left/Right to move · Middle-click to close`;
+    if (tab.marker) button.append(create_tab_marker(tab.marker));
+    button.append(label, unread_badge(tab.id));
+    button.title = `${tab.name} · Right-click for actions · Drag to reorder · Alt+Shift+Left/Right to move · Middle-click to close`;
     button.dataset.status = sessions.get(tab.id)?.status ?? 'idle';
     button.addEventListener('click', () => select_tab(tab.id, true));
     attach_middle_close(button, tab.id);
@@ -476,6 +600,7 @@ function ensure_section(tab: terminal_tab, view: terminal_view): void {
     section.dataset.tabId = tab.id;
     const heading = document.createElement('div');
     heading.className = 'section-heading';
+    heading.setAttribute('data-vscode-context', '{"preventDefaultContextMenuItems":true}');
     const button = document.createElement('button');
     button.id = `section-${tab.id}`;
     button.className = 'section-toggle';
@@ -489,7 +614,7 @@ function ensure_section(tab: terminal_tab, view: terminal_view): void {
     caption.innerHTML = `<span class="section-chevron">${icon('chevron')}</span>`;
     const label = document.createElement('span');
     label.className = 'section-label';
-    caption.append(label);
+    caption.append(label, unread_badge(tab.id));
     button.append(caption);
     button.addEventListener('click', () => set_expanded(tab.id, !expanded_ids.has(tab.id)));
     button.addEventListener('keydown', event => {
@@ -546,8 +671,12 @@ function ensure_section(tab: terminal_tab, view: terminal_view): void {
     view.section_label = label;
   }
   view.section_button!.setAttribute('aria-expanded', String(expanded_ids.has(tab.id)));
-  view.section_button!.title = `${tab.name} · Drag to reorder · Alt+Shift+Up/Down to move · Middle-click to close`;
+  view.section_button!.title = `${tab.name} · Right-click for actions · Drag to reorder · Alt+Shift+Up/Down to move · Middle-click to close`;
   view.section_label!.textContent = tab.name;
+  const caption = view.section_label!.parentElement!;
+  caption.querySelector('.tab_marker')?.remove();
+  if (tab.marker) caption.insertBefore(create_tab_marker(tab.marker), view.section_label!);
+  update_unread(tab.id);
   view.section!.dataset.active = String(active_id === tab.id);
   view.section!.dataset.expanded = String(expanded_ids.has(tab.id));
   view.section!.dataset.status = sessions.get(tab.id)?.status ?? 'idle';
@@ -570,10 +699,13 @@ function render_terminals(): void {
   document.body.dataset.side = side;
   for (const [id, view] of terminal_views) {
     if (!open_tabs.some(tab => tab.id === id)) {
+      find_widget.release(id);
+      view.links.dispose();
       view.terminal.dispose();
       (view.section ?? view.pane).remove();
       terminal_views.delete(id);
       activated_views.delete(id);
+      unread_tabs.delete(id);
     }
   }
   if (side === 'right') {
@@ -583,6 +715,10 @@ function render_terminals(): void {
     tab_strip.replaceChildren();
   }
   if (!trusted) {
+    rename_editor.close(false);
+    marker_picker.close(false);
+    find_widget.close(false);
+    action_menu.close(false);
     return;
   }
   for (const [index, tab] of open_tabs.entries()) {
@@ -608,6 +744,13 @@ function render_terminals(): void {
   if (sections_moved && previous_focus instanceof HTMLElement && previous_focus.dataset.reorderId
       && previous_focus.isConnected) {
     previous_focus.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }
+  rename_editor.refresh();
+  marker_picker.refresh();
+  find_widget.refresh();
+  if (menu_tab_id && !open_tabs.some(tab => tab.id === menu_tab_id)) {
+    menu_tab_id = undefined;
+    action_menu.close(false);
   }
 }
 
@@ -642,7 +785,8 @@ function update_actions(): void {
 function update_status(): void {
   const session = active_id ? sessions.get(active_id) : undefined;
   const status = element('status-text');
-  element('status-dot').dataset.status = trusted ? session?.status ?? 'idle' : 'idle';
+  element('status-dot').classList.add('status_dot');
+  element('status-dot').dataset.status = trusted ? terminal_indicator(session) : 'idle';
   if (!received_state) {
     status.textContent = 'Loading terminals…';
   }
@@ -654,6 +798,10 @@ function update_status(): void {
   }
   else if (session?.message) {
     status.textContent = session.message;
+  }
+  else if (session?.status === 'running' && session.command_status) {
+    status.textContent = indicator_label(session.command_status)
+      + (session.command_status === 'error' && session.command_exit_code !== undefined ? ` (${session.command_exit_code})` : '');
   }
   else if (session?.status === 'running') {
     status.textContent = 'Running';
@@ -717,6 +865,10 @@ function side_label(profile_side: sidebar_side): string {
 }
 
 function open_configuration(): void {
+  marker_picker.close(false);
+  rename_editor.close(false);
+  find_widget.close(false);
+  action_menu.close(false);
   if (!configuring) {
     // Resume a suspended draft. A clean draft follows settings changed elsewhere;
     // a dirty draft keeps its original baseline for the host's conflict check.
@@ -1045,45 +1197,69 @@ function save_configuration(): void {
   });
 }
 
-function export_output(): void {
-  if (!active_id) {
+function export_output(id = active_id): void {
+  if (!id || !terminal_views.has(id)) {
     return;
   }
-  const buffer = terminal_views.get(active_id)?.terminal.buffer.active;
-  if (!buffer) {
-    return;
-  }
-  // Join wrapped rows without inserting line breaks into long commands.
-  const lines: string[] = [];
-  for (let index = 0; index < buffer.length; index++) {
-    const line = buffer.getLine(index);
-    if (!line) {
-      continue;
-    }
-    const text = line.translateToString(!buffer.getLine(index + 1)?.isWrapped);
-    if (line.isWrapped && lines.length) {
-      lines[lines.length - 1] += text;
-    }
-    else {
-      lines.push(text);
-    }
-  }
-  while (lines.length && !lines[lines.length - 1]) {
-    lines.pop();
-  }
-  const text = lines.join('\n') + (lines.length ? '\n' : '');
-  if (text.length > maximum_export_characters) {
-    show_error('Terminal text exceeds the 1 MiB export limit. Reduce scrollback before exporting.');
-    return;
-  }
-  send({ type: 'export', id: active_id, text });
+  marker_picker.close(false);
+  const anchor = document.getElementById(`${side === 'left' ? 'section' : 'tab'}-${id}`)?.getBoundingClientRect();
+  menu_tab_id = id;
+  action_menu.show([
+    { label: 'HTML', action: () => { void save_output(id, 'html'); } },
+    { label: 'PDF', action: () => { void save_output(id, 'pdf'); } },
+    { label: 'Markdown', action: () => { void save_output(id, 'markdown'); } },
+    { label: 'Plain text', action: () => { void save_output(id, 'text'); } },
+  ], anchor?.left ?? 8, anchor?.bottom ?? 8, () => focus_terminal(id));
 }
 
-function run_action(action: 'save' | 'undo' | 'redo' | 'close' | 'add'): void {
+async function save_output(id: string, format: export_format): Promise<void> {
+  const view = terminal_views.get(id);
+  const tab = open_tabs.find(item => item.id === id);
+  if (!view || !tab || !trusted || exporting) {
+    return;
+  }
+  exporting = true;
+  try {
+    const text = format === 'pdf' ? await terminal_pdf(view.terminal, tab.name)
+      : format === 'html' ? terminal_html(view.serialize, tab.name)
+      : format === 'markdown' ? terminal_markdown(view.serialize, tab.name) : terminal_text(view.terminal);
+    if (!is_export_payload(format, text)) throw new Error('Terminal export exceeds the size limit. Reduce scrollback before exporting.');
+    if (!trusted || !open_tabs.some(item => item.id === id)) return;
+    send({ type: 'export', id, text, format });
+    focus_terminal(id);
+  } catch (error) {
+    show_error(error instanceof Error ? error.message : 'Terminal export failed.');
+  } finally {
+    exporting = false;
+  }
+}
+
+function replace_copy(): void {
+  const view = active_id && terminal_views.get(active_id);
+  if (!active_id || !view || configuring || !trusted) return;
+  const text = terminal_text(view.terminal);
+  if (!is_export_payload('text', text)) {
+    show_error('Editable copy exceeds the text export limit. Reduce scrollback before replacing.');
+    return;
+  }
+  marker_picker.close(false);
+  find_widget.close(false);
+  send({ type: 'replace_copy', id: active_id, text });
+}
+
+function run_action(action: 'save' | 'undo' | 'redo' | 'close' | 'add' | 'find' | 'replace'): void {
   if (saving) {
     return;
   }
-  if (action === 'add') {
+  if (action === 'replace') {
+    replace_copy();
+  } else if (action === 'find') {
+    marker_picker.close(false);
+    if (!configuring && trusted) {
+      if (active_id && side === 'left' && !expanded_ids.has(active_id)) set_expanded(active_id, true);
+      find_widget.open();
+    }
+  } else if (action === 'add') {
     add_tab();
   }
   else if (action === 'save') {
@@ -1105,6 +1281,68 @@ function run_action(action: 'save' | 'undo' | 'redo' | 'close' | 'add'): void {
     render_draft();
   }
 }
+
+// Suppress VS Code's default editing menu only over terminal tab headings.
+app.addEventListener('contextmenu', event => {
+  const target = event.target instanceof Element ? event.target.closest<HTMLElement>('.terminal-tab, .section-heading') : null;
+  const id = target?.dataset.tabId ?? target?.closest<HTMLElement>('.terminal-section')?.dataset.tabId;
+  if (!target || !id || configuring) {
+    return;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  const bounds = target.getBoundingClientRect();
+  show_tab_menu(id, event.clientX || bounds.left, event.clientY || bounds.bottom);
+});
+app.addEventListener('keydown', event => {
+  const target = event.target instanceof Element ? event.target.closest<HTMLElement>('.terminal-tab, .section-heading') : null;
+  const id = target?.dataset.tabId ?? target?.closest<HTMLElement>('.terminal-section')?.dataset.tabId;
+  if (!target || !id || event.isComposing) {
+    return;
+  }
+  if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey)) {
+    event.preventDefault();
+    const bounds = target.getBoundingClientRect();
+    show_tab_menu(id, bounds.left, bounds.bottom);
+  } else if (event.key === 'F2' && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey) {
+    event.preventDefault();
+    request_rename(id);
+  }
+});
+document.addEventListener('keydown', event => {
+  if (configuring || rename_editor.editing || !trusted) {
+    return;
+  }
+  const target = event.target instanceof Element ? event.target : null;
+  const in_find = target && find_widget.root.contains(target);
+  const in_terminal = Boolean(target?.closest('.terminal-pane, .terminal-tab, .section-heading'));
+  if (!(in_find || in_terminal)) {
+    return;
+  }
+  if (is_replace_shortcut(event, is_mac)) {
+    event.preventDefault();
+    event.stopPropagation();
+    replace_copy();
+  } else if (is_find_shortcut(event, is_mac)) {
+    marker_picker.close(false);
+    event.preventDefault();
+    event.stopPropagation();
+    const heading = target?.closest<HTMLElement>('.terminal-tab, .section-heading');
+    const id = heading?.dataset.tabId ?? heading?.closest<HTMLElement>('.terminal-section')?.dataset.tabId;
+    if (id) {
+      if (side === 'left' && !expanded_ids.has(id)) {
+        set_expanded(id, true);
+      } else {
+        select_tab(id);
+      }
+    }
+    find_widget.open();
+  } else if (event.key === 'Escape' && !event.isComposing && find_widget.visible) {
+    event.preventDefault();
+    event.stopPropagation();
+    find_widget.close();
+  }
+}, true);
 
 // Empty strip space opens a terminal. Tabs and the action buttons are excluded.
 tab_strip.addEventListener('dblclick', event => {
@@ -1162,11 +1400,15 @@ window.addEventListener('message', (event: MessageEvent<host_message>) => {
   }
   switch (message.type) {
     case 'state': {
+      const previous_active_id = active_id;
       received_state = true;
       side = message.side;
       startup_configuration = message.configuration;
       open_tabs = message.tabs;
       active_id = open_tabs.some(tab => tab.id === message.active_id) ? message.active_id : open_tabs[0]?.id;
+      if (active_id && active_id !== previous_active_id) {
+        clear_unread(active_id);
+      }
       expanded_ids = new Set(message.expanded_ids);
       trusted = message.trusted;
       appearance = message.appearance;
@@ -1209,6 +1451,7 @@ window.addEventListener('message', (event: MessageEvent<host_message>) => {
     case 'session': {
       sessions.set(message.session.id, message.session);
       update_status();
+      update_unread(message.session.id);
       const tab = document.getElementById(`tab-${message.session.id}`);
       if (tab) {
         tab.dataset.status = message.session.status;
@@ -1219,7 +1462,11 @@ window.addEventListener('message', (event: MessageEvent<host_message>) => {
       }
       break;
     }
-    case 'reset': terminal_views.get(message.id)?.terminal.reset(); break;
+    case 'reset':
+      clear_unread(message.id);
+      terminal_views.get(message.id)?.search.clearDecorations();
+      terminal_views.get(message.id)?.terminal.reset();
+      break;
     case 'paste':
       if (trusted) {
         terminal_views.get(message.id)?.terminal.paste(message.data);
@@ -1258,13 +1505,23 @@ document.addEventListener('visibilitychange', () => {
   }
   schedule_fit();
 });
+window.addEventListener('focus', () => {
+  if (focused_terminal && is_visible_tab(focused_terminal)) {
+    clear_unread(focused_terminal);
+  }
+});
 window.addEventListener('beforeunload', () => {
   for (const controller of reorder_controllers) {
     controller.cancel();
   }
   resize_observer.disconnect();
   theme_observer.disconnect();
+  rename_editor.dispose();
+  marker_picker.dispose();
+  find_widget.dispose();
+  action_menu.dispose();
   for (const view of terminal_views.values()) {
+    view.links.dispose();
     view.terminal.dispose();
   }
 });

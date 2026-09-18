@@ -4,9 +4,11 @@ import { test } from 'node:test';
 import { stripVTControlCharacters as strip_terminal_controls } from 'node:util';
 import { session_manager, type pty_process, type pty_spawn_options } from '../src/sessions';
 import { resolve_shell } from '../src/shell';
+import type { shell_state } from '../src/shell_state';
 import type { terminal_profile, session_info } from '../src/types';
 
 class fake_terminal_process implements pty_process {
+  process?: string;
   readonly writes: string[] = [];
   readonly sizes: Array<[number, number]> = [];
   readonly data_listeners: Array<(data: string) => void> = [];
@@ -47,6 +49,7 @@ function harness(platform: NodeJS.Platform = process.platform, on_state?: (info:
   const states: session_info[] = [];
   const outputs: Array<[string, string]> = [];
   const spawns: pty_spawn_options[] = [];
+  const shell_states: Array<[string, shell_state]> = [];
   const manager = new session_manager({
     resolve: () => ({ file: '/bin/sh', args: [], env: { TERM: 'xterm-256color' }, cwd: '/tmp' }),
     on_output: (id, data) => outputs.push([id, data]),
@@ -55,6 +58,7 @@ function harness(platform: NodeJS.Platform = process.platform, on_state?: (info:
       on_state?.(state);
     },
     platform,
+    on_shell_state: (id, state) => shell_states.push([id, state]),
     factory: { spawn: (_file, _args, options) => {
       spawns.push(options);
       const terminal_process = new fake_terminal_process();
@@ -62,8 +66,134 @@ function harness(platform: NodeJS.Platform = process.platform, on_state?: (info:
       return terminal_process;
     } },
   });
-  return { manager, processes, states, outputs, spawns };
+  return { manager, processes, states, outputs, spawns, shell_states };
 }
+
+test('host tracks shell state and cwd independently of output consumers and ignores stale processes', () => {
+  const runtime = harness('linux');
+  runtime.manager.start({ ...profile, command: '' }, 80, 24);
+  assert.deepEqual(runtime.manager.shell_state('one'), { cwd: '/tmp', command_state: 'unknown' });
+  runtime.processes[0].data('\x1b]7;file:///tmp/a%20b\x1b');
+  runtime.processes[0].data('\\\x1b]133;A\x07');
+  assert.deepEqual(runtime.manager.shell_state('one'), { cwd: '/tmp/a b', command_state: 'idle' });
+  assert.deepEqual(runtime.shell_states.at(-1), ['one', { cwd: '/tmp/a b', command_state: 'idle' }]);
+  const last_notification = runtime.shell_states.length;
+  runtime.processes[0].data('ordinary output');
+  assert.equal(runtime.shell_states.length, last_notification, 'ordinary output does not persist redundant state');
+  runtime.manager.input('one', 'typed\r');
+  assert.equal(runtime.manager.shell_state('one')?.command_state, 'unknown');
+  runtime.processes[0].data('\x1b]633;C\x07');
+  assert.equal(runtime.manager.shell_state('one')?.command_state, 'running');
+  runtime.manager.stop('one');
+  assert.deepEqual(runtime.manager.shell_state('one'), { cwd: '/tmp/a b', command_state: 'idle' });
+  runtime.manager.start({ ...profile, command: '' }, 80, 24);
+  runtime.processes[0].data('\x1b]633;P;Cwd=/stale\x07\x1b]633;C\x07');
+  assert.deepEqual(runtime.manager.shell_state('one'), { cwd: '/tmp', command_state: 'unknown' });
+  runtime.manager.remove('one');
+  assert.equal(runtime.manager.shell_state('one'), undefined);
+});
+
+test('startup commands and foreground names are conservative, advisory command evidence', () => {
+  const runtime = harness('linux');
+  runtime.manager.start(profile, 80, 24);
+  const terminal_process = runtime.processes[0];
+  terminal_process.process = 'sh';
+  assert.equal(runtime.manager.shell_state('one')?.command_state, 'running');
+  terminal_process.data('\x1b]133;D;0\x07');
+  assert.equal(runtime.manager.shell_state('one')?.command_state, 'idle');
+  terminal_process.process = '/usr/bin/vim';
+  assert.equal(runtime.manager.shell_state('one')?.command_state, 'running');
+  terminal_process.process = '-sh';
+  assert.equal(runtime.manager.shell_state('one')?.command_state, 'idle');
+  runtime.manager.input('one', 'read builtin\r');
+  assert.equal(runtime.manager.shell_state('one')?.command_state, 'unknown', 'a shell foreground does not prove an idle prompt');
+  Object.defineProperty(terminal_process, 'process', { get() { throw new Error('process ended'); } });
+  assert.equal(runtime.manager.shell_state('one')?.command_state, 'unknown');
+  runtime.manager.dispose();
+});
+
+test('command results reach session observers and a fresh process clears the old result', () => {
+  const runtime = harness('linux');
+  runtime.manager.start({ ...profile, command: '' }, 80, 24);
+  const first = runtime.processes[0];
+  first.data('\x1b]633;C\x07');
+  assert.deepEqual(runtime.manager.get('one'), { id: 'one', status: 'running', command_status: 'running' });
+  first.data('\x1b]633;D;2\x07');
+  const failed: session_info = { id: 'one', status: 'running', command_status: 'error', command_exit_code: 2 };
+  assert.deepEqual(runtime.manager.get('one'), failed);
+  assert.deepEqual(runtime.states.at(-1), failed);
+  const count = runtime.states.length;
+  first.data('\x1b]633;A\x07\x1b]633;B\x07ordinary output');
+  assert.equal(runtime.states.length, count, 'prompt and ordinary output do not repeat an unchanged result');
+  assert.deepEqual(runtime.manager.list(), [failed]);
+
+  first.data('\x1b]633;C\x07');
+  assert.deepEqual(runtime.manager.get('one'), { id: 'one', status: 'running', command_status: 'running' });
+  first.data('\x1b]633;D;0\x07');
+  assert.deepEqual(runtime.states.at(-1), { id: 'one', status: 'running', command_status: 'completed', command_exit_code: 0 });
+  runtime.manager.stop('one');
+  assert.deepEqual(runtime.manager.get('one'), { id: 'one', status: 'exited', message: 'Stopped.' });
+  runtime.manager.start({ ...profile, command: '' }, 80, 24);
+  assert.deepEqual(runtime.manager.get('one'), { id: 'one', status: 'running' });
+  first.data('\x1b]633;D;17\x07');
+  assert.deepEqual(runtime.manager.get('one'), { id: 'one', status: 'running' }, 'retired process cannot restore stale command status');
+  runtime.processes[1].data('\x1b]633;C\x07\x1b]633;D\x07');
+  assert.deepEqual(runtime.manager.get('one'), { id: 'one', status: 'running' }, 'completion without a code stays unknown');
+  runtime.manager.dispose();
+});
+
+test('a startup state observer cannot redirect the old command into a replacement process', () => {
+  let replaced = false;
+  const runtime = harness('linux', info => {
+    if (!replaced && info.command_status === 'running') {
+      replaced = true;
+      runtime.manager.stop('one');
+      runtime.manager.start({ ...profile, command: 'new command' }, 80, 24);
+    }
+  });
+  runtime.manager.start({ ...profile, command: 'old command' }, 80, 24);
+  assert.equal(runtime.processes.length, 2);
+  assert.deepEqual(runtime.processes[0].writes, []);
+  assert.deepEqual(runtime.processes[1].writes, ['new command\r']);
+  runtime.manager.dispose();
+});
+
+test('a command state observer cannot publish stale shell metadata after replacing the process', () => {
+  let replaced = false;
+  const runtime = harness('linux', info => {
+    if (!replaced && info.command_status === 'running') {
+      replaced = true;
+      runtime.manager.stop('one');
+      runtime.manager.start({ ...profile, command: '' }, 80, 24);
+    }
+  });
+  runtime.manager.start({ ...profile, command: '' }, 80, 24);
+  runtime.processes[0].data('\x1b]7;file:///old-process-cwd\x07\x1b]633;C\x07old process output');
+  assert.equal(runtime.processes.length, 2);
+  assert.deepEqual(runtime.shell_states.at(-1), ['one', { cwd: '/tmp', command_state: 'unknown' }]);
+  assert.deepEqual(runtime.manager.shell_state('one'), { cwd: '/tmp', command_state: 'unknown' });
+  assert.deepEqual(runtime.outputs, [], 'the replaced process cannot deliver its remaining output');
+  runtime.manager.dispose();
+});
+
+test('detached views and failed memory observers cannot prevent host cwd tracking or output delivery', () => {
+  const terminal_process = new fake_terminal_process();
+  const manager = new session_manager({
+    resolve: () => ({ file: '/bin/sh', args: [], env: {}, cwd: '/tmp' }),
+    platform: 'linux',
+    on_output: () => { throw new Error('view detached'); },
+    on_state: () => {},
+    on_shell_state: () => { throw new Error('memory update failed'); },
+    factory: { spawn: () => terminal_process },
+  });
+  manager.start({ ...profile, command: '' }, 80, 24);
+  assert.doesNotThrow(() => terminal_process.data('\x1b]633;P;Cwd=/new\x07\x1b]633;A\x07'));
+  assert.deepEqual(manager.shell_state('one'), { cwd: '/new', command_state: 'idle' });
+  const snapshot = manager.shell_state('one')!;
+  snapshot.cwd = '/external';
+  assert.equal(manager.shell_state('one')?.cwd, '/new');
+  manager.dispose();
+});
 
 test('profiles keep independent PTYs and startup commands run exactly once per start', () => {
   const runtime = harness();
@@ -147,13 +277,14 @@ test('Windows natural exit releases PTY resources once after publishing its orig
     terminal_process.data('late cleanup output');
     terminal_process.exit(99);
   };
+  const states_before_exit = runtime.states.length;
   terminal_process.exit(7);
   assert.equal(cleanup_calls, 1);
   assert.deepEqual(state_at_cleanup, { id: 'one', status: 'exited', exit_code: 7 });
   assert.equal(disposed_at_cleanup, 2);
   assert.deepEqual(runtime.manager.get('one'), state_at_cleanup);
   assert.deepEqual(runtime.outputs, []);
-  assert.equal(runtime.states.length, 2, 'cleanup cannot publish another exit');
+  assert.equal(runtime.states.length, states_before_exit + 1, 'cleanup cannot publish another exit');
   runtime.manager.remove('one');
   runtime.manager.dispose();
   assert.equal(cleanup_calls, 1, 'later removal does not release the same PTY twice');
@@ -179,8 +310,11 @@ test('Windows natural-exit cleanup cannot kill a replacement started by an exit 
   assert.equal(runtime.processes.length, 2);
   assert.ok(first.killed);
   assert.equal(runtime.processes[1].killed, false);
-  assert.deepEqual(runtime.manager.get('one'), { id: 'one', status: 'running' });
-  assert.deepEqual(runtime.states.map(state => [state.status, state.exit_code]), [['running', undefined], ['exited', 7], ['running', undefined]]);
+  assert.deepEqual(runtime.manager.get('one'), { id: 'one', status: 'running', command_status: 'running' });
+  assert.deepEqual(runtime.states.map(state => [state.status, state.command_status, state.exit_code]), [
+    ['running', undefined, undefined], ['running', 'running', undefined], ['exited', undefined, 7],
+    ['running', undefined, undefined], ['running', 'running', undefined],
+  ]);
   assert.deepEqual(runtime.outputs, []);
   runtime.manager.dispose();
 });
@@ -208,7 +342,7 @@ test('output is delivered synchronously in bounded chunks without host scrollbac
   assert.equal(runtime.outputs.map(([, chunk]) => chunk).join(''), data);
   assert.ok(runtime.outputs.every(([, chunk]) => chunk.length <= 65536));
   assert.ok(runtime.outputs.every(([, chunk]) => !/[\ud800-\udbff]$/.test(chunk)), 'surrogate pairs are not split across messages');
-  assert.deepEqual(runtime.manager.list(), [{ id: 'one', status: 'running' }]);
+  assert.deepEqual(runtime.manager.list(), [{ id: 'one', status: 'running', command_status: 'running' }]);
   runtime.manager.dispose();
 });
 

@@ -27,7 +27,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 #terminal-header { flex: 0 0 auto; display: flex; min-width: 0; min-height: var(--tab-height); background: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-sideBar-background, var(--view-background))); }
 #terminal-tabs { display: flex; flex: 1 1 0; min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
 #terminal-tabs::-webkit-scrollbar { height: 0; }
-.terminal-tab { flex: 0 0 auto; max-width: 200px; height: var(--tab-height); position: relative; isolation: isolate; padding: 2px 6px; border: 0; border-radius: var(--tab-radius) var(--tab-radius) 0 0; background: transparent; color: var(--vscode-tab-inactiveForeground, var(--view-foreground)); font-size: inherit; font-weight: normal; line-height: 20px; white-space: nowrap; }
+.terminal-tab { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; max-width: 200px; height: var(--tab-height); position: relative; isolation: isolate; padding: 2px 6px; border: 0; border-radius: var(--tab-radius) var(--tab-radius) 0 0; background: transparent; color: var(--vscode-tab-inactiveForeground, var(--view-foreground)); font-size: inherit; font-weight: normal; line-height: 20px; white-space: nowrap; }
 .tab-label { display: block; overflow: hidden; text-overflow: ellipsis; }
 .terminal-tab::before { content: ''; position: absolute; z-index: -1; inset: 2px; border-radius: var(--tab-radius); background: transparent; pointer-events: none; }
 /* Both sidebars share terminal tab colours; active hover retains the terminal palette. */
@@ -114,9 +114,6 @@ body[data-side="right"] #terminal-content:has(> #terminal-host:not([hidden]) > .
 body.vscode-high-contrast #status-badge,
 body.vscode-high-contrast-light #status-badge { background: var(--vscode-activityBar-background, var(--vscode-sideBar-background, var(--view-background))); }
 #status-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#status-dot { flex: 0 0 auto; width: 5px; height: 5px; border-radius: 50%; background: var(--vscode-tab-inactiveForeground, #888); }
-#status-dot[data-status="running"] { background: var(--vscode-testing-iconPassed, #73c991); }
-#status-dot[data-status="error"] { background: var(--vscode-errorForeground, #f48771); }
 
 /* Drop markers do not consume space or resize running terminal panes. */
 .terminal-tab[data-drop-placement="before"] { box-shadow: inset 2px 0 var(--vscode-focusBorder, #007fd4); }
@@ -178,3 +175,18 @@ body.vscode-high-contrast button, body.vscode-high-contrast-light button { borde
   .field label { padding-top: 0; }
   .custom-shell { grid-column: 1; }
 }
+
+.terminal_menu { position: fixed; z-index: 100; display: flex; flex-direction: column; min-width: min(180px, calc(100vw - 8px)); max-width: calc(100vw - 8px); max-height: calc(100vh - 8px); overflow: auto; padding: 4px; border: 1px solid var(--vscode-menu-border, var(--vscode-widget-border, var(--view-border))); border-radius: var(--tab-radius); color: var(--vscode-menu-foreground, var(--view-foreground)); background: var(--vscode-menu-background, var(--vscode-editorWidget-background, var(--view-background))); box-shadow: 0 2px 8px var(--vscode-widget-shadow, transparent); }
+.terminal_menu button { padding: 4px 12px; min-height: 26px; border: 1px solid transparent; border-radius: var(--tab-radius); text-align: left; color: inherit; background: transparent; white-space: nowrap; }
+.terminal_menu button:is(:hover, :focus):not(:disabled) { outline: none; color: var(--vscode-menu-selectionForeground, var(--vscode-list-activeSelectionForeground, var(--view-foreground))); background: var(--vscode-menu-selectionBackground, var(--vscode-list-activeSelectionBackground, var(--view-border))); border-color: var(--vscode-menu-selectionBorder, var(--vscode-contrastActiveBorder, transparent)); }
+.tab_rename { position: fixed; z-index: 90; margin: 0; }
+.tab_rename input { min-width: 0; border: 1px solid var(--vscode-input-border, var(--view-border)); border-radius: var(--tab-radius); background: var(--vscode-input-background, var(--view-background)); color: var(--vscode-input-foreground, var(--view-foreground)); padding: 3px 5px; }
+.tab_rename input { width: 100%; }
+.tab_rename input[aria-invalid="true"] { border-color: var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground, currentColor)); }
+#tab_rename_error { display: block; padding: 4px 6px; border: 1px solid var(--vscode-inputValidation-errorBorder, var(--view-border)); color: var(--vscode-inputValidation-errorForeground, var(--view-foreground)); background: var(--vscode-inputValidation-errorBackground, var(--view-background)); font-size: 11px; }
+
+/* Tab notifications and the footer share size and theme colours. */
+.status_dot { display: inline-block; flex: 0 0 auto; width: 5px; height: 5px; border-radius: 50%; background: var(--vscode-tab-inactiveForeground, var(--view-foreground)); }
+.status_dot[data-status="running"] { background: var(--vscode-testing-iconPassed, var(--vscode-terminal-ansiGreen, var(--view-foreground))); }
+.status_dot[data-status="error"] { background: var(--vscode-errorForeground, var(--vscode-terminal-ansiRed, var(--view-foreground))); }
+.status_dot[data-status="completed"] { background: var(--vscode-terminal-ansiBlue, var(--vscode-progressBar-background, var(--view-foreground))); }

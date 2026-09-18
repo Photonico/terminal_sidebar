@@ -2,15 +2,17 @@ import * as vscode from 'vscode';
 import * as operating_system from 'node:os';
 import * as path from 'node:path';
 import { randomBytes as random_bytes } from 'node:crypto';
-import { existsSync as exists_sync } from 'node:fs';
+import { statSync as stat_sync } from 'node:fs';
 import { is_client_message, is_tab_name, parse_configuration, read_configuration } from './profiles';
 import { resolve_shell, type shell_options } from './shell';
 import { discover_shells } from './discovery';
 import { session_manager, type session_launch } from './sessions';
 import { sidebar_tabs } from './tabs';
+import { export_filename, terminal_file, web_link } from './terminal_actions';
+import { export_extensions, maximum_pdf_bytes } from './export_format';
 import type {
   appearance, client_message, host_message, shell_choice, sidebar_configuration,
-  sidebar_side, terminal_profile,
+  sidebar_side, terminal_profile, terminal_tab,
 } from './types';
 
 const view_ids: Record<sidebar_side, string> = {
@@ -20,7 +22,7 @@ const view_ids: Record<sidebar_side, string> = {
 const sidebar_sides: sidebar_side[] = ['left', 'right'];
 const history_character_limit = 1024 * 1024;
 const output_delay_ms = 12;
-type sidebar_action = 'save' | 'undo' | 'redo' | 'close' | 'add';
+type sidebar_action = 'save' | 'undo' | 'redo' | 'close' | 'add' | 'find' | 'replace';
 
 function read_scrollbar_visibility(value: unknown): 'auto' | 'visible' | 'hidden' {
   return value === 'visible' || value === 'hidden' ? value : 'auto';
@@ -57,6 +59,7 @@ class sidebar_view implements vscode.WebviewViewProvider, vscode.Disposable {
       resolve: profile => owner.launch_options(profile),
       on_output: (id, data) => owner.receive_output(this, id, data),
       on_state: session => this.post({ type: 'session', session }),
+      on_shell_state: (id, state) => owner.receive_shell_state(this, id, state.cwd),
     });
   }
 
@@ -142,6 +145,7 @@ class terminal_sidebar implements vscode.Disposable {
   private focused_side: sidebar_side = 'right';
   private save_in_progress = false;
   private rename_in_progress = false;
+  private readonly pending_terminal_actions = new Set<string>();
   private shell_detection?: Promise<void>;
   private output_timer?: ReturnType<typeof setTimeout>;
   private disposed = false;
@@ -273,6 +277,7 @@ class terminal_sidebar implements vscode.Disposable {
       const dimensions = view.dimensions.get(tab.id) ?? { cols: 80, rows: 24 };
       view.sessions.start(tab, dimensions.cols, dimensions.rows);
     }
+    this.send_state(view);
     void this.remember_layout(view);
   }
 
@@ -286,6 +291,12 @@ class terminal_sidebar implements vscode.Disposable {
     view.pending_output.set(id, (view.pending_output.get(id) ?? '') + data);
     if (!this.output_timer) {
       this.output_timer = setTimeout(() => this.flush_output(), output_delay_ms);
+    }
+  }
+
+  receive_shell_state(view: sidebar_view, id: string, cwd?: string): void {
+    if (cwd && view.tab_layout?.set_cwd(id, cwd)) {
+      void this.remember_layout(view);
     }
   }
 
@@ -466,19 +477,19 @@ class terminal_sidebar implements vscode.Disposable {
     }
     switch (message.type) {
       case 'close_tab':
-        layout.close_tab(tab.id);
-        view.sessions.remove(tab.id);
-        view.history.delete(tab.id);
-        view.pending_output.delete(tab.id);
-        view.dimensions.delete(tab.id);
-        this.send_state(view);
-        await this.remember_layout(view);
+        await this.close_tab(view, tab.id);
         return;
       case 'request_rename':
         await this.request_rename(view, tab.id);
         return;
       case 'rename_tab':
         if (layout.rename_tab(tab.id, message.name)) {
+          this.send_state(view);
+          await this.remember_layout(view);
+        }
+        return;
+      case 'set_tab_marker':
+        if (layout.set_marker(tab.id, message.marker)) {
           this.send_state(view);
           await this.remember_layout(view);
         }
@@ -500,15 +511,33 @@ class terminal_sidebar implements vscode.Disposable {
         await this.remember_layout(view);
         return;
       case 'export': {
-        const file_name = tab.name.replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').replace(/[. ]+$/, '') || 'terminal';
+        const format = message.format ?? 'text';
+        const bytes = Buffer.from(message.text, format === 'pdf' ? 'base64' : 'utf8');
+        if (format === 'pdf' && (bytes.length > maximum_pdf_bytes || bytes.subarray(0, 5).toString('ascii') !== '%PDF-')) return;
+        const labels = { html: 'HTML', pdf: 'PDF', markdown: 'Markdown', text: 'Plain text' };
         const destination = await vscode.window.showSaveDialog({
-          title: 'Save terminal text',
-          defaultUri: vscode.Uri.file(path.join(operating_system.homedir(), `${file_name}.txt`)),
-          filters: { 'Text files': ['txt'] },
+          title: `Export terminal · ${labels[format]}`,
+          defaultUri: vscode.Uri.file(path.join(operating_system.homedir(), export_filename(tab.name, format))),
+          filters: { [`${labels[format]} files`]: [export_extensions[format]] },
         });
         if (destination) {
-          await vscode.workspace.fs.writeFile(destination, Buffer.from(message.text, 'utf8'));
+          await vscode.workspace.fs.writeFile(destination, bytes);
+          if (format === 'html') {
+            const choice = await vscode.window.showInformationMessage(
+              'HTML saved. Open it in a browser, then use Print → Save as PDF. Enable background graphics to retain colours.',
+              'Open in browser',
+            );
+            if (choice === 'Open in browser' && destination.scheme === 'file') {
+              await vscode.env.openExternal(destination);
+            }
+          }
         }
+        return;
+      }
+      case 'replace_copy': {
+        const document = await vscode.workspace.openTextDocument({ content: message.text, language: 'plaintext' });
+        await vscode.window.showTextDocument(document, { preview: false });
+        await vscode.commands.executeCommand('editor.action.startFindReplaceAction');
         return;
       }
     }
@@ -519,6 +548,30 @@ class terminal_sidebar implements vscode.Disposable {
     const surface_visible = view.view?.visible && !view.configuring
       && (view.side === 'left' ? layout.expanded_ids.includes(tab.id) : layout.active_id === tab.id);
     switch (message.type) {
+      case 'open_link': {
+        const uri = web_link(message.uri);
+        if (uri) await vscode.env.openExternal(vscode.Uri.parse(uri));
+        break;
+      }
+      case 'open_file': {
+        const cwd = view.sessions.shell_state(tab.id)?.cwd ?? this.working_directory(tab);
+        const file = terminal_file(message.path, cwd);
+        if (!file) break;
+        try {
+          // Preserve the remote extension host's URI authority when appropriate.
+          const workspace_uri = vscode.workspace.workspaceFolders?.[0]?.uri;
+          const file_uri = vscode.Uri.file(file);
+          const uri = workspace_uri && workspace_uri.scheme !== 'file'
+            ? workspace_uri.with({ path: file_uri.path }) : file_uri;
+          const document = await vscode.workspace.openTextDocument(uri);
+          const line = Math.min(message.line - 1, Math.max(0, document.lineCount - 1));
+          const column = Math.min((message.column ?? 1) - 1, document.lineAt(line).text.length);
+          await vscode.window.showTextDocument(document, { selection: new vscode.Range(line, column, line, column), preview: true });
+        } catch {
+          view.error('The linked file could not be opened. Check the path and terminal working directory.');
+        }
+        break;
+      }
       case 'focus':
         if (surface_visible) {
           this.focused_side = view.side;
@@ -554,6 +607,36 @@ class terminal_sidebar implements vscode.Disposable {
         }
         break;
       }
+    }
+  }
+
+  private async close_tab(view: sidebar_view, id: string): Promise<void> {
+    const key = `${view.side}:${id}`;
+    if (this.pending_terminal_actions.has(key)) return;
+    this.pending_terminal_actions.add(key);
+    try {
+      if (view.sessions.get(id)?.status === 'running') {
+        const state = view.sessions.shell_state(id)?.command_state ?? 'unknown';
+        if (state !== 'idle') {
+          const choice = await vscode.window.showWarningMessage(
+            state === 'running'
+              ? 'Close this terminal? A command is still running and will be stopped.'
+              : 'Close this terminal? Its process will end. Shell integration cannot confirm that it is idle.',
+            { modal: true }, 'Close terminal',
+          );
+          if (choice !== 'Close terminal') return;
+        }
+      }
+      if (this.disposed || !view.tab_layout?.tabs.some(tab => tab.id === id)) return;
+      view.tab_layout.close_tab(id);
+      view.sessions.remove(id);
+      view.history.delete(id);
+      view.pending_output.delete(id);
+      view.dimensions.delete(id);
+      this.send_state(view);
+      await this.remember_layout(view);
+    } finally {
+      this.pending_terminal_actions.delete(key);
     }
   }
 
@@ -593,27 +676,34 @@ class terminal_sidebar implements vscode.Disposable {
   }
 
   private async restart_tab(view: sidebar_view, id: string, column_count: number, row_count: number): Promise<void> {
-    if (!vscode.workspace.isTrusted) {
-      view.error('Trust this workspace before starting a terminal.');
-      return;
-    }
-    if (view.sessions.get(id)?.status === 'running') {
-      const choice = await vscode.window.showWarningMessage(
-        'Restart this terminal? Its current process will end.', { modal: true }, 'Restart',
-      );
-      if (choice !== 'Restart') {
+    const key = `${view.side}:${id}`;
+    if (this.pending_terminal_actions.has(key)) return;
+    this.pending_terminal_actions.add(key);
+    try {
+      if (!vscode.workspace.isTrusted) {
+        view.error('Trust this workspace before starting a terminal.');
         return;
       }
+      if (view.sessions.get(id)?.status === 'running') {
+        const choice = await vscode.window.showWarningMessage(
+          'Restart this terminal? Its current process will end.', { modal: true }, 'Restart',
+        );
+        if (choice !== 'Restart') {
+          return;
+        }
+      }
+      const tab = this.ensure_layout(view).tabs.find(item => item.id === id);
+      if (!tab || !vscode.workspace.isTrusted) {
+        return;
+      }
+      view.sessions.remove(id);
+      view.history.delete(id);
+      view.pending_output.delete(id);
+      view.post({ type: 'reset', id });
+      view.sessions.start(tab, column_count, row_count);
+    } finally {
+      this.pending_terminal_actions.delete(key);
     }
-    const tab = this.ensure_layout(view).tabs.find(item => item.id === id);
-    if (!tab || !vscode.workspace.isTrusted) {
-      return;
-    }
-    view.sessions.remove(id);
-    view.history.delete(id);
-    view.pending_output.delete(id);
-    view.post({ type: 'reset', id });
-    view.sessions.start(tab, column_count, row_count);
   }
 
   private async save_configuration(view: sidebar_view, value: unknown, baseline_value: unknown): Promise<void> {
@@ -663,7 +753,7 @@ class terminal_sidebar implements vscode.Disposable {
     return environment_variables;
   }
 
-  launch_options(profile: terminal_profile): session_launch {
+  launch_options(profile: terminal_profile & Pick<terminal_tab, 'cwd'>): session_launch {
     const platform_key = this.platform_key();
     const settings = vscode.workspace.getConfiguration('terminal.integrated');
     const environment_variables = this.terminal_environment();
@@ -674,7 +764,7 @@ class terminal_sidebar implements vscode.Disposable {
     const native_profiles = settings.get<Record<string, {
       path?: string | string[]; source?: string; args?: string[] | string; env?: Record<string, string | null>;
     } | null>>(`profiles.${platform_key}`, {});
-    const native_profile = profile_name ? native_profiles[profile_name] : undefined;
+    const native_profile = !profile.shell.trim() && profile_name ? native_profiles[profile_name] : undefined;
     let default_profile: shell_options['default_profile'];
     if (native_profile?.path) {
       default_profile = {
@@ -683,7 +773,9 @@ class terminal_sidebar implements vscode.Disposable {
           ? native_profile.path.map(expand_path) : expand_path(native_profile.path),
       };
     } else if (native_profile?.source === 'PowerShell') {
-      const powershell = resolve_shell('powershell', { env: environment_variables });
+      const powershell = resolve_shell('powershell', {
+        env: environment_variables, profile_env: { ...native_profile.env, ...profile.env },
+      });
       default_profile = {
         path: powershell.file, args: native_profile.args ?? powershell.args, env: native_profile.env,
       };
@@ -698,10 +790,19 @@ class terminal_sidebar implements vscode.Disposable {
         path: executable_paths, args: native_profile.args ?? ['--login', '-i'], env: native_profile.env,
       };
     }
-    const resolved = resolve_shell(expand_path(profile.shell), { env: environment_variables, default_profile });
-    const working_directory = vscode.workspace.workspaceFolders?.map(folder => folder.uri.fsPath)
-      .find(folder => exists_sync(folder)) ?? operating_system.homedir();
-    return { ...resolved, cwd: working_directory };
+    const resolved = resolve_shell(expand_path(profile.shell), {
+      env: environment_variables, default_profile, profile_args: profile.args, profile_env: profile.env,
+    });
+    return { ...resolved, cwd: this.working_directory(profile) };
+  }
+
+  private working_directory(profile: Pick<terminal_tab, 'cwd'>): string {
+    const is_directory = (folder: string): boolean => {
+      try { return path.isAbsolute(folder) && stat_sync(folder).isDirectory(); } catch { return false; }
+    };
+    const candidates = [profile.cwd, ...(vscode.workspace.workspaceFolders?.map(folder => folder.uri.fsPath) ?? [])];
+    return candidates.find((folder): folder is string => Boolean(folder && is_directory(folder)))
+      ?? operating_system.homedir();
   }
 
   html(webview: vscode.Webview): string {
@@ -734,7 +835,7 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.commands.registerCommand(`terminalSidebar.${side}.restart`, () => provider.restart_active(side)),
       vscode.commands.registerCommand(`terminalSidebar.${side}.selectProfile`, () => provider.open_profile(undefined, side)),
     );
-    for (const action of ['save', 'undo', 'redo', 'close', 'add'] as const) {
+    for (const action of ['save', 'undo', 'redo', 'close', 'add', 'find', 'replace'] as const) {
       context.subscriptions.push(vscode.commands.registerCommand(
         `terminalSidebar.${side}.${action}`, () => provider.action(side, action),
       ));

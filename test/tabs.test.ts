@@ -27,6 +27,77 @@ test('closing, renaming, and reopening runtime tabs never changes startup settin
   assert.equal(reopened.name, 'Neovim');
 });
 
+test('runtime snapshots and reopened profiles isolate nested arguments and environment overrides', () => {
+  const profile = { ...startup_profiles()[0], args: ['--login'], env: { MODE: 'original', REMOVE: null } };
+  const model = new sidebar_tabs([profile]);
+  const first = model.tabs[0];
+  first.args!.push('snapshot mutation');
+  first.env!.MODE = 'snapshot mutation';
+  assert.deepEqual(model.tabs[0].args, ['--login']);
+  assert.equal(model.tabs[0].env!.MODE, 'original');
+  assert.deepEqual(profile.args, ['--login']);
+  assert.equal(profile.env.MODE, 'original');
+
+  for (const close_first of [false, true]) {
+    if (close_first) model.close_tab(model.tabs[0].id);
+    const opened = model.open_profile(profile);
+    opened.args![0] = 'opened mutation';
+    delete opened.env!.REMOVE;
+    assert.deepEqual(model.tabs[0].args, ['--login']);
+    assert.equal(model.tabs[0].env!.REMOVE, null);
+  }
+  profile.args.push('source mutation');
+  profile.env.MODE = 'source mutation';
+  assert.deepEqual(model.tabs[0].args, ['--login']);
+  assert.equal(model.tabs[0].env!.MODE, 'original');
+  assert.doesNotMatch(JSON.stringify(model.remember()), /"args"|"env"/);
+
+  const restored = new sidebar_tabs([profile], model.remember());
+  const snapshot = restored.tabs[0];
+  snapshot.args!.pop();
+  snapshot.env!.MODE = 'restored mutation';
+  assert.deepEqual(restored.tabs[0].args, profile.args);
+  assert.equal(restored.tabs[0].env!.MODE, 'source mutation');
+});
+
+test('workspace memory preserves cwd for startup and temporary tabs without copying commands or shell state', () => {
+  const profiles = startup_profiles();
+  const model = new sidebar_tabs(profiles);
+  const startup = model.tabs[0];
+  const temporary = model.add_tab();
+  const startup_cwd = process.platform === 'win32' ? 'C:\\workspace\\startup' : '/workspace/startup';
+  const temporary_cwd = process.platform === 'win32' ? 'D:\\temporary workspace' : '/temporary workspace';
+  assert.equal(model.set_cwd(startup.id, startup_cwd), true);
+  assert.equal(model.set_cwd(temporary.id, temporary_cwd), true);
+  assert.equal(model.set_cwd(startup.id, startup_cwd), false);
+  assert.equal(model.set_cwd('absent', startup_cwd), false);
+  model.rename_tab(startup.id, 'Renamed');
+  model.move_tab(temporary.id, startup.id, 'before');
+  const memory = model.remember();
+  assert.deepEqual(Object.keys(memory.tabs[0]).sort(), ['cwd', 'id', 'name']);
+  assert.deepEqual(Object.keys(memory.tabs[1]).sort(), ['cwd', 'id', 'name', 'profile_id', 'renamed']);
+  assert.deepEqual(new sidebar_tabs(profiles, memory).tabs, model.tabs);
+  assert.deepEqual(profiles, startup_profiles());
+  const snapshot = model.tabs[0];
+  snapshot.cwd = startup_cwd;
+  assert.equal(model.tabs[0].cwd, temporary_cwd);
+});
+
+test('invalid remembered cwd is discarded independently without losing a valid tab or metadata', () => {
+  const valid = process.platform === 'win32' ? 'C:\\work' : '/work';
+  for (const cwd of [null, 42, '', 'relative/path', 'file:///work', '//server/share', '\\\\server\\share', '/bad\x00', '/'.repeat(5000)]) {
+    const model = new sidebar_tabs([], {
+      version: 1, tabs: [{ id: 'restored', name: 'Scratch', cwd, command: 'must not restore', shell: '/evil' }],
+      active_id: 'restored', expanded_ids: ['restored'], next_number: 1,
+    });
+    assert.deepEqual(model.tabs, [{ id: 'restored', name: 'Scratch', command: '', shell: '' }]);
+    assert.equal(model.set_cwd('restored', cwd as string), false);
+    assert.equal(model.active_id, 'restored');
+    assert.equal(model.set_cwd('restored', valid), true);
+    assert.equal(model.remember().tabs[0].cwd, valid);
+  }
+});
+
 test('temporary names advance while ordinary tabs remain, avoiding collisions and startup commands', () => {
   const model = new sidebar_tabs([{ id: 'occupied', name: 'Term 0', command: 'anything', shell: 'bash' }]);
   const first = model.add_tab();

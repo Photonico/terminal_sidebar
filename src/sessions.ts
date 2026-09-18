@@ -1,4 +1,5 @@
 import type { terminal_profile, session_info } from './types';
+import { shell_state_tracker, type shell_state } from './shell_state';
 
 export interface disposable {
   dispose(): void;
@@ -6,6 +7,8 @@ export interface disposable {
 
 /** The member names in this interface follow the external node-pty contract. */
 export interface pty_process {
+  /** Optional foreground executable name supplied by node-pty; advisory only. */
+  readonly process?: string;
   onData(listener: (data: string) => void): disposable;
   onExit(listener: (event: { exitCode: number; signal?: number }) => void): disposable;
   write(data: string): void;
@@ -37,6 +40,7 @@ export interface session_manager_options {
   resolve(profile: terminal_profile): session_launch;
   on_output(id: string, data: string): void;
   on_state(info: session_info): void;
+  on_shell_state?(id: string, state: shell_state): void;
   factory?: pty_factory;
   platform?: NodeJS.Platform;
 }
@@ -45,6 +49,9 @@ interface terminal_session {
   info: session_info;
   generation: number;
   process?: pty_process;
+  shell: string;
+  tracker: shell_state_tracker;
+  last_shell_state?: shell_state;
   subscriptions: disposable[];
 }
 
@@ -77,6 +84,8 @@ export class session_manager implements disposable {
       info: { id: profile.id, status: 'running' },
       generation: ++this.next_generation,
       subscriptions: [],
+      shell: '',
+      tracker: new shell_state_tracker({ platform: this.options.platform }),
     };
     this.sessions.set(profile.id, session);
     const generation = session.generation;
@@ -84,6 +93,8 @@ export class session_manager implements disposable {
 
     try {
       const launch = this.options.resolve(profile);
+      session.shell = this.executable_name(launch.file);
+      session.tracker = new shell_state_tracker({ cwd: launch.cwd, platform: this.options.platform });
       launch_phase = 'load';
       // Load lazily so configuration remains available without a usable native binary.
       const factory: pty_factory = this.options.factory ?? require('node-pty');
@@ -98,6 +109,10 @@ export class session_manager implements disposable {
       session.process = terminal_process;
 
       this.track_subscription(session, terminal_process.onData((data) => {
+        if (!this.is_running(session, generation)) return;
+        // Track in the host even when no webview is attached or a collapsed view drops output.
+        session.tracker.consume(data);
+        this.emit_shell_state(session);
         // Forward output directly. Retained terminal views own their scrollback.
         let offset = 0;
         while (offset < data.length && this.is_running(session, generation)) {
@@ -118,6 +133,7 @@ export class session_manager implements disposable {
         session.process = undefined;
         session.info = { id: profile.id, status: 'exited', exit_code: event.exitCode };
         this.clear_subscriptions(session);
+        this.emit_shell_state(session);
         this.emit_state(session);
 
         // node-pty retains its Windows ConPTY worker after natural exit until kill().
@@ -130,9 +146,13 @@ export class session_manager implements disposable {
       }));
 
       if (this.is_running(session, generation)) {
+        this.emit_shell_state(session);
         this.emit_state(session);
         if (this.is_running(session, generation) && profile.command.trim()) {
-          this.input(profile.id, profile.command + '\r');
+          session.tracker.started_command();
+          this.emit_shell_state(session);
+          // A synchronous state observer can replace this ID before startup input is sent.
+          if (this.is_running(session, generation)) this.input(profile.id, profile.command + '\r');
         }
       }
     } catch (error) {
@@ -153,6 +173,7 @@ export class session_manager implements disposable {
         error_message = `The terminal could not start. Check the shell, working directory, and node-pty installation.${error_suffix}`;
       }
       session.info = { id: profile.id, status: 'error', message: error_message };
+      this.emit_shell_state(session);
       this.emit_state(session);
       try {
         failed_process?.kill();
@@ -165,6 +186,8 @@ export class session_manager implements disposable {
     const session = this.sessions.get(id);
     if (!session || session.info.status !== 'running' || this.disposed) return;
     try {
+      session.tracker.input();
+      this.emit_shell_state(session);
       session.process?.write(data);
     } catch { /* Process exit can race a queued input message. */ }
   }
@@ -185,6 +208,7 @@ export class session_manager implements disposable {
     session.generation = ++this.next_generation;
     session.info = { id, status: 'exited', message: 'Stopped.' };
     this.clear_subscriptions(session);
+    this.emit_shell_state(session);
     this.emit_state(session);
     try {
       terminal_process?.kill();
@@ -203,6 +227,19 @@ export class session_manager implements disposable {
   get(id: string): session_info | undefined {
     const info = this.sessions.get(id)?.info;
     return info ? { ...info } : undefined;
+  }
+
+  /** Fresh advisory command state; a shell foreground name alone never proves the prompt is idle. */
+  shell_state(id: string): shell_state | undefined {
+    const session = this.sessions.get(id);
+    if (!session) return;
+    const state = session.tracker.state;
+    if (session.info.status !== 'running') return { ...(state.cwd ? { cwd: state.cwd } : {}), command_state: 'idle' };
+    try {
+      const foreground = this.executable_name(session.process?.process ?? '');
+      if (foreground && session.shell && foreground !== session.shell) state.command_state = 'running';
+    } catch { /* Foreground process queries race exit and are unavailable on some platforms. */ }
+    return state;
   }
 
   dispose(): void {
@@ -241,5 +278,35 @@ export class session_manager implements disposable {
     try {
       this.options.on_state({ ...session.info });
     } catch { /* A detached view cannot prevent cleanup. */ }
+  }
+
+  private emit_shell_state(session: terminal_session): void {
+    const generation = session.generation;
+    // Foreground queries may require synchronous native I/O; sample only on explicit reads.
+    const state = session.tracker.state;
+    if (session.info.status !== 'running') state.command_state = 'idle';
+    if (state.cwd === session.last_shell_state?.cwd
+      && state.command_state === session.last_shell_state?.command_state
+      && state.command_status === session.last_shell_state?.command_status
+      && state.command_exit_code === session.last_shell_state?.command_exit_code) return;
+    session.last_shell_state = { ...state };
+    if (session.info.status === 'running' && (session.info.command_status !== state.command_status
+      || session.info.command_exit_code !== state.command_exit_code)) {
+      delete session.info.command_status;
+      delete session.info.command_exit_code;
+      if (state.command_status !== undefined) session.info.command_status = state.command_status;
+      if (state.command_exit_code !== undefined) session.info.command_exit_code = state.command_exit_code;
+      this.emit_state(session);
+      // Do not publish the retired shell's cwd/result after an observer stops or replaces it.
+      if (session.generation !== generation || this.sessions.get(session.info.id) !== session) return;
+    }
+    try {
+      this.options.on_shell_state?.(session.info.id, state);
+    } catch { /* Persisting workspace memory must never interrupt a live PTY. */ }
+  }
+
+  private executable_name(value: string): string {
+    const name = value.replaceAll('\\', '/').split('/').at(-1)?.replace(/^-/, '') ?? '';
+    return (this.options.platform ?? process.platform) === 'win32' ? name.toLowerCase().replace(/\.exe$/, '') : name;
   }
 }

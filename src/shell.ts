@@ -1,10 +1,15 @@
 import * as file_system from 'node:fs';
 import * as operating_system from 'node:os';
 import * as path from 'node:path';
+import { parse_profile_args, parse_profile_env } from './profiles';
 
 export interface shell_options {
   platform?: NodeJS.Platform;
   env?: NodeJS.ProcessEnv;
+  /** Explicit startup arguments replace VS Code profile or login-shell arguments. */
+  profile_args?: string[];
+  /** Startup values apply last, before executable lookup. Null removes a value. */
+  profile_env?: Record<string, string | null>;
   default_profile?: {
     path: string | string[];
     args?: string[] | string;
@@ -23,7 +28,20 @@ function environment_value(environment: Record<string, string>, key: string, win
   const actual_key = windows
     ? Object.keys(environment).find((entry) => entry.toLowerCase() === key.toLowerCase())
     : key;
-  return actual_key === undefined ? undefined : environment[actual_key];
+  return actual_key === undefined || !Object.hasOwn(environment, actual_key) ? undefined : environment[actual_key];
+}
+
+function apply_environment(environment: Record<string, string>, overrides: Record<string, string | null | undefined>, windows: boolean): void {
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value !== null && typeof value !== 'string') continue;
+    if (windows) {
+      for (const existing_key of Object.keys(environment)) {
+        if (existing_key.toLowerCase() === key.toLowerCase()) delete environment[existing_key];
+      }
+    }
+    if (value === null) delete environment[key];
+    else Object.defineProperty(environment, key, { value, enumerable: true, configurable: true, writable: true });
+  }
 }
 
 function is_executable(candidate: string, windows: boolean): boolean {
@@ -77,10 +95,10 @@ export function resolve_shell(requested: string, options: shell_options = {}): r
     throw new Error('The shell must be an executable name or path without NUL characters or line breaks.');
   }
   const windows = (options.platform ?? process.platform) === 'win32';
+  const profile_args = options.profile_args === undefined ? undefined : parse_profile_args(options.profile_args);
+  const profile_env = options.profile_env === undefined ? undefined : parse_profile_env(options.profile_env);
   const environment: Record<string, string> = {};
-  for (const [key, value] of Object.entries(options.env ?? process.env)) {
-    if (typeof value === 'string') environment[key] = value;
-  }
+  apply_environment(environment, options.env ?? process.env, windows);
 
   const trimmed_request = requested.trim();
   const known_shell = ['powershell', 'pwsh', 'cmd', 'bash', 'zsh', 'fish'].includes(trimmed_request.toLowerCase());
@@ -88,17 +106,8 @@ export function resolve_shell(requested: string, options: shell_options = {}): r
   const profile = selection ? undefined : options.default_profile;
 
   // VS Code profile values override the inherited environment; null removes a value.
-  if (profile?.env) {
-    for (const [key, value] of Object.entries(profile.env)) {
-      if (windows) {
-        for (const existing_key of Object.keys(environment)) {
-          if (existing_key.toLowerCase() === key.toLowerCase()) delete environment[existing_key];
-        }
-      }
-      if (value === null) delete environment[key];
-      else environment[key] = value;
-    }
-  }
+  if (profile?.env) apply_environment(environment, profile.env, windows);
+  if (profile_env) apply_environment(environment, profile_env, windows);
 
   // Preserve the default profile's candidate order, including Windows fallback paths.
   let candidates: string[];
@@ -136,7 +145,8 @@ export function resolve_shell(requested: string, options: shell_options = {}): r
 
     // A string represents one argument. Executable paths are never split on spaces.
     let arguments_list: string[];
-    if (profile?.args === undefined) arguments_list = default_arguments(executable_path, windows);
+    if (profile_args !== undefined) arguments_list = profile_args;
+    else if (profile?.args === undefined) arguments_list = default_arguments(executable_path, windows);
     else if (Array.isArray(profile.args)) arguments_list = [...profile.args];
     else arguments_list = [profile.args];
     if (arguments_list.some((argument) => typeof argument !== 'string' || argument.includes('\0'))) {

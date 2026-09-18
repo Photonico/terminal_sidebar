@@ -1,4 +1,6 @@
 import { is_identifier, is_tab_name, parse_profiles } from './profiles';
+import { is_local_cwd } from './shell_state';
+import { copy_tab_marker, is_tab_marker, type tab_marker } from './tab_marker';
 import type { terminal_profile, terminal_tab } from './types';
 
 export interface remembered_tab {
@@ -6,9 +8,11 @@ export interface remembered_tab {
   name: string;
   profile_id?: string;
   renamed?: true;
+  cwd?: string;
+  marker?: tab_marker;
 }
 
-/** Workspace-local layout only. Shells, commands, terminal input, and output never belong here. */
+/** Workspace-local layout, decoration, and last known cwd. Shells, commands, input, and output never belong here. */
 export interface tab_memory {
   version: 1;
   tabs: remembered_tab[];
@@ -19,6 +23,15 @@ export interface tab_memory {
 
 const maximum_tabs = 64;
 const maximum_temporary_tabs = 32;
+
+function copy_tab(tab: terminal_tab): terminal_tab {
+  return {
+    ...tab,
+    ...(tab.args === undefined ? {} : { args: [...tab.args] }),
+    ...(tab.env === undefined ? {} : { env: { ...tab.env } }),
+    ...(tab.marker === undefined ? {} : { marker: copy_tab_marker(tab.marker) }),
+  };
+}
 
 /** Sanitize each remembered descriptor separately so one damaged entry cannot erase the rest. */
 function read_memory(value: unknown): tab_memory {
@@ -36,7 +49,7 @@ function read_memory(value: unknown): tab_memory {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
       continue;
     }
-    const { id, name, profile_id, renamed } = entry as Record<string, unknown>;
+    const { id, name, profile_id, renamed, cwd, marker } = entry as Record<string, unknown>;
     if (!is_identifier(id) || identifiers.has(id) || !is_tab_name(name)) {
       continue;
     }
@@ -51,6 +64,8 @@ function read_memory(value: unknown): tab_memory {
     if (renamed === true) {
       descriptor.renamed = true;
     }
+    if (is_local_cwd(cwd)) descriptor.cwd = cwd;
+    if (is_tab_marker(marker)) descriptor.marker = copy_tab_marker(marker);
     empty.tabs.push(descriptor);
   }
   if (is_identifier(record.active_id)) {
@@ -93,13 +108,17 @@ export class sidebar_tabs {
           continue;
         }
         const name = descriptor.renamed ? descriptor.name : profile.name;
-        this.current_tabs.push({ ...profile, id: descriptor.id, name, profile_id: profile.id });
+        this.current_tabs.push({ ...profile, id: descriptor.id, name, profile_id: profile.id,
+          ...(descriptor.cwd === undefined ? {} : { cwd: descriptor.cwd }),
+          ...(descriptor.marker === undefined ? {} : { marker: copy_tab_marker(descriptor.marker) }) });
         if (descriptor.renamed) {
           this.renamed_profiles.add(descriptor.id);
         }
         restored_profiles.add(profile.id);
       } else if (temporary_count < maximum_temporary_tabs) {
-        this.current_tabs.push({ id: descriptor.id, name: descriptor.name, command: '', shell: '' });
+        this.current_tabs.push({ id: descriptor.id, name: descriptor.name, command: '', shell: '',
+          ...(descriptor.cwd === undefined ? {} : { cwd: descriptor.cwd }),
+          ...(descriptor.marker === undefined ? {} : { marker: copy_tab_marker(descriptor.marker) }) });
         temporary_count += 1;
       }
     }
@@ -121,7 +140,7 @@ export class sidebar_tabs {
   }
 
   get tabs(): terminal_tab[] {
-    return this.current_tabs.map(tab => ({ ...tab }));
+    return this.current_tabs.map(copy_tab);
   }
 
   get active_id(): string | undefined {
@@ -147,7 +166,7 @@ export class sidebar_tabs {
     this.current_tabs.push(tab);
     this.selected_id = tab.id;
     this.expanded.add(tab.id);
-    return { ...tab };
+    return copy_tab(tab);
   }
 
   /** Reopen a startup profile on demand, or select its existing runtime tab without restarting it. */
@@ -157,7 +176,7 @@ export class sidebar_tabs {
     const tab = existing ?? this.append_profile(profile);
     this.selected_id = tab.id;
     this.expanded.add(tab.id);
-    return { ...tab };
+    return copy_tab(tab);
   }
 
   /** Select the right neighbour after closing, or the left neighbour when closing the last tab. */
@@ -233,6 +252,24 @@ export class sidebar_tabs {
     return true;
   }
 
+  /** Remember a local directory separately from the synced startup profile. */
+  set_cwd(identifier: string, cwd: string): boolean {
+    const tab = this.current_tabs.find(entry => entry.id === identifier);
+    if (!tab || !is_local_cwd(cwd) || tab.cwd === cwd) return false;
+    tab.cwd = cwd;
+    return true;
+  }
+
+  /** Decorations are runtime preferences, stored locally without changing startup settings. */
+  set_marker(identifier: string, marker: tab_marker | undefined): boolean {
+    if (marker !== undefined && !is_tab_marker(marker)) return false;
+    const tab = this.current_tabs.find(entry => entry.id === identifier);
+    if (!tab || (tab.marker?.shape === marker?.shape && tab.marker?.color === marker?.color)) return false;
+    if (marker === undefined) delete tab.marker;
+    else tab.marker = copy_tab_marker(marker);
+    return true;
+  }
+
   /** Deliberately enumerate the persisted fields. Never spread a runtime tab into storage. */
   remember(): tab_memory {
     const descriptors: remembered_tab[] = [];
@@ -244,6 +281,8 @@ export class sidebar_tabs {
       if (this.renamed_profiles.has(tab.id)) {
         descriptor.renamed = true;
       }
+      if (tab.cwd !== undefined) descriptor.cwd = tab.cwd;
+      if (tab.marker !== undefined) descriptor.marker = copy_tab_marker(tab.marker);
       descriptors.push(descriptor);
     }
     return {

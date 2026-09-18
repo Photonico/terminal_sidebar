@@ -1,5 +1,10 @@
 # Terminal Sidebar
 
+[![CI](https://github.com/Photonico/terminal_sidebar/actions/workflows/ci.yml/badge.svg)](https://github.com/Photonico/terminal_sidebar/actions/workflows/ci.yml)
+[![Marketplace version](https://img.shields.io/visual-studio-marketplace/v/ConAntares.terminal-sidebar)](https://marketplace.visualstudio.com/items?itemName=ConAntares.terminal-sidebar)
+[![Installs](https://img.shields.io/visual-studio-marketplace/i/ConAntares.terminal-sidebar)](https://marketplace.visualstudio.com/items?itemName=ConAntares.terminal-sidebar)
+[![MIT licence](https://img.shields.io/github/license/Photonico/terminal_sidebar)](LICENSE)
+
 Terminal Sidebar brings independent terminals into the VS Code side bars. The **Primary Side Bar** organises terminals as collapsible sections; the **Secondary Side Bar** uses a compact tab strip. Each terminal runs its own shell, leaving the ordinary terminal panel available for other work. These side bars are on the left and right by default, respectively, but VS Code allows their positions to change.
 
 **Version 0.7.0 is a pre-release for testing.** It requires VS Code **1.106 or later** and a desktop or remote Node.js extension host. Browser-only and virtual workspaces are unsupported.
@@ -23,7 +28,7 @@ An **open terminal** belongs to the current workspace window. A **startup profil
 
 The Secondary Side Bar's tab strip has a **+** button to create a terminal and a **×** button to close the selected one. A middle click closes the tab beneath the pointer. Double-click blank tab-strip space to create a terminal. New ordinary shells are named **Term 0**, **Term 1**, and so on, with an independent counter on each side. Closing all ordinary tabs resets that side's counter to **Term 0**, even when startup tabs remain. Existing names are skipped.
 
-The pencil button immediately before **×** opens **Rename terminal**. In the Primary Side Bar it renames that section's terminal; in the Secondary Side Bar it renames the selected terminal. Press **Enter** to confirm or **Esc** to cancel. Names are remembered for this workspace, without changing startup profiles, selection, expanded sections, or running processes.
+The pencil button immediately before **×** opens an inline **Rename terminal** field. In the Primary Side Bar it renames that section's terminal; in the Secondary Side Bar it renames the selected terminal. Press **Enter** to confirm or **Esc** to cancel. Names are remembered for this workspace, without changing startup profiles, selection, expanded sections, or running processes.
 
 The Primary Side Bar presents an Explorer-style list of collapsible terminal sections. Several sections can be expanded at once and share the available height. Expanding or collapsing keeps their order; when all sections are collapsed, they form a compact list at the top with consistent header styling. Collapsing a section hides its terminal and preserves the process; its close control ends the process. The status row follows the terminal background when an expanded terminal sits directly above it, and the side bar background otherwise. Empty side bars show guidance and buttons at the top. This layout uses a single Webview View and is not a collection of native Explorer panes.
 
@@ -37,6 +42,19 @@ The Primary Side Bar uses 26 px headers, with extra vertical spacing around each
 
 The view uses documented [Webview theme variables](https://code.visualstudio.com/api/extension-guides/webview#theming-webview-content) and public terminal APIs. It follows the host's appearance where those APIs expose it; it cannot inherit arbitrary private editor styling or guarantee pixel-identical behaviour across future VS Code releases.
 
+## Search, links, and output
+
+- Press **Cmd+F** on macOS or **Ctrl+F** on Windows/Linux while a terminal has focus to search its retained buffer. The themed overlay follows VS Code's compact find-widget layout, including previous/next matches, case sensitivity, whole words, and regular expressions. **Esc** returns focus to the terminal.
+- The find widget's leading arrow, **Cmd+Option+F** on macOS, or **Ctrl+H** on Windows/Linux opens an editable **plain-text copy** in a normal VS Code editor with its native Replace control. Replacements and editor undo affect only this copy; save it with the editor's normal Save action. They do not rewrite live terminal history, change source files, or send input to the shell. Search and Replace commands for each side are also available in Keyboard Shortcuts.
+- Right-click a tab or section heading for **Rename**, **Change tab icon**, **Restart**, **Close**, and **Export**. Terminal content retains its normal text selection and clipboard behaviour. Tab icons offer circle, up/down/left/right triangle, diamond, square, hexagon and heart shapes with the current theme's sixteen terminal ANSI colours. The chosen shape and colour token are remembered locally; changing theme updates their appearance. **Remove** clears the icon.
+- **Cmd-click** on macOS or **Ctrl-click** elsewhere opens HTTP(S) URLs. Source locations such as `src/app.ts:12:3` open in the editor at the requested line and column; relative paths use the terminal's last known directory. Quoted paths can contain spaces. This does not resolve every tool's diagnostic format.
+- Tab status dots and the footer share the same 5 px size and theme colour tokens: running uses `testing.iconPassed`, errors use `errorForeground`, and completion uses `terminal.ansiBlue`. The latest shell-reported command stays marked as running, failed (nonzero exit code), or completed (zero). Without a command report or notification, the tab dot is absent. Prompt text and pauses in output never count as success. Existing OSC 133/633 shell integration must report command lifecycle events; unsupported shells still show explicit process exits and BEL notifications. Background BEL notifications clear when selected or focused, while the latest command result remains.
+- Unicode 11 character-width data improves wide-character and emoji layout. The chosen font must still contain the glyphs, and newer or joined emoji sequences can have rendering limitations.
+
+**Save** in the terminal view, or **Export** in a tab's context menu, offers **HTML**, **PDF**, **Markdown**, and **Plain text**, in that order. HTML preserves terminal colours and formatting without scripts or live links. PDF saves a real, paginated PDF using images to preserve browser-rendered fonts, colours and Unicode; its terminal text is not selectable. Markdown embeds sanitized HTML to keep colours where the reader permits inline styles; readers such as GitHub can remove those styles. Plain text removes colour formatting.
+
+Exports capture the retained terminal buffer, not an unlimited command history. Text is limited to 1 Mi UTF-16 code units and HTML/Markdown to 8 Mi. PDF is limited to 16 MiB, 100 pages and one million terminal cells; excessive exports report an error rather than silently truncating. HTML can also be printed to PDF through a browser for selectable text, with background graphics enabled.
+
 ## Configuration
 
 Run **Terminal Sidebar: Configure Side Bars**, or select either side bar's gear. The configuration editor in the Primary Side Bar contains independently collapsible **Primary Side Bar** and **Secondary Side Bar** groups. Folding either group keeps its unsaved edits. Each group numbers its entries from **0** and provides:
@@ -45,9 +63,11 @@ Run **Terminal Sidebar: Configure Side Bars**, or select either side bar's gear.
 - **Command:** text sent once when the terminal starts. Blank opens an interactive shell.
 - **Shell:** an installed shell or executable path. Blank follows the configured VS Code shell, or the system shell when no default profile is supplied. An invalid configured executable reports an error.
 
+Two optional fields are available in the JSON User setting: **args** is an array of literal shell arguments, and **env** is an object of environment overrides. An omitted `args` keeps the shell/default-profile arguments; `[]` clears them. `env` applies after the inherited and default-profile environment; a `null` value removes a variable. Existing values are preserved when editing Name, Command, or Shell in the visual editor.
+
 Installed shells are detected on the machine where the extension runs. Detection checks available executables without launching them and does not change the selected shell. A custom executable path remains available when detection does not find the shell. Shell arguments do not belong in the executable field.
 
-**Save** writes both startup lists together. **Undo** and **Redo** change the configuration draft, and **Cancel** discards its edits. These actions do not undo shell commands. A stale draft is rejected when startup settings have changed elsewhere, preserving the draft for review.
+**Save** writes both startup lists together. **Undo** and **Redo** change the configuration draft, and **Cancel** discards its edits. **Return to terminals** keeps the draft and its undo history so you can continue editing later in the same view. These actions do not undo shell commands. A stale draft is rejected when startup settings have changed elsewhere, preserving the draft for review.
 
 Editing startup settings leaves existing terminals running with their current launch settings. The saved changes apply on the next workspace-window startup, or when reopening a profile that is no longer open. Removing a startup entry does not stop its current terminal.
 
@@ -58,22 +78,27 @@ The application-scoped User setting is `terminalSidebar.sidebars`:
   "left": [],
   "right": [
     { "id": "shell", "name": "Terminal", "command": "", "shell": "" },
-    { "id": "neovim", "name": "Neovim", "command": "nvim", "shell": "" }
+    { "id": "neovim", "name": "Neovim", "command": "nvim", "shell": "" },
+    { "id": "build", "name": "Build", "command": "", "shell": "bash", "args": ["--login"], "env": { "FOO": "bar" } }
   ]
 }
 ```
 
-The `left` and `right` keys refer to the Primary and Secondary Side Bars, respectively. They retain their original spelling for compatibility, regardless of where the views are positioned. The editor generates stable identifiers. Ordering and names can change without changing identity. Repository and workspace settings cannot supply startup commands. Commands execute as your user: keep credentials in the command-line tool's own login or local credential storage, since startup settings may be synced.
+The `left` and `right` keys refer to the Primary and Secondary Side Bars, respectively. They retain their original spelling for compatibility, regardless of where the views are positioned. The editor generates stable identifiers. Ordering and names can change without changing identity. Repository and workspace settings cannot supply startup commands. Commands execute as your user. **Commands, arguments, and environment values may all be synced**: keep credentials in the tool's own login or local credential storage, not in these fields.
 
 ## Memory and process lifetime
 
 The extension remembers each side's open-tab order, names, selected tab, expanded sections, and next ordinary-terminal number in VS Code workspace state. After reopening the same workspace, the tabs return in their saved order on each side, including drag changes. This memory is local to the workspace window's VS Code storage and is separate from synced User settings.
 
-When the workspace is reopened, remembered ordinary tabs return as new shells. All currently configured startup profiles also return, including those closed during the previous window; profiles absent from the remembered tabs are appended in startup-setting order. Restoring a tab creates a new process; it does not resume a previous shell, restore its working directory, or replay commands typed into it. Startup commands come only from the current startup settings.
+When the workspace is reopened, remembered ordinary tabs return as new shells. All currently configured startup profiles also return, including those closed during the previous window; profiles absent from the remembered tabs are appended in startup-setting order. Restoring a tab creates a new process and does not replay commands typed into it. Startup commands come only from the current startup settings.
 
-Typed input and terminal output are not written into layout memory. **Save** while a terminal is selected explicitly exports its displayed plain text to a chosen file. The extension does not create a continuous terminal log, although a shell or command-line tool may maintain its own history.
+Directory restoration is best effort. The extension listens for existing OSC 7 or OSC 633 working-directory reports from the shell, including while a tab is hidden. It stores the last known local path in workspace state, never in synced startup settings. A missing directory falls back to the workspace folder or home. The extension does not inject hooks or modify your shell startup files. If your shell does not emit these reports, only its launch directory is known; see [VS Code's shell integration protocol](https://code.visualstudio.com/docs/terminal/shell-integration#_supported-escape-sequences) for the supported notifications.
+
+Typed input and terminal output are not written into layout memory. Exports happen only when requested. The extension does not create a continuous terminal log, although a shell or command-line tool may maintain its own history.
 
 Reloading VS Code, restarting the extension host, or closing the window ends all extension terminal processes. **Restart Active Terminal** ends only the chosen terminal's process and starts it again. Closing every tab leaves that side empty for the remainder of the current window; use **+** to create another shell or **Open Profile** to reopen a startup entry.
+
+Closing a running terminal asks for confirmation when a command is detected or its idle state cannot be established. A shell-reported idle prompt closes directly. Shell integration and available foreground-process information are advisory, not a complete process-tree detector; unsupported shells use the conservative confirmation fallback. Restarting an active process always asks for confirmation. These prompts cover extension tab controls, not VS Code window shutdown.
 
 ## Commands and portability
 
@@ -92,7 +117,7 @@ On upgrading from 0.1 or 0.2, the old `terminalSidebar.profiles` list is read as
 
 Startup settings can follow **VS Code Settings Sync** when Settings sync is enabled. Shells, command-line tools, and credentials must be installed separately on each machine. Executable names are usually more portable than machine-specific paths.
 
-In SSH, WSL, and Dev Container workspaces, detection and execution use the remote extension host. Install the extension and required tools there. Packages must match that host's operating system and architecture. Terminals start in the first available workspace folder, or in the user's home directory when there is no workspace folder.
+In SSH, WSL, and Dev Container workspaces, detection and execution use the remote extension host. Install the extension and required tools there. Packages must match that host's operating system and architecture. Without a valid remembered directory, terminals start in the first available workspace folder, or in the user's home directory when there is no workspace folder.
 
 ## Development
 

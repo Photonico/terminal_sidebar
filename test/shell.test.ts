@@ -67,6 +67,72 @@ test('VS Code default profile chooses an available candidate and overlays or rem
   }).args, ['-l'], 'an explicit choice overrides the default profile');
 });
 
+test('startup arguments override default profile arguments and login defaults without splitting', (t) => {
+  const directory = fixture(t, ['bash']);
+  const args = ['-c', 'echo first\necho second', 'argument with spaces', ''];
+  const options = { platform: 'linux' as const, env: { PATH: directory }, profile_args: args };
+  const result = resolve_shell('bash', options);
+  assert.deepEqual(result.args, args);
+  result.args.push('changed');
+  assert.equal(args.length, 4, 'returned arguments do not mutate the startup profile');
+  assert.deepEqual(resolve_shell('', {
+    ...options, default_profile: { path: 'bash', args: ['--noprofile'] },
+  }).args, args);
+  assert.deepEqual(resolve_shell('bash', { ...options, profile_args: [] }).args, []);
+  assert.deepEqual(resolve_shell('', {
+    ...options, profile_args: [], default_profile: { path: 'bash', args: '--noprofile' },
+  }).args, []);
+});
+
+test('startup environment applies after VS Code profile values and before PATH lookup', (t) => {
+  const directory = fixture(t, ['custom shell']);
+  const env = { PATH: '/missing-inherited-path', KEEP: 'inherited', REMOVE: 'inherited', CHANGE: 'inherited' };
+  const default_env = { PATH: '/missing-default-path', REMOVE: 'default', CHANGE: 'default', FROM_DEFAULT: 'yes' };
+  const profile_env = { PATH: directory, REMOVE: null, CHANGE: 'startup', EMPTY: '', MULTILINE: 'first\nsecond' };
+  const result = resolve_shell('', {
+    platform: 'linux', env, default_profile: { path: 'custom shell', env: default_env }, profile_env,
+  });
+  assert.equal(result.file, path.posix.join(directory, 'custom shell'));
+  assert.deepEqual(result.env, {
+    PATH: directory, KEEP: 'inherited', CHANGE: 'startup', FROM_DEFAULT: 'yes', EMPTY: '', MULTILINE: 'first\nsecond',
+  });
+  assert.equal(env.REMOVE, 'inherited');
+  assert.equal(default_env.REMOVE, 'default');
+  assert.equal(profile_env.REMOVE, null);
+  result.env.CHANGE = 'mutated';
+  assert.equal(profile_env.CHANGE, 'startup');
+  const explicit_shell = resolve_shell('custom shell', {
+    platform: 'linux', env, default_profile: { path: 'missing', env: default_env }, profile_env,
+  });
+  assert.equal(explicit_shell.file, result.file);
+  assert.equal(explicit_shell.env.FROM_DEFAULT, undefined, 'explicit shell skips the VS Code default profile');
+  assert.throws(() => resolve_shell('custom shell', {
+    platform: 'linux', env: { PATH: directory }, profile_env: { PATH: null },
+  }), /not found/);
+});
+
+test('startup environment names are case-sensitive on POSIX and safe from object prototype keys', (t) => {
+  const directory = fixture(t, ['bash']);
+  const env = { PATH: directory, VALUE: 'upper', value: 'lower' };
+  const result = resolve_shell('bash', { platform: 'linux', env, profile_env: { VALUE: null } });
+  assert.equal(result.env.VALUE, undefined);
+  assert.equal(result.env.value, 'lower');
+  const inherited = JSON.parse('{"__proto__":"literal","constructor":"value"}');
+  const safe_result = resolve_shell('bash', { platform: 'linux', env: { PATH: directory, ...inherited } });
+  assert.equal(Object.getPrototypeOf(safe_result.env), Object.prototype);
+  assert.equal(Object.getOwnPropertyDescriptor(safe_result.env, '__proto__')?.value, 'literal');
+  assert.equal(safe_result.env.constructor, 'value');
+});
+
+test('resolver validates startup options before attempting executable lookup', () => {
+  for (const profile_args of [['a\0b'], ['x'.repeat(8193)], new Array(129).fill('')]) {
+    assert.throws(() => resolve_shell('missing', { env: {}, profile_args }), /arguments?/);
+  }
+  for (const profile_env of [{ 'BAD=KEY': 'value' }, { VALID: 'a\0b' }, JSON.parse('{"__proto__":"value"}')]) {
+    assert.throws(() => resolve_shell('missing', { env: {}, profile_env }), /environment/);
+  }
+});
+
 test('default shell can use SHELL and non-executable files are rejected', (t) => {
   const directory = fixture(t, ['login-shell', 'not-executable']);
   const file = path.posix.join(directory, 'login-shell');
@@ -103,4 +169,21 @@ test('Windows resolves PATHEXT, pwsh preference, COMSPEC, and legacy PowerShell 
   assert.equal(result.env.Path, undefined);
   assert.equal(result.env.ComSpec, undefined);
   assert.deepEqual(result.args, []);
+
+  present.add('d:\\custom\\cmd.exe');
+  const startup = resolve_shell('', {
+    platform: 'win32', env,
+    default_profile: { path: 'cmd', env: { PATH: 'C:\\Windows', REMOVE: 'default', FLAG: 'default' } },
+    profile_env: { path: 'D:\\Custom', remove: null, flag: 'startup', COMSPEC: null },
+    profile_args: ['/d'],
+  });
+  assert.equal(startup.file.toLowerCase(), 'd:\\custom\\cmd.exe');
+  assert.equal(startup.env.path, 'D:\\Custom');
+  assert.equal(startup.env.Path, undefined);
+  assert.equal(startup.env.PATH, undefined);
+  assert.equal(startup.env.REMOVE, undefined);
+  assert.equal(startup.env.ComSpec, undefined);
+  assert.equal(startup.env.flag, 'startup');
+  assert.equal(startup.env.FLAG, undefined);
+  assert.deepEqual(startup.args, ['/d']);
 });

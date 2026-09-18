@@ -44,3 +44,61 @@ test('configuration history bounds snapshots and separates paused or refocused e
   assert.equal(history.can_redo, false);
   assert.equal(history.dirty, false);
 });
+
+test('nested launch options stay isolated from sources and returned draft snapshots', () => {
+  const configuration = original();
+  configuration.right[0].args = ['--login'];
+  configuration.right[0].env = { MODE: 'original', REMOVE: null };
+  configuration.left = [{ ...configuration.right[0], id: 'left', args: [], env: {} }];
+  const expected = structuredClone(configuration);
+  const history = new configuration_draft(configuration);
+  configuration.right[0].args!.push('source mutation');
+  configuration.right[0].env!.MODE = 'source mutation';
+  for (const snapshot of [history.value, history.base]) {
+    snapshot.right[0].args!.push('snapshot mutation');
+    snapshot.right[0].env!.MODE = 'snapshot mutation';
+    snapshot.left[0].args!.push('left mutation');
+    snapshot.left[0].env!.ADDED = 'left mutation';
+  }
+  assert.deepEqual(history.value, expected);
+  assert.deepEqual(history.base, expected);
+  assert.equal(history.dirty, false);
+});
+
+test('undo and redo preserve independent nested launch values and callback-owned references', () => {
+  const configuration = original();
+  configuration.right[0].args = ['--login'];
+  configuration.right[0].env = { MODE: 'original', REMOVE: null };
+  const history = new configuration_draft(configuration);
+  history.change(draft => {
+    draft.right[0].args!.push('--interactive');
+    draft.right[0].env!.MODE = 'changed';
+    delete draft.right[0].env!.REMOVE;
+  });
+  const changed = history.value;
+  const assigned_args = ['--new'];
+  const assigned_env = { MODE: 'assigned' };
+  let retained: sidebar_configuration | undefined;
+  history.change(draft => {
+    draft.right[0].args = assigned_args;
+    draft.right[0].env = assigned_env;
+    retained = draft;
+  });
+  assigned_args.push('external mutation');
+  assigned_env.MODE = 'external mutation';
+  retained!.right[0].name = 'retained mutation';
+  assert.deepEqual(history.value.right[0].args, ['--new']);
+  assert.deepEqual(history.value.right[0].env, { MODE: 'assigned' });
+  assert.equal(history.value.right[0].name, 'Terminal');
+  assert.equal(history.undo(), true);
+  assert.deepEqual(history.value, changed);
+  assert.equal(history.undo(), true);
+  assert.deepEqual(history.value, configuration);
+  assert.equal(history.dirty, false);
+  assert.equal(history.redo(), true);
+  assert.deepEqual(history.value, changed);
+  assert.equal(history.redo(), true);
+  assert.deepEqual(history.value.right[0].args, ['--new']);
+  assert.deepEqual(history.value.right[0].env, { MODE: 'assigned' });
+  assert.deepEqual(history.base, configuration);
+});

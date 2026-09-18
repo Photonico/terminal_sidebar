@@ -1,9 +1,17 @@
-import type { sidebar_configuration } from './types';
+import type { sidebar_configuration, terminal_profile } from './types';
+
+function copy_profile(profile: terminal_profile): terminal_profile {
+  return {
+    ...profile,
+    ...(profile.args === undefined ? {} : { args: [...profile.args] }),
+    ...(profile.env === undefined ? {} : { env: { ...profile.env } }),
+  };
+}
 
 function copy_configuration(configuration: sidebar_configuration): sidebar_configuration {
   return {
-    left: configuration.left.map(profile => ({ ...profile })),
-    right: configuration.right.map(profile => ({ ...profile })),
+    left: configuration.left.map(copy_profile),
+    right: configuration.right.map(copy_profile),
   };
 }
 
@@ -67,7 +75,8 @@ export class configuration_draft {
         this.past.shift();
       }
     }
-    this.current = next;
+    // The callback may assign caller-owned arrays or retain its draft reference.
+    this.current = copy_configuration(next);
     this.future = [];
     this.group = group;
     this.changed_at = now;

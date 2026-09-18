@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { createRequire as create_require } from 'node:module';
 import * as path from 'node:path';
+import * as os from 'node:os';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 import { test } from 'node:test';
 import { setImmediate as next_turn, setTimeout as delay } from 'node:timers/promises';
 import { runInNewContext as run_in_new_context } from 'node:vm';
@@ -136,6 +139,9 @@ interface harness_options {
   trusted?: boolean;
   settings?: Record<string, unknown>;
   input?: (options: vscode.InputBoxOptions) => string | undefined | Promise<string | undefined>;
+  warning?: (message: string, first: string) => string | undefined | Promise<string | undefined>;
+  save_destination?: string;
+  workspace_uri?: { scheme: string; fsPath: string; with(change: { path: string }): unknown };
 }
 
 async function harness(options: harness_options = {}) {
@@ -156,15 +162,30 @@ async function harness(options: harness_options = {}) {
   const settings = new Map(Object.entries(options.settings ?? {}));
   const errors: string[] = [];
   const input_boxes: vscode.InputBoxOptions[] = [];
+  const warnings: string[] = [];
+  const links: string[] = [];
+  const opened_files: string[] = [];
+  const editable_copies: Array<{ content: string; language: string }> = [];
+  const saved_files: Array<{ path: string; text: string; bytes: Buffer }> = [];
+  const save_dialogs: vscode.SaveDialogOptions[] = [];
   const api = {
     ConfigurationTarget: { Global: 1 },
     Uri: {
       joinPath: (base: string, ...parts: string[]) => [base, ...parts].join('/'),
-      file: (fsPath: string) => ({ fsPath }),
+      file: (fsPath: string) => ({ fsPath, path: decodeURIComponent(pathToFileURL(fsPath).pathname), scheme: 'file' }),
+      parse: (value: string) => ({ toString: () => value }),
     },
+    env: { openExternal: async (uri: { toString(): string }) => { links.push(uri.toString()); return true; } },
+    Range: class { constructor(readonly startLine: number, readonly startCharacter: number, readonly endLine: number, readonly endCharacter: number) {} },
     workspace: {
       isTrusted: options.trusted ?? true,
-      workspaceFolders: [],
+      workspaceFolders: options.workspace_uri ? [{ uri: options.workspace_uri }] : [],
+      fs: { writeFile: async (uri: { fsPath: string }, data: Uint8Array) => { saved_files.push({ path: uri.fsPath, text: Buffer.from(data).toString('utf8'), bytes: Buffer.from(data) }); } },
+      openTextDocument: async (uri: { fsPath: string } | { content: string; language: string }) => {
+        if ('content' in uri) editable_copies.push(structuredClone(uri));
+        else opened_files.push(uri.fsPath);
+        return { lineCount: 10, lineAt: () => ({ text: 'example source line' }) };
+      },
       onDidChangeConfiguration: configuration_changed.subscribe,
       onDidGrantWorkspaceTrust: trust_granted.subscribe,
       getConfiguration: (section: string) => ({
@@ -204,7 +225,16 @@ async function harness(options: harness_options = {}) {
         return { dispose: () => { providers.delete(id); } };
       },
       showErrorMessage: async (message: string) => { errors.push(message); },
-      showWarningMessage: async (_message: string, _options: unknown, first: string) => first,
+      showWarningMessage: async (message: string, _options: unknown, first: string) => {
+        warnings.push(message);
+        return options.warning ? options.warning(message, first) : first;
+      },
+      showInformationMessage: async () => undefined,
+      showTextDocument: async () => undefined,
+      showSaveDialog: async (save_options: vscode.SaveDialogOptions) => {
+        save_dialogs.push(structuredClone(save_options));
+        return options.save_destination ? { fsPath: options.save_destination, scheme: 'file' } : undefined;
+      },
       showQuickPick: async () => undefined,
       showInputBox: async (input_options: vscode.InputBoxOptions) => {
         input_boxes.push(input_options);
@@ -225,6 +255,8 @@ async function harness(options: harness_options = {}) {
     module: host_module,
     exports: host_module.exports,
     Buffer,
+    URL,
+    TextEncoder,
     process,
     setTimeout,
     clearTimeout,
@@ -247,6 +279,7 @@ async function harness(options: harness_options = {}) {
 
   return {
     api, commands, providers, executions, processes, spawns, updates, memory, errors, input_boxes,
+    warnings, links, opened_files, editable_copies, saved_files, save_dialogs,
     configuration: () => structuredClone(configuration_value),
     change_setting: (name: string, value: unknown) => {
       if (value === undefined) settings.delete(name);
@@ -407,6 +440,168 @@ test('adding, renaming and closing runtime tabs never rewrites startup settings'
   const left = await runtime.view('left');
   await left.send({ type: 'add_tab' });
   assert.equal(left.state().tabs.at(-1)?.name, 'Term 0', 'each side owns its numbering');
+});
+
+test('closing running or unknown commands requires confirmation; an integrated idle prompt closes directly', async test_case => {
+  let response: string | undefined;
+  const runtime = await harness({ warning: () => response });
+  test_case.after(() => runtime.dispose());
+  const view = await runtime.view('right');
+  const [first, second] = view.state().tabs;
+  await view.send({ type: 'close_tab', id: first.id });
+  assert.equal(runtime.processes[0].killed, 0, 'cancel preserves the process and tab');
+  assert.ok(view.state().tabs.some(tab => tab.id === first.id));
+  assert.match(runtime.warnings[0], /command is still running/);
+  response = 'Close terminal';
+  await view.send({ type: 'close_tab', id: first.id });
+  assert.equal(runtime.processes[0].killed, 1);
+  runtime.processes[1].data.fire('\x1b]133;A\x07');
+  const before = runtime.warnings.length;
+  await view.send({ type: 'close_tab', id: second.id });
+  assert.equal(runtime.warnings.length, before, 'a shell-reported idle prompt needs no dialog');
+  assert.equal(runtime.processes[1].killed, 1);
+});
+
+test('directory notifications persist per terminal while hidden and restore with a missing-directory fallback', async test_case => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'side_terminal_cwd_'));
+  test_case.after(() => rmSync(directory, { recursive: true, force: true }));
+  const runtime = await harness();
+  test_case.after(() => runtime.dispose());
+  const view = await runtime.view('right');
+  const target = view.state().tabs[1];
+  view.hide();
+  runtime.processes[1].data.fire(`\x1b]7;${pathToFileURL(directory).href}\x07`);
+  await next_turn();
+  const next_window = await harness({ memory: runtime.memory });
+  test_case.after(() => next_window.dispose());
+  const restored = await next_window.view('right');
+  assert.equal(restored.state().tabs.find(tab => tab.id === target.id)?.cwd, directory);
+  assert.equal(next_window.spawns[1].cwd, directory);
+  assert.notEqual(next_window.spawns[0].cwd, directory, 'the other terminal retains its own directory');
+  assert.deepEqual(runtime.updates, [], 'cwd never enters synced startup settings');
+  rmSync(directory, { recursive: true, force: true });
+  const missing = await harness({ memory: runtime.memory });
+  test_case.after(() => missing.dispose());
+  await missing.view('right');
+  assert.equal(missing.spawns[1].cwd, os.homedir());
+});
+
+test('pending terminal confirmation excludes duplicate close and restart requests', async test_case => {
+  let finish_warning!: (choice: string | undefined) => void;
+  const runtime = await harness({ warning: () => new Promise(resolve => { finish_warning = resolve; }) });
+  test_case.after(() => runtime.dispose());
+  const view = await runtime.view('right');
+  const id = view.state().tabs[0].id;
+  await view.send({ type: 'close_tab', id });
+  await view.send({ type: 'close_tab', id });
+  await view.send({ type: 'restart', id, cols: 80, rows: 24 });
+  assert.equal(runtime.warnings.length, 1);
+  assert.equal(runtime.processes.length, 2);
+  finish_warning(undefined);
+  await next_turn();
+  await view.send({ type: 'restart', id, cols: 80, rows: 24 });
+  await view.send({ type: 'close_tab', id });
+  assert.equal(runtime.warnings.length, 2, 'close cannot invalidate a pending restart');
+  finish_warning('Restart');
+  await next_turn();
+  assert.equal(runtime.processes.length, 3);
+  assert.equal(runtime.processes[2].killed, 0);
+  assert.ok(view.state().tabs.some(tab => tab.id === id));
+});
+
+test('web/file links use validated messages and trusted terminals', async test_case => {
+  const runtime = await harness();
+  test_case.after(() => runtime.dispose());
+  const view = await runtime.view('right');
+  const id = view.state().tabs[0].id;
+  await view.send({ type: 'open_link', id, uri: 'https://example.com/build' });
+  await view.send({ type: 'open_link', id, uri: 'command:workbench.action.closeWindow' });
+  assert.deepEqual(runtime.links, ['https://example.com/build']);
+  await view.send({ type: 'open_file', id, path: 'src/app.ts', line: 3, column: 2 });
+  await view.send({ type: 'open_file', id, path: 'file://server/share/app.ts', line: 1 });
+  assert.deepEqual(runtime.opened_files, [path.join(os.homedir(), 'src/app.ts')]);
+  runtime.api.workspace.isTrusted = false;
+  await view.send({ type: 'open_link', id, uri: 'https://example.com/blocked' });
+  assert.equal(runtime.links.length, 1);
+});
+
+test('remote file links keep URI authority and host-specific path characters', async test_case => {
+  const remote_paths: string[] = [];
+  const runtime = await harness({ workspace_uri: {
+    scheme: 'vscode-remote', fsPath: os.homedir(),
+    with(change) {
+      assert.ok(change.path.startsWith('/'), 'URI paths with authority need a leading slash, including Windows drive paths');
+      remote_paths.push(change.path);
+      return { scheme: 'vscode-remote', authority: 'ssh-remote+test', path: change.path, fsPath: change.path };
+    },
+  } });
+  test_case.after(() => runtime.dispose());
+  const view = await runtime.view('right');
+  const id = view.state().tabs[0].id;
+  // Backslashes are separators on Windows and literal filename characters on POSIX.
+  const file = path.join(os.homedir(), 'source\\name #1.ts');
+  await view.send({ type: 'open_file', id, path: file, line: 2 });
+  const expected_path = decodeURIComponent(pathToFileURL(file).pathname);
+  assert.deepEqual(remote_paths, [expected_path]);
+  assert.deepEqual(runtime.opened_files, [expected_path]);
+  assert.ok(!view.messages.some(message => message.type === 'error'));
+});
+
+test('plain text and HTML exports use separate save formats and preserve content', async test_case => {
+  const destination = path.join(os.tmpdir(), 'side_terminal_export.html');
+  const runtime = await harness({ save_destination: destination });
+  test_case.after(() => runtime.dispose());
+  const view = await runtime.view('right');
+  const id = view.state().tabs[0].id;
+  await view.send({ type: 'export', id, text: 'plain text' });
+  await view.send({ type: 'export', id, text: '<pre><span style="color:red">failure</span></pre>', format: 'html' });
+  assert.deepEqual(runtime.save_dialogs.map(options => options.filters), [{ 'Plain text files': ['txt'] }, { 'HTML files': ['html'] }]);
+  assert.deepEqual(runtime.saved_files.map(file => file.text), ['plain text', '<pre><span style="color:red">failure</span></pre>']);
+});
+
+test('PDF export decodes binary data while Markdown stays text and malformed PDF is ignored', async test_case => {
+  const runtime = await harness({ save_destination: path.join(os.tmpdir(), 'side_terminal_export.pdf') });
+  test_case.after(() => runtime.dispose());
+  const view = await runtime.view('right');
+  const id = view.state().tabs[0].id;
+  const pdf_bytes = Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.from([0, 128, 255]), Buffer.from('\n%%EOF')]);
+  await view.send({ type: 'export', id, format: 'pdf', text: pdf_bytes.toString('base64') });
+  await view.send({ type: 'export', id, format: 'markdown', text: '# Terminal\n\n<pre>中文</pre>\n' });
+  await view.send({ type: 'export', id, format: 'pdf', text: '<html>not PDF</html>' });
+  assert.deepEqual(runtime.save_dialogs.map(options => options.filters), [{ 'PDF files': ['pdf'] }, { 'Markdown files': ['md'] }]);
+  assert.deepEqual(runtime.saved_files[0].bytes, pdf_bytes);
+  assert.equal(runtime.saved_files[1].text, '# Terminal\n\n<pre>中文</pre>\n');
+});
+
+test('tab markers are local, independent by side, validated, and removable', async test_case => {
+  const runtime = await harness();
+  test_case.after(() => runtime.dispose());
+  const left = await runtime.view('left');
+  const right = await runtime.view('right');
+  const id = left.state().tabs[0].id;
+  const right_before = right.state();
+  const marker = { shape: 'hexagon' as const, color: 'ansiBlue' as const };
+  await left.send({ type: 'set_tab_marker', id, marker });
+  assert.deepEqual(left.state().tabs[0].marker, marker);
+  assert.deepEqual(right.state(), right_before);
+  assert.deepEqual(runtime.updates, []);
+  await left.send({ type: 'set_tab_marker', id, marker: { shape: 'circle', color: 'url(invalid)' } } as unknown as client_message);
+  assert.deepEqual(left.state().tabs[0].marker, marker);
+  await left.send({ type: 'set_tab_marker', id });
+  assert.equal(left.state().tabs[0].marker, undefined);
+});
+
+test('replace opens a plaintext copy and native editor replace without sending input to the PTY', async test_case => {
+  const runtime = await harness();
+  test_case.after(() => runtime.dispose());
+  const view = await runtime.view('right');
+  const id = view.state().tabs[0].id;
+  const writes = runtime.processes.map(terminal => [...terminal.writes]);
+  await view.send({ type: 'replace_copy', id, text: 'hello 中文\nhello again\n' });
+  assert.deepEqual(runtime.editable_copies, [{ content: 'hello 中文\nhello again\n', language: 'plaintext' }]);
+  assert.ok(runtime.executions.some(command => command.id === 'editor.action.startFindReplaceAction'));
+  assert.deepEqual(runtime.processes.map(terminal => terminal.writes), writes);
+  assert.deepEqual(runtime.saved_files, []);
 });
 
 test('native rename changes only the requested terminal and remembers names on both sides', async test_case => {
