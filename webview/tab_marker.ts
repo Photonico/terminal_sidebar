@@ -5,26 +5,19 @@ import {
 import { marker_shape_descriptors } from './marker_shapes';
 import './tab_marker.css';
 
-const svg_namespace = 'http://www.w3.org/2000/svg';
-
 function color_label(color: tab_marker_color): string {
   return color.slice(4).replace(/([a-z])([A-Z])/g, '$1 $2');
 }
 
-/** Fixed geometry; all colours remain live references to the terminal's theme palette. */
-export function create_tab_marker(marker: tab_marker): SVGSVGElement {
-  const icon = document.createElementNS(svg_namespace, 'svg');
+/** Font glyphs; all colours remain live references to the terminal's theme palette. */
+export function create_tab_marker(marker: tab_marker): HTMLSpanElement {
+  const icon = document.createElement('span');
   icon.classList.add('tab_marker');
-  icon.setAttribute('viewBox', '0 0 16 16');
   icon.setAttribute('aria-hidden', 'true');
-  icon.setAttribute('focusable', 'false');
   icon.style.color = `var(--vscode-terminal-${marker.color}, var(--vscode-foreground))`;
-  const path = document.createElementNS(svg_namespace, 'path');
   const descriptor = marker_shape_descriptors[marker.shape];
-  path.setAttribute('d', descriptor.path);
-  const title = document.createElementNS(svg_namespace, 'title');
-  title.textContent = `${color_label(marker.color)} ${descriptor.label.toLowerCase()}`;
-  icon.append(title, path);
+  icon.textContent = descriptor.glyph;
+  icon.title = `${color_label(marker.color)} ${descriptor.label.toLowerCase()}`;
   return icon;
 }
 
@@ -174,6 +167,10 @@ export class tab_marker_picker {
 
   get editing(): boolean {
     return this.id !== undefined;
+  }
+
+  set_font_family(font_family: string): void {
+    this.root.style.setProperty('--terminal_font_family', font_family);
   }
 
   open(id: string, current?: tab_marker): void {

@@ -223,6 +223,9 @@ function update_appearance(): void {
   // Set this on #app, outside the theme observer, to avoid a mutation loop.
   app.style.setProperty('--view-background', theme.background ?? '#1e1e1e');
   app.style.setProperty('--terminal-foreground', theme.foreground ?? '#cccccc');
+  app.style.setProperty('--terminal_font_family', appearance.font_family);
+  // The picker is attached to body, so it does not inherit #app's terminal font.
+  marker_picker.set_font_family(appearance.font_family);
   app.dataset.verticalScrollbar = appearance.editor_scrollbar_vertical_size === 0 ? 'hidden' : appearance.editor_scrollbar_vertical;
   app.dataset.horizontalScrollbar = appearance.editor_scrollbar_horizontal_size === 0 ? 'hidden' : appearance.editor_scrollbar_horizontal;
   app.style.setProperty('--scrollbar-vertical-size', `${app.dataset.verticalScrollbar === 'hidden' ? 0 : appearance.editor_scrollbar_vertical_size}px`);

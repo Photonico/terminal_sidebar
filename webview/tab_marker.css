@@ -1,10 +1,15 @@
 .tab_marker {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: 0 0 14px;
   width: 14px;
   height: 14px;
-  fill: currentColor;
-  stroke: none;
+  font-family: var(--terminal_font_family, var(--vscode-editor-font-family, monospace));
+  font-size: 14px;
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1;
   vertical-align: middle;
 }
 .tab_marker_picker {
