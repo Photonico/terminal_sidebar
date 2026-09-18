@@ -1,32 +1,11 @@
 import {
-  copy_tab_marker, tab_marker_colors, tab_marker_shapes,
+  copy_tab_marker, tab_marker_colors, tab_marker_groups,
   type tab_marker, type tab_marker_color, type tab_marker_shape,
 } from '../src/tab_marker';
+import { marker_shape_descriptors } from './marker_shapes';
 import './tab_marker.css';
 
 const svg_namespace = 'http://www.w3.org/2000/svg';
-const shape_paths: Record<tab_marker_shape, string> = {
-  circle: 'M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2Z',
-  triangle: 'M8 1.5 15 14H1Z',
-  triangle_down: 'M8 14.5 15 2H1Z',
-  triangle_left: 'M1.5 8 14 1v14Z',
-  triangle_right: 'M14.5 8 2 15V1Z',
-  diamond: 'm8 1 7 7-7 7-7-7Z',
-  square: 'M2 2h12v12H2Z',
-  hexagon: 'M4.5 2h7L15 8l-3.5 6h-7L1 8Z',
-  heart: 'M8 14 2.2 8.5C-.2 6.2 1.1 2 4.5 2 6.1 2 7.3 2.9 8 4 8.7 2.9 9.9 2 11.5 2c3.4 0 4.7 4.2 2.3 6.5Z',
-};
-const shape_labels: Record<tab_marker_shape, string> = {
-  circle: 'Circle',
-  triangle: 'Triangle',
-  triangle_down: 'Down triangle',
-  triangle_left: 'Left triangle',
-  triangle_right: 'Right triangle',
-  diamond: 'Diamond',
-  square: 'Square',
-  hexagon: 'Hexagon',
-  heart: 'Heart',
-};
 
 function color_label(color: tab_marker_color): string {
   return color.slice(4).replace(/([a-z])([A-Z])/g, '$1 $2');
@@ -41,9 +20,11 @@ export function create_tab_marker(marker: tab_marker): SVGSVGElement {
   icon.setAttribute('focusable', 'false');
   icon.style.color = `var(--vscode-terminal-${marker.color}, var(--vscode-foreground))`;
   const path = document.createElementNS(svg_namespace, 'path');
-  path.setAttribute('d', shape_paths[marker.shape]);
+  const descriptor = marker_shape_descriptors[marker.shape];
+  path.setAttribute('d', descriptor.path);
+  if (descriptor.fill_rule) path.setAttribute('fill-rule', descriptor.fill_rule);
   const title = document.createElementNS(svg_namespace, 'title');
-  title.textContent = `${color_label(marker.color)} ${shape_labels[marker.shape].toLowerCase()}`;
+  title.textContent = `${color_label(marker.color)} ${descriptor.label.toLowerCase()}`;
   icon.append(title, path);
   return icon;
 }
@@ -77,9 +58,7 @@ export class tab_marker_picker {
     const shape_group = document.createElement('fieldset');
     const shape_legend = document.createElement('legend');
     shape_legend.textContent = 'Shape';
-    const shapes = document.createElement('div');
-    shapes.className = 'tab_marker_shapes';
-    for (const shape of ['none', ...tab_marker_shapes] as const) {
+    const shape_choice = (shape: tab_marker_shape | 'none'): HTMLLabelElement => {
       const label = document.createElement('label');
       label.className = 'tab_marker_choice';
       const input = document.createElement('input');
@@ -87,7 +66,7 @@ export class tab_marker_picker {
       input.name = 'tab_marker_shape';
       input.value = shape;
       const caption = document.createElement('span');
-      caption.textContent = shape === 'none' ? 'None' : shape_labels[shape];
+      caption.textContent = shape === 'none' ? 'None' : marker_shape_descriptors[shape].label;
       input.setAttribute('aria-label', caption.textContent);
       label.title = caption.textContent;
       label.append(input);
@@ -110,9 +89,21 @@ export class tab_marker_picker {
         }
       });
       this.shape_inputs.set(shape, input);
-      shapes.append(label);
+      return label;
+    };
+    shape_group.append(shape_legend, shape_choice('none'));
+    for (const group of tab_marker_groups) {
+      const section = document.createElement('div');
+      section.className = 'tab_marker_family';
+      const heading = document.createElement('span');
+      heading.className = 'tab_marker_family_label';
+      heading.textContent = group.label;
+      const choices = document.createElement('div');
+      choices.className = 'tab_marker_shapes';
+      choices.append(...group.shapes.map(shape => shape_choice(shape)));
+      section.append(heading, choices);
+      shape_group.append(section);
     }
-    shape_group.append(shape_legend, shapes);
 
     const color_legend = document.createElement('legend');
     color_legend.textContent = 'Color · Terminal theme';
@@ -238,7 +229,7 @@ export class tab_marker_picker {
   private update_preview(): void {
     this.color_group.disabled = this.shape === 'none';
     const description = document.createElement('span');
-    description.textContent = this.shape === 'none' ? 'No tab icon' : `${color_label(this.color)} ${shape_labels[this.shape].toLowerCase()}`;
+    description.textContent = this.shape === 'none' ? 'No tab icon' : `${color_label(this.color)} ${marker_shape_descriptors[this.shape].label.toLowerCase()}`;
     this.preview.replaceChildren(...(this.shape === 'none' ? [] : [create_tab_marker({ shape: this.shape, color: this.color })]), description);
   }
 

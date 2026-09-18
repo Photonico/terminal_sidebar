@@ -66,7 +66,9 @@ test('marker reset and no-op changes do not affect tab identity, names, order, o
 });
 
 test('additional marker shapes retain their shape and theme color after restoring workspace memory', () => {
-  for (const shape of ['triangle_down', 'triangle_left', 'triangle_right', 'heart'] as const) {
+  for (const shape of ['triangle_down', 'triangle_left', 'triangle_right', 'heart',
+    'clubs', 'spade', 'star_circle', 'asterisk', 'reference_mark', 'flower', 'snowflake',
+    'concentric_circle', 'music_note', 'four_point_star'] as const) {
     const model = new sidebar_tabs([]);
     const tab = model.add_tab();
     const marker: tab_marker = { shape, color: 'ansiBrightCyan' };

@@ -26,6 +26,8 @@
 .tab_marker_picker legend { padding: 0; margin-bottom: 6px; }
 .tab_marker_picker fieldset:disabled { opacity: .5; }
 .tab_marker_shapes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+.tab_marker_family { margin-top: 8px; }
+.tab_marker_family_label { display: block; margin-bottom: 4px; color: var(--vscode-descriptionForeground, inherit); font-size: 11px; }
 .tab_marker_colors { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 4px; }
 .tab_marker_choice {
   position: relative;
