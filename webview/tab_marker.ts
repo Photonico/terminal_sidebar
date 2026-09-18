@@ -1,5 +1,5 @@
 import {
-  copy_tab_marker, tab_marker_colors, tab_marker_groups,
+  copy_tab_marker, tab_marker_colors, tab_marker_shapes,
   type tab_marker, type tab_marker_color, type tab_marker_shape,
 } from '../src/tab_marker';
 import { marker_shape_descriptors } from './marker_shapes';
@@ -22,7 +22,6 @@ export function create_tab_marker(marker: tab_marker): SVGSVGElement {
   const path = document.createElementNS(svg_namespace, 'path');
   const descriptor = marker_shape_descriptors[marker.shape];
   path.setAttribute('d', descriptor.path);
-  if (descriptor.fill_rule) path.setAttribute('fill-rule', descriptor.fill_rule);
   const title = document.createElementNS(svg_namespace, 'title');
   title.textContent = `${color_label(marker.color)} ${descriptor.label.toLowerCase()}`;
   icon.append(title, path);
@@ -65,23 +64,24 @@ export class tab_marker_picker {
       input.type = 'radio';
       input.name = 'tab_marker_shape';
       input.value = shape;
-      const caption = document.createElement('span');
-      caption.textContent = shape === 'none' ? 'None' : marker_shape_descriptors[shape].label;
-      input.setAttribute('aria-label', caption.textContent);
-      label.title = caption.textContent;
+      const caption = shape === 'none' ? 'None' : marker_shape_descriptors[shape].label;
+      input.setAttribute('aria-label', caption);
+      label.title = caption;
       label.append(input);
       if (shape === 'none') {
         const empty = document.createElement('span');
         empty.className = 'tab_marker_none';
         empty.textContent = '∅';
         empty.setAttribute('aria-hidden', 'true');
-        label.append(empty);
+        const text = document.createElement('span');
+        text.textContent = caption;
+        label.classList.add('tab_marker_clear');
+        label.append(empty, text);
       } else {
         const icon = create_tab_marker({ shape, color: this.color });
         icon.style.color = 'inherit';
         label.append(icon);
       }
-      label.append(caption);
       input.addEventListener('change', () => {
         if (input.checked) {
           this.shape = shape;
@@ -91,19 +91,10 @@ export class tab_marker_picker {
       this.shape_inputs.set(shape, input);
       return label;
     };
-    shape_group.append(shape_legend, shape_choice('none'));
-    for (const group of tab_marker_groups) {
-      const section = document.createElement('div');
-      section.className = 'tab_marker_family';
-      const heading = document.createElement('span');
-      heading.className = 'tab_marker_family_label';
-      heading.textContent = group.label;
-      const choices = document.createElement('div');
-      choices.className = 'tab_marker_shapes';
-      choices.append(...group.shapes.map(shape => shape_choice(shape)));
-      section.append(heading, choices);
-      shape_group.append(section);
-    }
+    const choices = document.createElement('div');
+    choices.className = 'tab_marker_shapes';
+    choices.append(...tab_marker_shapes.map(shape => shape_choice(shape)));
+    shape_group.append(shape_legend, shape_choice('none'), choices);
 
     const color_legend = document.createElement('legend');
     color_legend.textContent = 'Color · Terminal theme';

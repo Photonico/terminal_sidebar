@@ -5,7 +5,7 @@
 - Search retained output in a VS Code-style find overlay; open an editable transcript copy in the native editor Replace control with platform-default shortcuts.
 - Add tab context menus, inline renaming, and confirmation before closing a terminal whose command may still be running.
 - Unify tab and footer status dots; show shell-reported command results and background bell notifications.
-- Choose a local tab marker from nineteen symbols and sixteen live terminal theme colours.
+- Choose a local tab marker from nine geometric shapes and sixteen live terminal theme colours.
 - Export HTML, real raster PDF, Markdown with embedded HTML, or plain text.
 - Open web links and source-file locations with Cmd-click / Ctrl-click; improve character widths with Unicode 11 data.
 - Remember directories reported by existing shell integration, with workspace/home fallback when a saved directory is unavailable.

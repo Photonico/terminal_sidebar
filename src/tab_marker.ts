@@ -1,11 +1,9 @@
 /** Workspace-local tab decoration. These values name VS Code theme tokens, not colours. */
-export const tab_marker_groups = [
-  { label: 'Geometry', shapes: ['circle', 'concentric_circle', 'square', 'hexagon', 'triangle', 'triangle_right', 'triangle_down', 'triangle_left'] },
-  { label: 'Card suits', shapes: ['clubs', 'diamond', 'heart', 'spade'] },
-  { label: 'Stars and ornaments', shapes: ['star_circle', 'four_point_star', 'asterisk', 'reference_mark', 'flower', 'snowflake', 'music_note'] },
+export const tab_marker_shapes = [
+  'circle', 'triangle', 'triangle_right', 'triangle_down', 'triangle_left',
+  'diamond', 'square', 'pentagon_right', 'hexagon',
 ] as const;
-export type tab_marker_shape = typeof tab_marker_groups[number]['shapes'][number];
-export const tab_marker_shapes: readonly tab_marker_shape[] = tab_marker_groups.flatMap<tab_marker_shape>(group => group.shapes);
+export type tab_marker_shape = typeof tab_marker_shapes[number];
 export const tab_marker_colors = [
   'ansiBlack', 'ansiRed', 'ansiGreen', 'ansiYellow', 'ansiBlue', 'ansiMagenta', 'ansiCyan', 'ansiWhite',
   'ansiBrightBlack', 'ansiBrightRed', 'ansiBrightGreen', 'ansiBrightYellow',

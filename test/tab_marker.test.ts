@@ -65,10 +65,8 @@ test('marker reset and no-op changes do not affect tab identity, names, order, o
   assert.deepEqual(new sidebar_tabs([], model.remember()).tabs, [first, second]);
 });
 
-test('additional marker shapes retain their shape and theme color after restoring workspace memory', () => {
-  for (const shape of ['triangle_down', 'triangle_left', 'triangle_right', 'heart',
-    'clubs', 'spade', 'star_circle', 'asterisk', 'reference_mark', 'flower', 'snowflake',
-    'concentric_circle', 'music_note', 'four_point_star'] as const) {
+test('marker shapes retain their shape and theme color after restoring workspace memory', () => {
+  for (const shape of tab_marker_shapes) {
     const model = new sidebar_tabs([]);
     const tab = model.add_tab();
     const marker: tab_marker = { shape, color: 'ansiBrightCyan' };
@@ -81,6 +79,7 @@ test('additional marker shapes retain their shape and theme color after restorin
 test('older memory and malformed marker fields retain otherwise valid tabs', () => {
   for (const marker of [undefined, null, false, 'ansiBlue', { shape: 'circle', color: 'invalid' },
     { shape: 'triangle', color: 'ansiBlue', extra: true },
+    { shape: 'heart', color: 'ansiBlue' }, { shape: 'music_note', color: 'ansiBlue' },
   ]) {
     const model = new sidebar_tabs([], {
       version: 1, tabs: [{ id: 'saved', name: 'Original', ...(marker === undefined ? {} : { marker }) }],
