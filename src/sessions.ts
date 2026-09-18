@@ -284,18 +284,23 @@ export class session_manager implements disposable {
     const generation = session.generation;
     // Foreground queries may require synchronous native I/O; sample only on explicit reads.
     const state = session.tracker.state;
+    const command_revision = state.command_status === undefined ? undefined : session.tracker.command_revision;
     if (session.info.status !== 'running') state.command_state = 'idle';
     if (state.cwd === session.last_shell_state?.cwd
       && state.command_state === session.last_shell_state?.command_state
       && state.command_status === session.last_shell_state?.command_status
-      && state.command_exit_code === session.last_shell_state?.command_exit_code) return;
+      && state.command_exit_code === session.last_shell_state?.command_exit_code
+      && command_revision === session.info.command_revision) return;
     session.last_shell_state = { ...state };
     if (session.info.status === 'running' && (session.info.command_status !== state.command_status
-      || session.info.command_exit_code !== state.command_exit_code)) {
+      || session.info.command_exit_code !== state.command_exit_code
+      || session.info.command_revision !== command_revision)) {
       delete session.info.command_status;
       delete session.info.command_exit_code;
+      delete session.info.command_revision;
       if (state.command_status !== undefined) session.info.command_status = state.command_status;
       if (state.command_exit_code !== undefined) session.info.command_exit_code = state.command_exit_code;
+      if (command_revision !== undefined) session.info.command_revision = command_revision;
       this.emit_state(session);
       // Do not publish the retired shell's cwd/result after an observer stops or replaces it.
       if (session.generation !== generation || this.sessions.get(session.info.id) !== session) return;

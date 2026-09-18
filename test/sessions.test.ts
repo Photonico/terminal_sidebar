@@ -117,9 +117,9 @@ test('command results reach session observers and a fresh process clears the old
   runtime.manager.start({ ...profile, command: '' }, 80, 24);
   const first = runtime.processes[0];
   first.data('\x1b]633;C\x07');
-  assert.deepEqual(runtime.manager.get('one'), { id: 'one', status: 'running', command_status: 'running' });
+  assert.deepEqual(runtime.manager.get('one'), { id: 'one', status: 'running', command_status: 'running', command_revision: 1 });
   first.data('\x1b]633;D;2\x07');
-  const failed: session_info = { id: 'one', status: 'running', command_status: 'error', command_exit_code: 2 };
+  const failed: session_info = { id: 'one', status: 'running', command_status: 'error', command_exit_code: 2, command_revision: 1 };
   assert.deepEqual(runtime.manager.get('one'), failed);
   assert.deepEqual(runtime.states.at(-1), failed);
   const count = runtime.states.length;
@@ -128,9 +128,9 @@ test('command results reach session observers and a fresh process clears the old
   assert.deepEqual(runtime.manager.list(), [failed]);
 
   first.data('\x1b]633;C\x07');
-  assert.deepEqual(runtime.manager.get('one'), { id: 'one', status: 'running', command_status: 'running' });
+  assert.deepEqual(runtime.manager.get('one'), { id: 'one', status: 'running', command_status: 'running', command_revision: 2 });
   first.data('\x1b]633;D;0\x07');
-  assert.deepEqual(runtime.states.at(-1), { id: 'one', status: 'running', command_status: 'completed', command_exit_code: 0 });
+  assert.deepEqual(runtime.states.at(-1), { id: 'one', status: 'running', command_status: 'completed', command_exit_code: 0, command_revision: 2 });
   runtime.manager.stop('one');
   assert.deepEqual(runtime.manager.get('one'), { id: 'one', status: 'exited', message: 'Stopped.' });
   runtime.manager.start({ ...profile, command: '' }, 80, 24);
@@ -139,6 +139,23 @@ test('command results reach session observers and a fresh process clears the old
   assert.deepEqual(runtime.manager.get('one'), { id: 'one', status: 'running' }, 'retired process cannot restore stale command status');
   runtime.processes[1].data('\x1b]633;C\x07\x1b]633;D\x07');
   assert.deepEqual(runtime.manager.get('one'), { id: 'one', status: 'running' }, 'completion without a code stays unknown');
+  runtime.manager.dispose();
+});
+
+test('consecutive fast commands publish distinct results even when each start and finish share a PTY chunk', () => {
+  const runtime = harness('linux');
+  runtime.manager.start({ ...profile, command: '' }, 80, 24);
+  const process = runtime.processes[0];
+  for (const command_revision of [1, 2, 3]) {
+    const count = runtime.states.length;
+    process.data('\x1b]633;C\x07\x1b]633;D;0\x07\x1b]633;A\x07');
+    assert.equal(runtime.states.length, count + 1);
+    assert.deepEqual(runtime.states.at(-1), {
+      id: 'one', status: 'running', command_status: 'completed', command_exit_code: 0, command_revision,
+    });
+    process.data('\x1b]633;D;0\x07\x1b]633;A\x07unchanged prompt');
+    assert.equal(runtime.states.length, count + 1, 'redrawing a prompt is not another completion');
+  }
   runtime.manager.dispose();
 });
 
@@ -310,7 +327,7 @@ test('Windows natural-exit cleanup cannot kill a replacement started by an exit 
   assert.equal(runtime.processes.length, 2);
   assert.ok(first.killed);
   assert.equal(runtime.processes[1].killed, false);
-  assert.deepEqual(runtime.manager.get('one'), { id: 'one', status: 'running', command_status: 'running' });
+  assert.deepEqual(runtime.manager.get('one'), { id: 'one', status: 'running', command_status: 'running', command_revision: 1 });
   assert.deepEqual(runtime.states.map(state => [state.status, state.command_status, state.exit_code]), [
     ['running', undefined, undefined], ['running', 'running', undefined], ['exited', undefined, 7],
     ['running', undefined, undefined], ['running', 'running', undefined],
@@ -342,7 +359,7 @@ test('output is delivered synchronously in bounded chunks without host scrollbac
   assert.equal(runtime.outputs.map(([, chunk]) => chunk).join(''), data);
   assert.ok(runtime.outputs.every(([, chunk]) => chunk.length <= 65536));
   assert.ok(runtime.outputs.every(([, chunk]) => !/[\ud800-\udbff]$/.test(chunk)), 'surrogate pairs are not split across messages');
-  assert.deepEqual(runtime.manager.list(), [{ id: 'one', status: 'running', command_status: 'running' }]);
+  assert.deepEqual(runtime.manager.list(), [{ id: 'one', status: 'running', command_status: 'running', command_revision: 1 }]);
   runtime.manager.dispose();
 });
 

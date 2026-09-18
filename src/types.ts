@@ -36,6 +36,8 @@ export interface session_info {
   message?: string;
   command_status?: command_status;
   command_exit_code?: number;
+  /** Per-process command identity; runtime only, never persisted. */
+  command_revision?: number;
 }
 
 export interface appearance {

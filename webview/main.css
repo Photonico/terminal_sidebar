@@ -187,6 +187,7 @@ body.vscode-high-contrast button, body.vscode-high-contrast-light button { borde
 
 /* Tab notifications and the footer share size and theme colours. */
 .status_dot { display: inline-block; flex: 0 0 auto; width: 5px; height: 5px; border-radius: 50%; background: var(--vscode-tab-inactiveForeground, var(--view-foreground)); }
+.terminal_unread { margin-inline-start: 0.5ch; }
 .status_dot[data-status="running"] { background: var(--vscode-testing-iconPassed, var(--vscode-terminal-ansiGreen, var(--view-foreground))); }
 .status_dot[data-status="error"] { background: var(--vscode-errorForeground, var(--vscode-terminal-ansiRed, var(--view-foreground))); }
 .status_dot[data-status="completed"] { background: var(--vscode-terminal-ansiBlue, var(--vscode-progressBar-background, var(--view-foreground))); }

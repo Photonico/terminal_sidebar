@@ -9,7 +9,7 @@ import { terminal_menu } from './menu';
 import { tab_rename } from './rename';
 import { terminal_search, is_find_shortcut, is_replace_shortcut } from './search';
 import { create_tab_marker, tab_marker_picker } from './tab_marker';
-import { terminal_indicator, show_tab_indicator, indicator_label } from './status';
+import { terminal_indicator, show_tab_indicator, indicator_label, tab_completion_tracker } from './status';
 import { install_terminal_links } from './terminal_links';
 import { terminal_text, terminal_html, terminal_markdown } from './export';
 import { terminal_pdf } from './pdf_export';
@@ -132,6 +132,7 @@ const terminal_views = new Map<string, terminal_view>();
 const sessions = new Map<string, session_info>();
 const activated_views = new Set<string>();
 const unread_tabs = new Set<string>();
+const tab_completions = new tab_completion_tracker();
 let exporting = false;
 const custom_shells = new Set<string>();
 const configuration_group_expanded: Record<sidebar_side, boolean> = { left: true, right: true };
@@ -164,11 +165,13 @@ const rename_editor = new tab_rename({
   commit: (id, name) => send({ type: 'rename_tab', id, name }),
   finished: id => focus_terminal(id),
 });
-const marker_picker = new tab_marker_picker({
+// Temporarily suspend custom markers without deleting saved choices or the picker implementation.
+const tab_markers_enabled = false;
+const marker_picker = tab_markers_enabled ? new tab_marker_picker({
   anchor: id => document.getElementById(`${side === 'left' ? 'section' : 'tab'}-${id}`) ?? undefined,
   commit: (id, marker) => send({ type: 'set_tab_marker', id, marker }),
   finished: id => focus_terminal(id),
-});
+}) : undefined;
 const find_widget = new terminal_search({
   parent: terminal_content,
   before: terminal_host,
@@ -225,7 +228,7 @@ function update_appearance(): void {
   app.style.setProperty('--terminal-foreground', theme.foreground ?? '#cccccc');
   app.style.setProperty('--terminal_font_family', appearance.font_family);
   // The picker is attached to body, so it does not inherit #app's terminal font.
-  marker_picker.set_font_family(appearance.font_family);
+  marker_picker?.set_font_family(appearance.font_family);
   app.dataset.verticalScrollbar = appearance.editor_scrollbar_vertical_size === 0 ? 'hidden' : appearance.editor_scrollbar_vertical;
   app.dataset.horizontalScrollbar = appearance.editor_scrollbar_horizontal_size === 0 ? 'hidden' : appearance.editor_scrollbar_horizontal;
   app.style.setProperty('--scrollbar-vertical-size', `${app.dataset.verticalScrollbar === 'hidden' ? 0 : appearance.editor_scrollbar_vertical_size}px`);
@@ -441,7 +444,7 @@ function request_rename(id: string | undefined): void {
     return;
   }
   const tab = open_tabs.find(item => item.id === id)!;
-  marker_picker.close(false);
+  marker_picker?.close(false);
   action_menu.close(false);
   find_widget.close(false);
   rename_editor.open(id, tab.name);
@@ -460,14 +463,14 @@ function show_tab_menu(id: string, x: number, y: number): void {
     return;
   }
   rename_editor.close(false);
-  marker_picker.close(false);
+  marker_picker?.close(false);
   menu_tab_id = id;
   action_menu.show([
     { label: 'Rename', action: () => request_rename(id) },
-    { label: 'Change tab icon…', action: () => {
+    ...(marker_picker ? [{ label: 'Change tab icon…', action: () => {
       rename_editor.close(false);
-      marker_picker.open(id, open_tabs.find(tab => tab.id === id)?.marker);
-    } },
+      marker_picker?.open(id, open_tabs.find(tab => tab.id === id)?.marker);
+    } }] : []),
     { label: 'Restart', disabled: !trusted, action: () => restart_tab(id) },
     { label: 'Close', action: () => close_tab(id) },
     { label: 'Export…', disabled: !trusted, action: () => export_output(id) },
@@ -475,15 +478,22 @@ function show_tab_menu(id: string, x: number, y: number): void {
 }
 
 function update_unread(id: string): void {
+  acknowledge_viewed_completion(id);
   const header = document.getElementById(`${side === 'left' ? 'section' : 'tab'}-${id}`);
   const badge = header?.querySelector<HTMLElement>('.terminal_unread');
   if (badge) {
     const session = sessions.get(id);
     const status = terminal_indicator(session);
     badge.dataset.status = status;
-    badge.hidden = !show_tab_indicator(session, unread_tabs.has(id));
+    badge.hidden = !show_tab_indicator(session, unread_tabs.has(id), tab_completions.is_viewed(session));
     badge.title = `${indicator_label(status)}${unread_tabs.has(id) ? ' · Terminal bell' : ''}`;
     badge.setAttribute('aria-label', badge.title);
+  }
+}
+
+function acknowledge_viewed_completion(id: string): void {
+  if (active_id === id && is_visible_tab(id) && document.hasFocus()) {
+    tab_completions.view(sessions.get(id));
   }
 }
 
@@ -493,6 +503,7 @@ function clear_unread(id: string): void {
 }
 
 function unread_badge(id: string): HTMLSpanElement {
+  acknowledge_viewed_completion(id);
   const badge = document.createElement('span');
   badge.className = 'terminal_unread status_dot';
   const session = sessions.get(id);
@@ -500,7 +511,7 @@ function unread_badge(id: string): HTMLSpanElement {
   badge.dataset.status = status;
   badge.title = `${indicator_label(status)}${unread_tabs.has(id) ? ' · Terminal bell' : ''}`;
   badge.setAttribute('aria-label', badge.title);
-  badge.hidden = !show_tab_indicator(session, unread_tabs.has(id));
+  badge.hidden = !show_tab_indicator(session, unread_tabs.has(id), tab_completions.is_viewed(session));
   return badge;
 }
 
@@ -549,8 +560,9 @@ function render_tabs(): void {
     const label = document.createElement('span');
     label.className = 'tab-label';
     label.textContent = tab.name;
-    if (tab.marker) button.append(create_tab_marker(tab.marker));
-    button.append(label, unread_badge(tab.id));
+    button.append(unread_badge(tab.id));
+    if (tab_markers_enabled && tab.marker) button.append(create_tab_marker(tab.marker));
+    button.append(label);
     button.title = `${tab.name} · Right-click for actions · Drag to reorder · Alt+Shift+Left/Right to move · Middle-click to close`;
     button.dataset.status = sessions.get(tab.id)?.status ?? 'idle';
     button.addEventListener('click', () => select_tab(tab.id, true));
@@ -617,7 +629,7 @@ function ensure_section(tab: terminal_tab, view: terminal_view): void {
     caption.innerHTML = `<span class="section-chevron">${icon('chevron')}</span>`;
     const label = document.createElement('span');
     label.className = 'section-label';
-    caption.append(label, unread_badge(tab.id));
+    caption.append(unread_badge(tab.id), label);
     button.append(caption);
     button.addEventListener('click', () => set_expanded(tab.id, !expanded_ids.has(tab.id)));
     button.addEventListener('keydown', event => {
@@ -678,7 +690,7 @@ function ensure_section(tab: terminal_tab, view: terminal_view): void {
   view.section_label!.textContent = tab.name;
   const caption = view.section_label!.parentElement!;
   caption.querySelector('.tab_marker')?.remove();
-  if (tab.marker) caption.insertBefore(create_tab_marker(tab.marker), view.section_label!);
+  if (tab_markers_enabled && tab.marker) caption.insertBefore(create_tab_marker(tab.marker), view.section_label!);
   update_unread(tab.id);
   view.section!.dataset.active = String(active_id === tab.id);
   view.section!.dataset.expanded = String(expanded_ids.has(tab.id));
@@ -709,6 +721,7 @@ function render_terminals(): void {
       terminal_views.delete(id);
       activated_views.delete(id);
       unread_tabs.delete(id);
+      tab_completions.delete(id);
     }
   }
   if (side === 'right') {
@@ -719,7 +732,7 @@ function render_terminals(): void {
   }
   if (!trusted) {
     rename_editor.close(false);
-    marker_picker.close(false);
+    marker_picker?.close(false);
     find_widget.close(false);
     action_menu.close(false);
     return;
@@ -749,7 +762,7 @@ function render_terminals(): void {
     previous_focus.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
   rename_editor.refresh();
-  marker_picker.refresh();
+  marker_picker?.refresh();
   find_widget.refresh();
   if (menu_tab_id && !open_tabs.some(tab => tab.id === menu_tab_id)) {
     menu_tab_id = undefined;
@@ -868,7 +881,7 @@ function side_label(profile_side: sidebar_side): string {
 }
 
 function open_configuration(): void {
-  marker_picker.close(false);
+  marker_picker?.close(false);
   rename_editor.close(false);
   find_widget.close(false);
   action_menu.close(false);
@@ -1204,7 +1217,7 @@ function export_output(id = active_id): void {
   if (!id || !terminal_views.has(id)) {
     return;
   }
-  marker_picker.close(false);
+  marker_picker?.close(false);
   const anchor = document.getElementById(`${side === 'left' ? 'section' : 'tab'}-${id}`)?.getBoundingClientRect();
   menu_tab_id = id;
   action_menu.show([
@@ -1245,7 +1258,7 @@ function replace_copy(): void {
     show_error('Editable copy exceeds the text export limit. Reduce scrollback before replacing.');
     return;
   }
-  marker_picker.close(false);
+  marker_picker?.close(false);
   find_widget.close(false);
   send({ type: 'replace_copy', id: active_id, text });
 }
@@ -1257,7 +1270,7 @@ function run_action(action: 'save' | 'undo' | 'redo' | 'close' | 'add' | 'find' 
   if (action === 'replace') {
     replace_copy();
   } else if (action === 'find') {
-    marker_picker.close(false);
+    marker_picker?.close(false);
     if (!configuring && trusted) {
       if (active_id && side === 'left' && !expanded_ids.has(active_id)) set_expanded(active_id, true);
       find_widget.open();
@@ -1333,7 +1346,7 @@ document.addEventListener('keydown', event => {
     }
     replace_copy();
   } else if (is_find_shortcut(event, is_mac)) {
-    marker_picker.close(false);
+    marker_picker?.close(false);
     event.preventDefault();
     event.stopPropagation();
     const heading = target?.closest<HTMLElement>('.terminal-tab, .section-heading');
@@ -1415,9 +1428,6 @@ window.addEventListener('message', (event: MessageEvent<host_message>) => {
       startup_configuration = message.configuration;
       open_tabs = message.tabs;
       active_id = open_tabs.some(tab => tab.id === message.active_id) ? message.active_id : open_tabs[0]?.id;
-      if (active_id && active_id !== previous_active_id) {
-        clear_unread(active_id);
-      }
       expanded_ids = new Set(message.expanded_ids);
       trusted = message.trusted;
       appearance = message.appearance;
@@ -1425,6 +1435,10 @@ window.addEventListener('message', (event: MessageEvent<host_message>) => {
       sessions.clear();
       for (const session of message.sessions) {
         sessions.set(session.id, session);
+        tab_completions.observe(session);
+      }
+      if (active_id && active_id !== previous_active_id) {
+        clear_unread(active_id);
       }
       if (configuring && !saving) {
         if (!draft.dirty && JSON.stringify(draft.base) !== JSON.stringify(startup_configuration)) {
@@ -1459,6 +1473,7 @@ window.addEventListener('message', (event: MessageEvent<host_message>) => {
     }
     case 'session': {
       sessions.set(message.session.id, message.session);
+      tab_completions.observe(message.session);
       update_status();
       update_unread(message.session.id);
       const tab = document.getElementById(`tab-${message.session.id}`);
@@ -1473,6 +1488,7 @@ window.addEventListener('message', (event: MessageEvent<host_message>) => {
     }
     case 'reset':
       clear_unread(message.id);
+      tab_completions.delete(message.id);
       terminal_views.get(message.id)?.search.clearDecorations();
       terminal_views.get(message.id)?.terminal.reset();
       break;
@@ -1512,9 +1528,11 @@ document.addEventListener('visibilitychange', () => {
   for (const [id, view] of terminal_views) {
     view.pane.hidden = !is_visible_tab(id);
   }
+  if (active_id) update_unread(active_id);
   schedule_fit();
 });
 window.addEventListener('focus', () => {
+  if (active_id) update_unread(active_id);
   if (focused_terminal && is_visible_tab(focused_terminal)) {
     clear_unread(focused_terminal);
   }
@@ -1526,7 +1544,7 @@ window.addEventListener('beforeunload', () => {
   resize_observer.disconnect();
   theme_observer.disconnect();
   rename_editor.dispose();
-  marker_picker.dispose();
+  marker_picker?.dispose();
   find_widget.dispose();
   action_menu.dispose();
   for (const view of terminal_views.values()) {

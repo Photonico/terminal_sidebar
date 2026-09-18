@@ -38,6 +38,7 @@ export class shell_state_tracker {
   private pending = '';
   private discarded = false;
   private command_in_progress = false;
+  private revision = 0;
   private readonly hostname: string;
   private readonly platform: NodeJS.Platform;
 
@@ -54,8 +55,14 @@ export class shell_state_tracker {
     return { ...this.current };
   }
 
+  /** Distinguish commands even when start and finish arrive in one PTY chunk. */
+  get command_revision(): number {
+    return this.revision;
+  }
+
   /** A configured startup command was sent; only a later explicit shell notification clears it. */
   started_command(): void {
+    if (!this.command_in_progress) this.revision++;
     this.command_in_progress = true;
     this.current.command_state = 'running';
     this.current.command_status = 'running';
