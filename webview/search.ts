@@ -25,19 +25,11 @@ interface search_options {
   target(): search_target | undefined;
   focus(id: string): void;
   layout(): void;
-  replace?(): void;
 }
 
 export function is_find_shortcut(event: Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'altKey' | 'shiftKey' | 'isComposing'>, is_mac: boolean): boolean {
   return event.key.toLowerCase() === 'f' && !event.altKey && !event.shiftKey && !event.isComposing
     && (is_mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey);
-}
-
-export function is_replace_shortcut(event: Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'altKey' | 'shiftKey' | 'isComposing'> & { code?: string }, is_mac: boolean): boolean {
-  if (event.isComposing || event.shiftKey) return false;
-  // On macOS Option+F produces "ƒ" in KeyboardEvent.key; code retains the physical shortcut.
-  return is_mac ? (event.code === 'KeyF' || event.key.toLowerCase() === 'f') && event.metaKey && event.altKey && !event.ctrlKey
-    : event.key.toLowerCase() === 'h' && event.ctrlKey && !event.metaKey && !event.altKey;
 }
 
 /** One compact find widget follows the selected terminal; addons remain per terminal. */
@@ -63,16 +55,6 @@ export class terminal_search {
     const controls = document.createElement('div');
     controls.className = 'terminal_find_options';
     this.root.append(row);
-    if (options.replace) {
-      const replace = document.createElement('button');
-      replace.type = 'button';
-      replace.className = 'terminal_find_button';
-      replace.title = 'Replace in editable copy';
-      replace.setAttribute('aria-label', replace.title);
-      replace.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="none" stroke="currentColor" d="m6 3 5 5-5 5"/></svg>';
-      replace.addEventListener('click', () => options.replace!());
-      row.append(replace);
-    }
     row.append(field);
     field.append(this.input, controls);
     this.input.type = 'text';

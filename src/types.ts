@@ -1,4 +1,4 @@
-import type { tab_marker } from './tab_marker';
+import type { tab_color } from './tab_color';
 
 /** Persistent startup settings. Runtime tabs are a separate, workspace-local object. */
 export interface terminal_profile {
@@ -22,7 +22,7 @@ export interface terminal_tab extends terminal_profile {
   profile_id?: string;
   /** Last reported local directory; workspace memory only, never synced settings. */
   cwd?: string;
-  marker?: tab_marker;
+  name_color?: tab_color;
 }
 
 export type session_status = 'idle' | 'running' | 'exited' | 'error';
@@ -65,7 +65,7 @@ export type host_message =
   | { type: 'saved'; configuration: sidebar_configuration }
   | { type: 'error'; message: string }
   | { type: 'configure' }
-  | { type: 'action'; action: 'save' | 'undo' | 'redo' | 'close' | 'add' | 'find' | 'replace' }
+  | { type: 'action'; action: 'save' | 'undo' | 'redo' | 'close' | 'add' | 'find' }
   | { type: 'paste'; id: string; data: string };
 
 export type client_message =
@@ -79,7 +79,7 @@ export type client_message =
   | { type: 'add_tab' }
   | { type: 'request_rename'; id: string }
   | { type: 'rename_tab'; id: string; name: string }
-  | { type: 'set_tab_marker'; id: string; marker?: tab_marker }
+  | { type: 'set_tab_color'; id: string; color?: tab_color }
   | { type: 'move_tab'; id: string; target_id: string; placement: 'before' | 'after' }
   | { type: 'expanded'; id: string; expanded: boolean }
   | { type: 'save'; configuration: sidebar_configuration; base_configuration: sidebar_configuration }
@@ -89,7 +89,6 @@ export type client_message =
   | { type: 'refresh_shells' }
   | { type: 'focus'; id: string }
   | { type: 'export'; id: string; text: string; format?: export_format }
-  | { type: 'replace_copy'; id: string; text: string }
   | { type: 'open_link'; id: string; uri: string }
   | { type: 'open_file'; id: string; path: string; line: number; column?: number }
   | { type: 'draft_state'; configuring: boolean; can_undo: boolean; can_redo: boolean }

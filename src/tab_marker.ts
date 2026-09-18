@@ -1,20 +1,13 @@
-/** Workspace-local tab decoration. These values name VS Code theme tokens, not colours. */
-export const tab_marker_shapes = [
+import { is_tab_color, type tab_color } from './tab_color';
+
+/** Backward reader for saved marker preferences; new data stores only the tab name color. */
+const tab_marker_shapes = [
   'circle', 'triangle', 'triangle_right', 'triangle_down', 'triangle_left',
   'diamond', 'square',
 ] as const;
-export type tab_marker_shape = typeof tab_marker_shapes[number];
-export const tab_marker_colors = [
-  'ansiBlack', 'ansiRed', 'ansiGreen', 'ansiYellow', 'ansiBlue', 'ansiMagenta', 'ansiCyan', 'ansiWhite',
-  'ansiBrightBlack', 'ansiBrightRed', 'ansiBrightGreen', 'ansiBrightYellow',
-  'ansiBrightBlue', 'ansiBrightMagenta', 'ansiBrightCyan', 'ansiBrightWhite',
-] as const;
-
-export type tab_marker_color = typeof tab_marker_colors[number];
-
-export interface tab_marker {
-  shape: tab_marker_shape;
-  color: tab_marker_color;
+interface tab_marker {
+  shape: typeof tab_marker_shapes[number];
+  color: tab_color;
 }
 
 export function is_tab_marker(value: unknown): value is tab_marker {
@@ -23,10 +16,5 @@ export function is_tab_marker(value: unknown): value is tab_marker {
   return Object.keys(record).length === 2
     && Object.hasOwn(record, 'shape') && Object.hasOwn(record, 'color')
     && tab_marker_shapes.some(shape => shape === record.shape)
-    && tab_marker_colors.some(color => color === record.color);
-}
-
-/** Enumerate fields so even an externally supplied value cannot carry unrelated state. */
-export function copy_tab_marker(value: tab_marker): tab_marker {
-  return { shape: value.shape, color: value.color };
+    && is_tab_color(record.color);
 }

@@ -102,6 +102,9 @@ body:is(.vscode-high-contrast, .vscode-high-contrast-light) .terminal-section:no
 .section-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .section_rename, .section-close { align-self: center; }
 .terminal-section[data-status="error"] .section-label { color: var(--vscode-errorForeground, #f48771); }
+/* The selected name uses the chosen theme colour even when its section is collapsed. */
+.terminal-tab[aria-selected="true"] .tab_name_colored,
+.terminal-section[data-active="true"] .section-label > .tab_name_colored { color: var(--tab_name_color); }
 .terminal-section .terminal-pane { position: relative; inset: auto; flex: 1 1 0; min-height: 48px; }
 
 #session-status { flex: 0 0 auto; display: flex; align-items: center; min-height: 20px; padding: 2px 6px; border-top: 1px solid var(--view-border); background: var(--vscode-sideBar-background, var(--view-background)); font-size: calc(var(--vscode-font-size, 13px) - 2px); color: var(--vscode-descriptionForeground, var(--view-foreground)); }

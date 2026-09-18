@@ -218,16 +218,6 @@
         "title": "Find in Secondary Terminal",
         "category": "Terminal Sidebar",
         "icon": "$(search)"
-      },
-      {
-        "command": "terminalSidebar.left.replace",
-        "title": "Replace in Primary Terminal Copy",
-        "category": "Terminal Sidebar"
-      },
-      {
-        "command": "terminalSidebar.right.replace",
-        "title": "Replace in Secondary Terminal Copy",
-        "category": "Terminal Sidebar"
       }
     ],
     "menus": {
@@ -660,18 +650,6 @@
         "command": "terminalSidebar.right.find",
         "key": "ctrl+f",
         "mac": "cmd+f",
-        "when": "focusedView == terminalSidebar.terminals && !terminalSidebar.right.configuring"
-      },
-      {
-        "command": "terminalSidebar.left.replace",
-        "key": "ctrl+h",
-        "mac": "cmd+alt+f",
-        "when": "focusedView == terminalSidebar.left && !terminalSidebar.left.configuring"
-      },
-      {
-        "command": "terminalSidebar.right.replace",
-        "key": "ctrl+h",
-        "mac": "cmd+alt+f",
         "when": "focusedView == terminalSidebar.terminals && !terminalSidebar.right.configuring"
       }
     ]

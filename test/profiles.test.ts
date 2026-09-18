@@ -79,6 +79,7 @@ test('webview boundary rejects unbounded data, malformed saves, and invalid term
   assert.equal(is_client_message({ type: 'open_other_sidebar' }), true);
   for (const value of [
     { type: 'execute', command: 'x' },
+    { type: 'replace_copy', id: 'a', text: 'output' },
     { type: 'resize', id: 'a', cols: Infinity, rows: 24 },
     { type: 'resize', id: 'a', cols: 80.1, rows: 24 },
     { type: 'input', id: 'a', data: 'x'.repeat(1024 * 1024 + 1) },

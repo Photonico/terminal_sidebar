@@ -23,7 +23,7 @@ const view_ids: Record<sidebar_side, string> = {
 const sidebar_sides: sidebar_side[] = ['left', 'right'];
 const history_character_limit = 1024 * 1024;
 const output_delay_ms = 12;
-type sidebar_action = 'save' | 'undo' | 'redo' | 'close' | 'add' | 'find' | 'replace';
+type sidebar_action = 'save' | 'undo' | 'redo' | 'close' | 'add' | 'find';
 
 function read_scrollbar_visibility(value: unknown): 'auto' | 'visible' | 'hidden' {
   return value === 'visible' || value === 'hidden' ? value : 'auto';
@@ -490,8 +490,8 @@ class terminal_sidebar implements vscode.Disposable {
           await this.remember_layout(view);
         }
         return;
-      case 'set_tab_marker':
-        if (layout.set_marker(tab.id, message.marker)) {
+      case 'set_tab_color':
+        if (layout.set_color(tab.id, message.color)) {
           this.send_state(view);
           await this.remember_layout(view);
         }
@@ -534,12 +534,6 @@ class terminal_sidebar implements vscode.Disposable {
             }
           }
         }
-        return;
-      }
-      case 'replace_copy': {
-        const document = await vscode.workspace.openTextDocument({ content: message.text, language: 'plaintext' });
-        await vscode.window.showTextDocument(document, { preview: false });
-        await vscode.commands.executeCommand('editor.action.startFindReplaceAction');
         return;
       }
     }
@@ -839,7 +833,7 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.commands.registerCommand(`terminalSidebar.${side}.restart`, () => provider.restart_active(side)),
       vscode.commands.registerCommand(`terminalSidebar.${side}.selectProfile`, () => provider.open_profile(undefined, side)),
     );
-    for (const action of ['save', 'undo', 'redo', 'close', 'add', 'find', 'replace'] as const) {
+    for (const action of ['save', 'undo', 'redo', 'close', 'add', 'find'] as const) {
       context.subscriptions.push(vscode.commands.registerCommand(
         `terminalSidebar.${side}.${action}`, () => provider.action(side, action),
       ));

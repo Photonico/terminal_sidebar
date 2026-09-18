@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Terminal } from '@xterm/xterm';
 import { find_file_links, link_modifier, read_link_line } from '../webview/terminal_links';
-import { is_find_shortcut, is_replace_shortcut } from '../webview/search';
+import { is_find_shortcut } from '../webview/search';
 import { terminal_text } from '../webview/export';
 
 test('file links parse diagnostic locations, Windows paths and paths with spaces', () => {
@@ -44,12 +44,8 @@ test('terminal links and find require platform modifiers without competing modif
   assert.equal(is_find_shortcut({ ...find, ctrlKey: true }, false), true);
   assert.equal(is_find_shortcut({ ...find, ctrlKey: true, isComposing: true }, false), false);
   assert.equal(is_find_shortcut({ ...find, ctrlKey: true, shiftKey: true }, false), false);
-  assert.equal(is_replace_shortcut({ ...find, metaKey: true, altKey: true }, true), true);
-  assert.equal(is_replace_shortcut({ ...find, key: 'ƒ', code: 'KeyF', metaKey: true, altKey: true }, true), true);
-  assert.equal(is_replace_shortcut({ ...find, key: 'h', code: 'KeyH', metaKey: true }, true), false);
-  assert.equal(is_replace_shortcut({ ...find, key: 'h', ctrlKey: true }, false), true);
-  assert.equal(is_replace_shortcut({ ...find, key: 'h', ctrlKey: true }, true), false);
-  assert.equal(is_replace_shortcut({ ...find, metaKey: true, altKey: true, isComposing: true }, true), false);
+  assert.equal(is_find_shortcut({ ...find, metaKey: true, altKey: true }, true), false);
+  assert.equal(is_find_shortcut({ ...find, key: 'h', ctrlKey: true }, false), false);
 });
 
 test('file link offsets follow wide, combined and wrapped terminal cells', () => {
