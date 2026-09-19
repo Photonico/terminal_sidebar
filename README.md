@@ -1,8 +1,11 @@
 # Terminal Sidebar
 
 [![CI](https://github.com/Photonico/terminal_sidebar/actions/workflows/ci.yml/badge.svg)](https://github.com/Photonico/terminal_sidebar/actions/workflows/ci.yml)
+
 [![Marketplace version](https://img.shields.io/visual-studio-marketplace/v/ConAntares.terminal-sidebar)](https://marketplace.visualstudio.com/items?itemName=ConAntares.terminal-sidebar)
+
 [![Installs](https://img.shields.io/visual-studio-marketplace/i/ConAntares.terminal-sidebar)](https://marketplace.visualstudio.com/items?itemName=ConAntares.terminal-sidebar)
+
 [![MIT licence](https://img.shields.io/github/license/Photonico/terminal_sidebar)](LICENSE)
 
 Terminal Sidebar brings independent terminals into the VS Code side bars. The **Primary Side Bar** organises terminals as collapsible sections; the **Secondary Side Bar** uses a compact tab strip. Each terminal runs its own shell, leaving the ordinary terminal panel available for other work. These side bars are on the left and right by default, respectively, but VS Code allows their positions to change.

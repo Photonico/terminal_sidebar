@@ -1,3 +1,4 @@
+// TypeScript configuration file
 {
   "compilerOptions": {
     "target": "ES2022",
