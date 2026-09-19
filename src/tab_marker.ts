@@ -1,7 +1,7 @@
 import { is_codicon_name } from './codicons';
 import { is_tab_color, type tab_color } from './tab_color';
 
-/** A workspace-local Codicon, colored by a live terminal theme token. */
+/** A workspace-local Codicon, colored by a live theme token. */
 export interface tab_marker {
   icon: string;
   color: tab_color;

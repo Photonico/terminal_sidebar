@@ -8,7 +8,7 @@ import { sidebar_tabs } from '../src/tabs';
 
 const saved_cwd = process.cwd();
 
-test('markers accept every bundled Codicon and only the declared terminal theme color tokens', () => {
+test('markers accept every bundled Codicon and only the declared theme color tokens', () => {
   for (const icon of codicon_names) {
     const marker = { icon, color: 'ansiBlue' };
     assert.equal(is_tab_marker(marker), true, icon);

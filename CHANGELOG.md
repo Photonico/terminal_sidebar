@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Simplify the marker color heading and add active/inactive tab foreground colors in a new palette column.
+
 ## 0.8.0 — Pre-release
 
 - Search retained output in a VS Code-style find overlay with platform-default Find shortcuts.

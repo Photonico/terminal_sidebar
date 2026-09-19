@@ -4,11 +4,19 @@ import { codicon, codicon_picker } from './codicon_picker';
 import './tab_marker.css';
 
 function color_label(color: tab_color): string {
+  if (color === 'tab_active_foreground') return 'Active tab foreground';
+  if (color === 'tab_inactive_foreground') return 'Inactive tab foreground';
   return color.slice(4).replace(/([a-z])([A-Z])/g, '$1 $2');
 }
 
+function theme_token(color: tab_color): string {
+  if (color === 'tab_active_foreground') return 'tab.activeForeground';
+  if (color === 'tab_inactive_foreground') return 'tab.inactiveForeground';
+  return `terminal.${color}`;
+}
+
 function theme_color(color: tab_color): string {
-  return `var(--vscode-terminal-${color}, currentColor)`;
+  return `var(--vscode-${theme_token(color).replace('.', '-')}, currentColor)`;
 }
 
 /** Codicon glyphs are independent of the terminal font and command status. */
@@ -56,13 +64,13 @@ export class tab_marker_picker {
     });
     const color_group = document.createElement('fieldset');
     const color_legend = document.createElement('legend');
-    color_legend.textContent = 'Color · Terminal theme';
+    color_legend.textContent = 'Color';
     const colors = document.createElement('div');
     colors.className = 'tab_colors';
     for (const color of tab_colors) {
       const label = document.createElement('label');
       label.className = 'tab_marker_choice tab_marker_swatch';
-      label.title = `${color_label(color)} · terminal.${color}`;
+      label.title = `${color_label(color)} · ${theme_token(color)}`;
       const input = document.createElement('input');
       input.type = 'radio';
       input.name = 'tab_color';

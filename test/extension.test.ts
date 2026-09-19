@@ -593,8 +593,8 @@ test('Codicon markers are local, independent by side, validated, and removable w
   const id = left.state().tabs[0].id;
   const right_before = right.state();
   const original_processes = [...runtime.processes];
-  const left_marker = { icon: 'bookmark', color: 'ansiBlue' } as const;
-  const right_marker = { icon: 'ask', color: 'ansiYellow' } as const;
+  const left_marker = { icon: 'bookmark', color: 'tab_active_foreground' } as const;
+  const right_marker = { icon: 'ask', color: 'tab_inactive_foreground' } as const;
   await left.send({ type: 'set_tab_marker', id, marker: left_marker });
   assert.deepEqual(left.state().tabs[0].marker, left_marker);
   assert.deepEqual(right.state(), right_before);

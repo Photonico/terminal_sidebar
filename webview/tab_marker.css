@@ -15,7 +15,7 @@
 .tab_marker_title { display: block; margin-bottom: 10px; }
 .tab_marker_picker fieldset { min-width: 0; padding: 0; margin: 0 0 12px; border: 0; }
 .tab_marker_picker legend { padding: 0; margin-bottom: 6px; }
-.tab_colors { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 4px; }
+.tab_colors { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 4px; }
 .tab_marker_choice {
   position: relative;
   display: flex;
