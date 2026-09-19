@@ -6,6 +6,8 @@ import { is_tab_color, tab_colors } from '../src/tab_color';
 import { copy_tab_marker, is_tab_marker, type tab_marker } from '../src/tab_marker';
 import { sidebar_tabs } from '../src/tabs';
 
+const saved_cwd = process.cwd();
+
 test('markers accept every bundled Codicon and only the declared terminal theme color tokens', () => {
   for (const icon of codicon_names) {
     const marker = { icon, color: 'ansiBlue' };
@@ -102,7 +104,7 @@ test('each theme color survives workspace reload independently of other tabs', (
 
 function saved_tab(fields: Record<string, unknown> = {}) {
   return {
-    version: 1, tabs: [{ id: 'saved', name: 'Original', cwd: '/tmp', ...fields }],
+    version: 1, tabs: [{ id: 'saved', name: 'Original', cwd: saved_cwd, ...fields }],
     active_id: 'saved', expanded_ids: ['saved'], next_number: 1,
   };
 }
@@ -114,7 +116,7 @@ test('legacy name colors and special character markers are discarded without los
     const memory = saved_tab({ name_color: 'ansiGreen', marker });
     const original_memory = structuredClone(memory);
     const model = new sidebar_tabs([], memory);
-    assert.deepEqual(model.tabs, [{ id: 'saved', name: 'Original', cwd: '/tmp', command: '', shell: '' }]);
+    assert.deepEqual(model.tabs, [{ id: 'saved', name: 'Original', cwd: saved_cwd, command: '', shell: '' }]);
     assert.equal(model.active_id, 'saved');
     assert.deepEqual(model.expanded_ids, ['saved']);
     assert.equal(Object.hasOwn(model.remember().tabs[0], 'marker'), false);
@@ -127,7 +129,7 @@ test('legacy name colors and special character markers are discarded without los
 test('malformed markers retain otherwise valid remembered tabs', () => {
   for (const marker of invalid_markers) {
     const model = new sidebar_tabs([], saved_tab({ marker }));
-    assert.deepEqual(model.tabs, [{ id: 'saved', name: 'Original', cwd: '/tmp', command: '', shell: '' }]);
+    assert.deepEqual(model.tabs, [{ id: 'saved', name: 'Original', cwd: saved_cwd, command: '', shell: '' }]);
     assert.equal(Object.hasOwn(model.remember().tabs[0], 'marker'), false);
   }
 });
@@ -140,14 +142,14 @@ test('discarding old decorations preserves reordered startup profiles, runtime n
   const model = new sidebar_tabs(profiles, {
     version: 1,
     tabs: [
-      { id: 'saved_two', profile_id: 'two', name: 'Renamed', renamed: true, cwd: '/tmp',
+      { id: 'saved_two', profile_id: 'two', name: 'Renamed', renamed: true, cwd: saved_cwd,
         name_color: 'ansiRed', marker: { shape: 'circle', color: 'ansiBlue' } },
       { id: 'saved_one', profile_id: 'one', name: 'Old setting name', name_color: 'ansiGreen' },
     ],
     active_id: 'saved_two', expanded_ids: ['saved_one'], next_number: 0,
   });
   assert.deepEqual(model.tabs, [
-    { ...profiles[1], id: 'saved_two', profile_id: 'two', name: 'Renamed', cwd: '/tmp' },
+    { ...profiles[1], id: 'saved_two', profile_id: 'two', name: 'Renamed', cwd: saved_cwd },
     { ...profiles[0], id: 'saved_one', profile_id: 'one' },
   ]);
   assert.equal(model.active_id, 'saved_two');

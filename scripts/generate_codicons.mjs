@@ -24,8 +24,9 @@ export function is_codicon_name(value: unknown): value is string {
 }
 `;
 const target = new URL('../src/codicons.ts', import.meta.url);
+// Windows checkouts may use CRLF; only content differences make the catalog stale.
 if (process.argv.includes('--write')) {
   await write_file(target, output);
-} else if (await read_file(target, 'utf8') !== output) {
+} else if ((await read_file(target, 'utf8')).replace(/\r\n/g, '\n') !== output) {
   throw new Error('Codicon catalog differs from the bundled package. Run npm run generate:codicons.');
 }
