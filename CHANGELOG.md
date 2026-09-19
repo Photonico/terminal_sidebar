@@ -14,10 +14,6 @@
 - Add CI, Marketplace, install-count, and licence badges to the README.
 - Make marker migration tests use native paths and catalog validation accept Windows checkout line endings.
 
-## 0.7.1 — Pre-release
-
-- Initial preview of the terminal workflow and Codicon marker updates listed in 0.8.0.
-
 ## 0.7.0 — Pre-release
 
 - Rename terminals from the edit button beside each sidebar's close button; preserve renamed tabs in the saved layout.
