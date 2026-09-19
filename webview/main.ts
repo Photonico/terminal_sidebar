@@ -8,7 +8,7 @@ import { tab_reordering } from './reordering';
 import { terminal_menu } from './menu';
 import { tab_rename } from './rename';
 import { terminal_search, is_find_shortcut } from './search';
-import { apply_tab_name_color, tab_color_picker } from './tab_color';
+import { create_tab_marker, tab_marker_picker } from './tab_marker';
 import { terminal_indicator, show_tab_indicator, indicator_label, tab_completion_tracker } from './status';
 import { install_terminal_links } from './terminal_links';
 import { terminal_text, terminal_html, terminal_markdown } from './export';
@@ -27,6 +27,7 @@ import type {
   export_format,
 } from '../src/types';
 import '@xterm/xterm/css/xterm.css';
+import '@vscode/codicons/dist/codicon.css';
 import './main.css';
 import './search.css';
 
@@ -164,9 +165,9 @@ const rename_editor = new tab_rename({
   commit: (id, name) => send({ type: 'rename_tab', id, name }),
   finished: id => focus_terminal(id),
 });
-const color_picker = new tab_color_picker({
+const marker_picker = new tab_marker_picker({
   anchor: id => document.getElementById(`${side === 'left' ? 'section' : 'tab'}-${id}`) ?? undefined,
-  commit: (id, color) => send({ type: 'set_tab_color', id, color }),
+  commit: (id, marker) => send({ type: 'set_tab_marker', id, marker }),
   inactive_foreground: () => side === 'left'
     ? 'var(--vscode-sideBarSectionHeader-foreground, var(--view-foreground))'
     : 'var(--vscode-tab-inactiveForeground, var(--view-foreground))',
@@ -441,7 +442,7 @@ function request_rename(id: string | undefined): void {
     return;
   }
   const tab = open_tabs.find(item => item.id === id)!;
-  color_picker.close(false);
+  marker_picker.close(false);
   action_menu.close(false);
   find_widget.close(false);
   rename_editor.open(id, tab.name);
@@ -460,13 +461,13 @@ function show_tab_menu(id: string, x: number, y: number): void {
     return;
   }
   rename_editor.close(false);
-  color_picker.close(false);
+  marker_picker.close(false);
   menu_tab_id = id;
   action_menu.show([
     { label: 'Rename', action: () => request_rename(id) },
-    { label: 'Change tab name color…', action: () => {
+    { label: 'Change tab marker…', action: () => {
       const tab = open_tabs.find(tab => tab.id === id);
-      if (tab) color_picker.open(id, tab.name, tab.name_color);
+      if (tab) marker_picker.open(id, tab.name, tab.marker);
     } },
     { label: 'Restart', disabled: !trusted, action: () => restart_tab(id) },
     { label: 'Close', action: () => close_tab(id) },
@@ -557,8 +558,8 @@ function render_tabs(): void {
     const label = document.createElement('span');
     label.className = 'tab-label';
     label.textContent = tab.name;
+    if (tab.marker) button.append(create_tab_marker(tab.marker));
     button.append(unread_badge(tab.id));
-    apply_tab_name_color(label, tab.name_color);
     button.append(label);
     button.title = `${tab.name} · Right-click for actions · Drag to reorder · Alt+Shift+Left/Right to move · Middle-click to close`;
     button.dataset.status = sessions.get(tab.id)?.status ?? 'idle';
@@ -685,7 +686,9 @@ function ensure_section(tab: terminal_tab, view: terminal_view): void {
   view.section_button!.setAttribute('aria-expanded', String(expanded_ids.has(tab.id)));
   view.section_button!.title = `${tab.name} · Right-click for actions · Drag to reorder · Alt+Shift+Up/Down to move · Middle-click to close`;
   view.section_label!.textContent = tab.name;
-  apply_tab_name_color(view.section_label!, tab.name_color);
+  const caption = view.section_label!.parentElement!;
+  caption.querySelector('.tab_marker')?.remove();
+  if (tab.marker) caption.insertBefore(create_tab_marker(tab.marker), caption.querySelector('.terminal_unread'));
   update_unread(tab.id);
   view.section!.dataset.active = String(active_id === tab.id);
   view.section!.dataset.expanded = String(expanded_ids.has(tab.id));
@@ -727,7 +730,7 @@ function render_terminals(): void {
   }
   if (!trusted) {
     rename_editor.close(false);
-    color_picker.close(false);
+    marker_picker.close(false);
     find_widget.close(false);
     action_menu.close(false);
     return;
@@ -757,7 +760,7 @@ function render_terminals(): void {
     previous_focus.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
   rename_editor.refresh();
-  color_picker.refresh();
+  marker_picker.refresh();
   find_widget.refresh();
   if (menu_tab_id && !open_tabs.some(tab => tab.id === menu_tab_id)) {
     menu_tab_id = undefined;
@@ -876,7 +879,7 @@ function side_label(profile_side: sidebar_side): string {
 }
 
 function open_configuration(): void {
-  color_picker.close(false);
+  marker_picker.close(false);
   rename_editor.close(false);
   find_widget.close(false);
   action_menu.close(false);
@@ -1212,7 +1215,7 @@ function export_output(id = active_id): void {
   if (!id || !terminal_views.has(id)) {
     return;
   }
-  color_picker.close(false);
+  marker_picker.close(false);
   const anchor = document.getElementById(`${side === 'left' ? 'section' : 'tab'}-${id}`)?.getBoundingClientRect();
   menu_tab_id = id;
   action_menu.show([
@@ -1250,7 +1253,7 @@ function run_action(action: 'save' | 'undo' | 'redo' | 'close' | 'add' | 'find')
     return;
   }
   if (action === 'find') {
-    color_picker.close(false);
+    marker_picker.close(false);
     if (!configuring && trusted) {
       if (active_id && side === 'left' && !expanded_ids.has(active_id)) set_expanded(active_id, true);
       find_widget.open();
@@ -1316,7 +1319,7 @@ document.addEventListener('keydown', event => {
     return;
   }
   if (is_find_shortcut(event, is_mac)) {
-    color_picker.close(false);
+    marker_picker.close(false);
     event.preventDefault();
     event.stopPropagation();
     const heading = target?.closest<HTMLElement>('.terminal-tab, .section-heading');
@@ -1514,7 +1517,7 @@ window.addEventListener('beforeunload', () => {
   resize_observer.disconnect();
   theme_observer.disconnect();
   rename_editor.dispose();
-  color_picker.dispose();
+  marker_picker.dispose();
   find_widget.dispose();
   action_menu.dispose();
   for (const view of terminal_views.values()) {

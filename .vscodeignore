@@ -9,5 +9,7 @@
 !dist/extension.js
 !dist/webview.js
 !dist/webview.css
+!dist/codicon.ttf
+!dist/codicons.NOTICE
 !dist/*.LICENSE
 !dist/node-pty/**

@@ -1,7 +1,6 @@
 import { is_identifier, is_tab_name, parse_profiles } from './profiles';
 import { is_local_cwd } from './shell_state';
-import { is_tab_color, type tab_color } from './tab_color';
-import { is_tab_marker } from './tab_marker';
+import { copy_tab_marker, is_tab_marker, type tab_marker } from './tab_marker';
 import type { terminal_profile, terminal_tab } from './types';
 
 export interface remembered_tab {
@@ -10,7 +9,7 @@ export interface remembered_tab {
   profile_id?: string;
   renamed?: true;
   cwd?: string;
-  name_color?: tab_color;
+  marker?: tab_marker;
 }
 
 /** Workspace-local layout, decoration, and last known cwd. Shells, commands, input, and output never belong here. */
@@ -30,6 +29,7 @@ function copy_tab(tab: terminal_tab): terminal_tab {
     ...tab,
     ...(tab.args === undefined ? {} : { args: [...tab.args] }),
     ...(tab.env === undefined ? {} : { env: { ...tab.env } }),
+    ...(tab.marker === undefined ? {} : { marker: copy_tab_marker(tab.marker) }),
   };
 }
 
@@ -49,7 +49,7 @@ function read_memory(value: unknown): tab_memory {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
       continue;
     }
-    const { id, name, profile_id, renamed, cwd, name_color, marker } = entry as Record<string, unknown>;
+    const { id, name, profile_id, renamed, cwd, marker } = entry as Record<string, unknown>;
     if (!is_identifier(id) || identifiers.has(id) || !is_tab_name(name)) {
       continue;
     }
@@ -65,9 +65,7 @@ function read_memory(value: unknown): tab_memory {
       descriptor.renamed = true;
     }
     if (is_local_cwd(cwd)) descriptor.cwd = cwd;
-    if (is_tab_color(name_color)) descriptor.name_color = name_color;
-    // Migrate only when no newer preference exists; an invalid explicit value must not resurrect a marker.
-    else if (!Object.hasOwn(entry, 'name_color') && is_tab_marker(marker)) descriptor.name_color = marker.color;
+    if (is_tab_marker(marker)) descriptor.marker = copy_tab_marker(marker);
     empty.tabs.push(descriptor);
   }
   if (is_identifier(record.active_id)) {
@@ -112,7 +110,7 @@ export class sidebar_tabs {
         const name = descriptor.renamed ? descriptor.name : profile.name;
         this.current_tabs.push({ ...profile, id: descriptor.id, name, profile_id: profile.id,
           ...(descriptor.cwd === undefined ? {} : { cwd: descriptor.cwd }),
-          ...(descriptor.name_color === undefined ? {} : { name_color: descriptor.name_color }) });
+          ...(descriptor.marker === undefined ? {} : { marker: copy_tab_marker(descriptor.marker) }) });
         if (descriptor.renamed) {
           this.renamed_profiles.add(descriptor.id);
         }
@@ -120,7 +118,7 @@ export class sidebar_tabs {
       } else if (temporary_count < maximum_temporary_tabs) {
         this.current_tabs.push({ id: descriptor.id, name: descriptor.name, command: '', shell: '',
           ...(descriptor.cwd === undefined ? {} : { cwd: descriptor.cwd }),
-          ...(descriptor.name_color === undefined ? {} : { name_color: descriptor.name_color }) });
+          ...(descriptor.marker === undefined ? {} : { marker: copy_tab_marker(descriptor.marker) }) });
         temporary_count += 1;
       }
     }
@@ -262,13 +260,13 @@ export class sidebar_tabs {
     return true;
   }
 
-  /** Name colors are runtime preferences, stored locally without changing startup settings. */
-  set_color(identifier: string, color: tab_color | undefined): boolean {
-    if (color !== undefined && !is_tab_color(color)) return false;
+  /** Markers are runtime preferences, stored locally without changing startup settings. */
+  set_marker(identifier: string, marker: tab_marker | undefined): boolean {
+    if (marker !== undefined && !is_tab_marker(marker)) return false;
     const tab = this.current_tabs.find(entry => entry.id === identifier);
-    if (!tab || tab.name_color === color) return false;
-    if (color === undefined) delete tab.name_color;
-    else tab.name_color = color;
+    if (!tab || (tab.marker?.icon === marker?.icon && tab.marker?.color === marker?.color)) return false;
+    if (marker === undefined) delete tab.marker;
+    else tab.marker = copy_tab_marker(marker);
     return true;
   }
 
@@ -284,7 +282,7 @@ export class sidebar_tabs {
         descriptor.renamed = true;
       }
       if (tab.cwd !== undefined) descriptor.cwd = tab.cwd;
-      if (tab.name_color !== undefined) descriptor.name_color = tab.name_color;
+      if (tab.marker !== undefined) descriptor.marker = copy_tab_marker(tab.marker);
       descriptors.push(descriptor);
     }
     return {

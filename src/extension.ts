@@ -490,8 +490,8 @@ class terminal_sidebar implements vscode.Disposable {
           await this.remember_layout(view);
         }
         return;
-      case 'set_tab_color':
-        if (layout.set_color(tab.id, message.color)) {
+      case 'set_tab_marker':
+        if (layout.set_marker(tab.id, message.marker)) {
           this.send_state(view);
           await this.remember_layout(view);
         }

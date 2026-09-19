@@ -1,7 +1,8 @@
 import { build, context } from 'esbuild';
-import { mkdir, copyFile as copy_file, cp as copy_directory, rm as remove_directory } from 'node:fs/promises';
+import { mkdir, copyFile as copy_file, cp as copy_directory, rm as remove_directory, writeFile as write_file } from 'node:fs/promises';
 import { existsSync as exists_sync } from 'node:fs';
 import './prepare_pty.mjs';
+import './generate_codicons.mjs';
 
 await mkdir('dist', { recursive: true });
 
@@ -57,6 +58,8 @@ const build_targets = [
     platform: 'browser',
     format: 'iife',
     target: 'chrome130',
+    loader: { '.ttf': 'file' },
+    assetNames: '[name]',
   },
 ];
 if (process.argv.includes('--watch')) {
@@ -70,6 +73,8 @@ if (process.argv.includes('--watch')) {
 
 // Keep dependency licence texts beside the distributed runtime.
 for (const [name, source] of [
+  ['codicons', 'node_modules/@vscode/codicons/LICENSE'],
+  ['codicons_code', 'node_modules/@vscode/codicons/LICENSE-CODE'],
   ['xterm', 'node_modules/@xterm/xterm/LICENSE'],
   ['xterm-addon-fit', 'node_modules/@xterm/addon-fit/LICENSE'],
   ['xterm_addon_search', 'node_modules/@xterm/addon-search/LICENSE'],
@@ -86,3 +91,10 @@ for (const [name, source] of [
 ]) {
   await copy_file(source, `dist/${name}.LICENSE`);
 }
+
+await write_file('dist/codicons.NOTICE', `Codicons by Microsoft Corporation and contributors
+Source: https://github.com/microsoft/vscode-codicons
+Icons and font: Creative Commons Attribution 4.0 (codicons.LICENSE)
+Code: MIT (codicons_code.LICENSE)
+The bundled font is unmodified; CSS is bundled and the icon-name catalog is derived from it.
+`);

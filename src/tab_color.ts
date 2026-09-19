@@ -1,4 +1,4 @@
-/** Workspace-local name colors refer to live terminal theme tokens, never fixed RGB values. */
+/** Workspace-local marker colors refer to live terminal theme tokens, never fixed RGB values. */
 export const tab_colors = [
   'ansiBlack', 'ansiRed', 'ansiGreen', 'ansiYellow', 'ansiBlue', 'ansiMagenta', 'ansiCyan', 'ansiWhite',
   'ansiBrightBlack', 'ansiBrightRed', 'ansiBrightGreen', 'ansiBrightYellow',

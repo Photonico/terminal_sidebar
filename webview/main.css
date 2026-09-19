@@ -7,6 +7,7 @@ body {
   --view-border: var(--vscode-panel-border, var(--vscode-widget-border, #80808035));
   --tab-radius: var(--vscode-cornerRadius-small, 4px);
   --tab-height: 24px;
+  --tab_content_gap: 4px;
   --action_inset: 2px;
   --scrollbar-vertical-size: 14px;
   --scrollbar-horizontal-size: 12px;
@@ -27,7 +28,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 #terminal-header { flex: 0 0 auto; display: flex; min-width: 0; min-height: var(--tab-height); background: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-sideBar-background, var(--view-background))); }
 #terminal-tabs { display: flex; flex: 1 1 0; min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
 #terminal-tabs::-webkit-scrollbar { height: 0; }
-.terminal-tab { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; max-width: 200px; height: var(--tab-height); position: relative; isolation: isolate; padding: 2px 6px; border: 0; border-radius: var(--tab-radius) var(--tab-radius) 0 0; background: transparent; color: var(--vscode-tab-inactiveForeground, var(--view-foreground)); font-size: inherit; font-weight: normal; line-height: 20px; white-space: nowrap; }
+.terminal-tab { display: flex; align-items: center; gap: var(--tab_content_gap); flex: 0 0 auto; max-width: 200px; height: var(--tab-height); position: relative; isolation: isolate; padding: 2px 6px; border: 0; border-radius: var(--tab-radius) var(--tab-radius) 0 0; background: transparent; color: var(--vscode-tab-inactiveForeground, var(--view-foreground)); font-size: inherit; font-weight: normal; line-height: 20px; white-space: nowrap; }
 .tab-label { display: block; overflow: hidden; text-overflow: ellipsis; }
 .terminal-tab::before { content: ''; position: absolute; z-index: -1; inset: 2px; border-radius: var(--tab-radius); background: transparent; pointer-events: none; }
 /* Both sidebars share terminal tab colours; active hover retains the terminal palette. */
@@ -93,7 +94,7 @@ body:is(.vscode-high-contrast, .vscode-high-contrast-light) .terminal-section[da
 body:is(.vscode-high-contrast, .vscode-high-contrast-light) .terminal-section:not([data-active="true"]) .section-heading:hover .section_caption::before { outline: 1px dashed var(--vscode-contrastActiveBorder, var(--vscode-contrastBorder, transparent)); outline-offset: -1px; }
 .section-toggle { display: flex; flex: 1 1 auto; align-items: center; min-width: 0; padding: 0; border: 0; border-radius: var(--tab-radius); background: transparent; text-align: left; color: inherit; font-size: inherit; font-weight: normal; line-height: 20px; }
 /* Fill the space before the actions in every state; long names still truncate. */
-.section_caption { display: flex; flex: 1 1 auto; align-items: center; gap: 4px; position: relative; isolation: isolate; height: 100%; min-width: 0; max-width: 100%; padding: 3px 4px; padding-right: calc(3 * var(--action_inset) + 2px); }
+.section_caption { display: flex; flex: 1 1 auto; align-items: center; gap: var(--tab_content_gap); position: relative; isolation: isolate; height: 100%; min-width: 0; max-width: 100%; padding: 3px 4px; padding-right: calc(3 * var(--action_inset) + 2px); }
 /* Action circles have a 2-inset gap. Caption-to-rename uses 3 + 1 insets,
    making its visible gap exactly twice as large (8px versus 4px). */
 .section_caption::before { content: ''; position: absolute; z-index: -1; inset: 3px calc(3 * var(--action_inset)) 3px var(--action_inset); border-radius: var(--tab-radius); background: var(--vscode-sideBarSectionHeader-background, var(--vscode-sideBar-background, var(--view-background))); pointer-events: none; }
@@ -102,9 +103,9 @@ body:is(.vscode-high-contrast, .vscode-high-contrast-light) .terminal-section:no
 .section-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .section_rename, .section-close { align-self: center; }
 .terminal-section[data-status="error"] .section-label { color: var(--vscode-errorForeground, #f48771); }
-/* The selected name uses the chosen theme colour even when its section is collapsed. */
-.terminal-tab[aria-selected="true"] .tab_name_colored,
-.terminal-section[data-active="true"] .section-label > .tab_name_colored { color: var(--tab_name_color); }
+/* Only the custom marker is tinted, including in a collapsed active section. */
+.terminal-tab[aria-selected="true"] .tab_marker,
+.terminal-section[data-active="true"] .section_caption > .tab_marker { color: var(--tab_marker_color); }
 .terminal-section .terminal-pane { position: relative; inset: auto; flex: 1 1 0; min-height: 48px; }
 
 #session-status { flex: 0 0 auto; display: flex; align-items: center; min-height: 20px; padding: 2px 6px; border-top: 1px solid var(--view-border); background: var(--vscode-sideBar-background, var(--view-background)); font-size: calc(var(--vscode-font-size, 13px) - 2px); color: var(--vscode-descriptionForeground, var(--view-foreground)); }
@@ -189,8 +190,7 @@ body.vscode-high-contrast button, body.vscode-high-contrast-light button { borde
 #tab_rename_error { display: block; padding: 4px 6px; border: 1px solid var(--vscode-inputValidation-errorBorder, var(--view-border)); color: var(--vscode-inputValidation-errorForeground, var(--view-foreground)); background: var(--vscode-inputValidation-errorBackground, var(--view-background)); font-size: 11px; }
 
 /* Tab notifications and the footer share size and theme colours. */
-.status_dot { display: inline-block; flex: 0 0 auto; width: 5px; height: 5px; border-radius: 50%; background: var(--vscode-tab-inactiveForeground, var(--view-foreground)); }
-.terminal_unread { margin-inline-start: 0.5ch; }
+.status_dot { display: inline-block; flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--vscode-tab-inactiveForeground, var(--view-foreground)); }
 .status_dot[data-status="running"] { background: var(--vscode-testing-iconPassed, var(--vscode-terminal-ansiGreen, var(--view-foreground))); }
 .status_dot[data-status="error"] { background: var(--vscode-errorForeground, var(--vscode-terminal-ansiRed, var(--view-foreground))); }
 .status_dot[data-status="completed"] { background: var(--vscode-terminal-ansiBlue, var(--vscode-progressBar-background, var(--view-foreground))); }

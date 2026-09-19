@@ -585,7 +585,7 @@ test('PDF export decodes binary data while Markdown stays text and malformed PDF
   assert.equal(runtime.saved_files[1].text, '# Terminal\n\n<pre>中文</pre>\n');
 });
 
-test('tab name colors are local, independent by side, validated, and removable', async test_case => {
+test('Codicon markers are local, independent by side, validated, and removable without restarting processes', async test_case => {
   const runtime = await harness();
   test_case.after(() => runtime.dispose());
   const left = await runtime.view('left');
@@ -593,23 +593,28 @@ test('tab name colors are local, independent by side, validated, and removable',
   const id = left.state().tabs[0].id;
   const right_before = right.state();
   const original_processes = [...runtime.processes];
-  await left.send({ type: 'set_tab_color', id, color: 'ansiBlue' });
-  assert.equal(left.state().tabs[0].name_color, 'ansiBlue');
+  const left_marker = { icon: 'bookmark', color: 'ansiBlue' } as const;
+  const right_marker = { icon: 'ask', color: 'ansiYellow' } as const;
+  await left.send({ type: 'set_tab_marker', id, marker: left_marker });
+  assert.deepEqual(left.state().tabs[0].marker, left_marker);
   assert.deepEqual(right.state(), right_before);
   assert.deepEqual(runtime.updates, []);
-  const color_memory = structuredClone(runtime.memory);
-  await left.send({ type: 'set_tab_color', id, color: 'url(invalid)' } as unknown as client_message);
-  await left.send({ type: 'set_tab_color', id: 'missing', color: 'ansiGreen' });
-  assert.equal(left.state().tabs[0].name_color, 'ansiBlue');
-  assert.deepEqual(runtime.memory, color_memory);
-  await right.send({ type: 'set_tab_color', id: right.state().tabs[0].id, color: 'ansiYellow' });
+  const marker_memory = structuredClone(runtime.memory);
+  await left.send({ type: 'set_tab_marker', id, marker: { icon: 'bookmark', color: 'url(invalid)' } } as unknown as client_message);
+  await left.send({ type: 'set_tab_marker', id, marker: { icon: 'bookmark invalid_class', color: 'ansiGreen' } });
+  await left.send({ type: 'set_tab_marker', id, marker: { shape: 'circle', color: 'ansiGreen' } } as unknown as client_message);
+  await left.send({ type: 'set_tab_color', id, color: 'ansiGreen' } as unknown as client_message);
+  await left.send({ type: 'set_tab_marker', id: 'missing', marker: right_marker });
+  assert.deepEqual(left.state().tabs[0].marker, left_marker);
+  assert.deepEqual(runtime.memory, marker_memory);
+  await right.send({ type: 'set_tab_marker', id: right.state().tabs[0].id, marker: right_marker });
   const next_window = await harness({ memory: runtime.memory });
   test_case.after(() => next_window.dispose());
-  assert.equal((await next_window.view('left')).state().tabs[0].name_color, 'ansiBlue');
-  assert.equal((await next_window.view('right')).state().tabs[0].name_color, 'ansiYellow');
-  await left.send({ type: 'set_tab_color', id });
-  assert.equal(left.state().tabs[0].name_color, undefined);
-  assert.equal(right.state().tabs[0].name_color, 'ansiYellow');
+  assert.deepEqual((await next_window.view('left')).state().tabs[0].marker, left_marker);
+  assert.deepEqual((await next_window.view('right')).state().tabs[0].marker, right_marker);
+  await left.send({ type: 'set_tab_marker', id });
+  assert.equal(left.state().tabs[0].marker, undefined);
+  assert.deepEqual(right.state().tabs[0].marker, right_marker);
   assert.deepEqual(runtime.processes, original_processes);
   assert.ok(runtime.processes.every(terminal => terminal.killed === 0));
   assert.deepEqual(runtime.updates, []);

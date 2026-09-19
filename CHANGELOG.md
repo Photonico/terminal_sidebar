@@ -5,8 +5,8 @@
 - Search retained output in a VS Code-style find overlay with platform-default Find shortcuts.
 - Add tab context menus, inline renaming, and confirmation before closing a terminal whose command may still be running.
 - Unify tab and footer status dots; load host shell integration for supported interactive launches so idle-close detection and running/completed/error indicators receive real command events. Preserve custom launch arguments and shell startup files.
-- Place status dots before tab names with a little extra spacing; dismiss a completion once viewed while retaining later command notifications.
-- Replace custom tab icons with themed name colours: full colour when active, a 60% blend when inactive, previews and a reset action; migrate saved icon colours.
+- Use consistent spacing between custom markers, status dots, and tab names; enlarge tab and footer status dots to 7 px. Dismiss a completion once viewed while retaining later command notifications.
+- Add Codicon tab markers with five quick choices and a searchable full-catalog dropdown. Apply theme colours to markers at full intensity when active or a 60% blend when inactive; remove earlier name-colour and character-marker preferences.
 - Export HTML, real raster PDF, Markdown with embedded HTML, or plain text.
 - Open web links and source-file locations with Cmd-click / Ctrl-click; improve character widths with Unicode 11 data.
 - Remember directories reported by existing shell integration, with workspace/home fallback when a saved directory is unavailable.

@@ -1,4 +1,4 @@
-import type { tab_color } from './tab_color';
+import type { tab_marker } from './tab_marker';
 
 /** Persistent startup settings. Runtime tabs are a separate, workspace-local object. */
 export interface terminal_profile {
@@ -22,7 +22,7 @@ export interface terminal_tab extends terminal_profile {
   profile_id?: string;
   /** Last reported local directory; workspace memory only, never synced settings. */
   cwd?: string;
-  name_color?: tab_color;
+  marker?: tab_marker;
 }
 
 export type session_status = 'idle' | 'running' | 'exited' | 'error';
@@ -79,7 +79,7 @@ export type client_message =
   | { type: 'add_tab' }
   | { type: 'request_rename'; id: string }
   | { type: 'rename_tab'; id: string; name: string }
-  | { type: 'set_tab_color'; id: string; color?: tab_color }
+  | { type: 'set_tab_marker'; id: string; marker?: tab_marker }
   | { type: 'move_tab'; id: string; target_id: string; placement: 'before' | 'after' }
   | { type: 'expanded'; id: string; expanded: boolean }
   | { type: 'save'; configuration: sidebar_configuration; base_configuration: sidebar_configuration }

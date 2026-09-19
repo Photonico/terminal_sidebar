@@ -655,6 +655,7 @@
     ]
   },
   "scripts": {
+    "generate:codicons": "node scripts/generate_codicons.mjs --write",
     "build": "node scripts/build.mjs",
     "watch": "node scripts/build.mjs --watch",
     "typecheck": "tsc --noEmit",
@@ -665,6 +666,7 @@
     "package": "node scripts/package.mjs --pre-release"
   },
   "dependencies": {
+    "@vscode/codicons": "0.0.46-24",
     "@xterm/addon-fit": "0.11.0",
     "@xterm/addon-search": "0.16.0",
     "@xterm/addon-serialize": "0.14.0",

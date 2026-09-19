@@ -1,5 +1,5 @@
 import type { client_message, sidebar_configuration, terminal_profile } from './types';
-import { is_tab_color } from './tab_color';
+import { is_tab_marker } from './tab_marker';
 import { is_export_payload } from './export_format';
 
 export const default_configuration: sidebar_configuration = {
@@ -169,8 +169,8 @@ export function is_client_message(value: unknown): value is client_message {
       return valid_identifier;
     case 'rename_tab':
       return valid_identifier && is_tab_name(message.name);
-    case 'set_tab_color':
-      return valid_identifier && (message.color === undefined || is_tab_color(message.color));
+    case 'set_tab_marker':
+      return valid_identifier && (message.marker === undefined || is_tab_marker(message.marker));
     case 'move_tab':
       return valid_identifier && is_identifier(message.target_id) && message.id !== message.target_id
         && (message.placement === 'before' || message.placement === 'after');

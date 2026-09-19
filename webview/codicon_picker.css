@@ -1,0 +1,14 @@
+.codicon_common { display: flex; flex-wrap: wrap; gap: 4px; }
+.codicon_common button { display: inline-flex; align-items: center; justify-content: center; min-width: 30px; height: 30px; padding: 4px; border: 1px solid transparent; border-radius: var(--vscode-cornerRadius-small, 3px); background: transparent; }
+.codicon_common .codicon_others { flex: 1; padding-inline: 8px; }
+.codicon_common button:hover { background: var(--vscode-toolbar-hoverBackground, transparent); }
+.codicon_common button[aria-pressed="true"], .codicon_others[data-selected="true"] { border-color: var(--vscode-inputOption-activeBorder, var(--vscode-focusBorder)); background: var(--vscode-inputOption-activeBackground, var(--vscode-toolbar-activeBackground, transparent)); }
+.codicon_dropdown { margin-top: 8px; padding: 6px; border: 1px solid var(--vscode-dropdown-border, var(--vscode-widget-border, transparent)); border-radius: var(--vscode-cornerRadius-small, 3px); background: var(--vscode-dropdown-background, var(--vscode-editorWidget-background)); color: var(--vscode-dropdown-foreground, var(--view-foreground)); }
+.codicon_dropdown input { display: block; width: 100%; min-width: 0; padding: 4px 6px; border: 1px solid var(--vscode-input-border, transparent); color: var(--vscode-input-foreground, var(--view-foreground)); background: var(--vscode-input-background, var(--view-background)); }
+.codicon_dropdown input::placeholder { color: var(--vscode-input-placeholderForeground, var(--vscode-descriptionForeground)); }
+.codicon_options { max-height: min(180px, 30vh); margin-top: 4px; overflow-y: auto; }
+.codicon_options button { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; padding: 5px 6px; border: 0; text-align: left; color: inherit; background: transparent; }
+.codicon_options button > :last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.codicon_options button:hover { color: var(--vscode-list-hoverForeground, inherit); background: var(--vscode-list-hoverBackground, transparent); }
+.codicon_options button[data-highlighted="true"] { color: var(--vscode-list-focusForeground, inherit); background: var(--vscode-list-focusBackground, var(--vscode-list-hoverBackground, transparent)); outline: 1px solid var(--vscode-list-focusOutline, transparent); outline-offset: -1px; }
+.codicon_dropdown p { margin: 8px 2px 2px; color: var(--vscode-descriptionForeground, inherit); }
