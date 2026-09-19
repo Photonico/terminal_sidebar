@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.7.1 — Pre-release
+## 0.8.0 — Pre-release
 
 - Search retained output in a VS Code-style find overlay with platform-default Find shortcuts.
 - Add tab context menus, inline renaming, and confirmation before closing a terminal whose command may still be running.
@@ -13,6 +13,10 @@
 - Support literal shell arguments and environment overrides in startup profile JSON, preserving them in the visual editor.
 - Add CI, Marketplace, install-count, and licence badges to the README.
 - Make marker migration tests use native paths and catalog validation accept Windows checkout line endings.
+
+## 0.7.1 — Pre-release
+
+- Initial preview of the terminal workflow and Codicon marker updates listed in 0.8.0.
 
 ## 0.7.0 — Pre-release
 
