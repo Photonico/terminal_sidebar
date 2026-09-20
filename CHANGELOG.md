@@ -16,6 +16,7 @@
 - Simplify parent toolbars and child New/Search/Close controls; add button context menus, document copying, and an About page.
 - Add an offline English/Chinese/Japanese Usage page, an anchored Markdown font menu with synced preferences, and a vertical document outline.
 - Float status badges at the lower left of both sidebars, with matching spacing and clearance for terminal input.
+- Retry temporary Windows file locks when saving shared markers, preserving the previous record on failure.
 
 ## 0.8.0 — Pre-release
 

@@ -72,16 +72,17 @@ test('readers see complete records while another window repeatedly replaces the 
   const tab = { profile_id: 'editor' };
   await shared.memory.set('left', tab, bookmark);
   let finished = false;
+  let write_error: unknown;
   const writing = (async () => {
     for (let index = 0; index < 20; index++) await shared.memory.set('left', tab, index % 2 ? bookmark : flag);
-    finished = true;
-  })();
+  })().catch(error => { write_error = error; }).finally(() => { finished = true; });
   while (!finished) {
     const marker = shared.memory.marker_for('left', tab);
     assert.ok(marker && [bookmark.icon, flag.icon].includes(marker.icon));
     await next_turn();
   }
   await writing;
+  if (write_error) throw write_error;
   assert.deepEqual(shared.errors, []);
 });
 

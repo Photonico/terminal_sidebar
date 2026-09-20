@@ -1426,7 +1426,7 @@ test('marker storage failures preserve the current tab and report a handled erro
 });
 
 function preview_fixture(test_case: { after(callback: () => void): void }) {
-  const directory = mkdtempSync(path.join(os.tmpdir(), 'terminal_sidebar_host_preview_'));
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'terminal_sidebar_host_preview_~'));
   test_case.after(() => rmSync(directory, { recursive: true, force: true }));
   const pdf = path.join(directory, 'thesis.pdf');
   const markdown = path.join(directory, 'notes.md');
@@ -1465,7 +1465,7 @@ test('saving every preview kind copies the source URI and proposes its filename 
     });
     const extension = path.extname(filename);
     const suggested = path.join(files.directory, `${path.basename(filename, extension)}_copy${extension}`);
-    assert.equal(runtime.save_dialogs.at(-1)?.defaultUri?.toString(), fake_uri.file(suggested).toString());
+    assert.equal(runtime.save_dialogs.at(-1)?.defaultUri?.fsPath, suggested);
     assert.equal(view.state().tabs.at(-1)?.name, 'Different display name');
   }
   assert.equal(runtime.copied_files.length, sources.length);

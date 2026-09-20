@@ -6,8 +6,9 @@ import { is_markdown_uri } from './markdown_state';
 import { is_document_uri } from './document_state';
 import { randomUUID as random_uuid, createHash as create_hash } from 'node:crypto';
 import { closeSync as close_sync, openSync as open_sync, readSync as read_sync } from 'node:fs';
-import { link, mkdir, readdir, rename, unlink, writeFile as write_file } from 'node:fs/promises';
+import { link, mkdir, readdir, unlink, writeFile as write_file } from 'node:fs/promises';
 import * as path from 'node:path';
+import { replace_file } from './atomic_file';
 
 /** Startup profile IDs and document URIs are stable across workspaces. */
 interface marker_target { kind?: string; profile_id?: string; uri?: string; marker?: tab_marker }
@@ -142,7 +143,7 @@ export class marker_memory {
         // A late migration can never replace another window's explicit choice/removal.
         try { await link(temporary, filename); }
         catch (error) { if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false; throw error; }
-      } else await rename(temporary, filename);
+      } else await replace_file(temporary, filename);
     } finally {
       await unlink(temporary).catch(() => {});
     }
