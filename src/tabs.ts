@@ -1,9 +1,10 @@
 import { is_identifier, is_tab_name, parse_profiles } from './profiles';
 import { is_local_cwd } from './shell_state';
 import { copy_tab_marker, is_tab_marker, type tab_marker } from './tab_marker';
-import { is_pdf_tab, is_markdown_tab, is_terminal_tab, type terminal_profile, type terminal_tab, type sidebar_tab, type pdf_tab, type markdown_tab } from './types';
+import { is_pdf_tab, is_markdown_tab, is_document_tab, is_terminal_tab, type terminal_profile, type terminal_tab, type sidebar_tab, type pdf_tab, type markdown_tab, type document_tab } from './types';
+import { document_format_for_uri, is_document_position, type document_format, type document_position } from './document_state';
 import { is_markdown_uri, is_markdown_position, type markdown_position } from './markdown_state';
-import { is_pdf_uri, is_pdf_source_uri, is_pdf_position, type pdf_position } from './pdf_state';
+import { is_pdf_uri, is_pdf_source_uri, is_pdf_position, copy_pdf_position, type pdf_position } from './pdf_state';
 
 export interface remembered_tab {
   id: string;
@@ -14,6 +15,7 @@ export interface remembered_tab {
   marker?: tab_marker;
   pdf?: { uri: string; source_uri?: string } & pdf_position;
   markdown?: { uri: string } & markdown_position;
+  document?: { uri: string; format: document_format } & document_position;
 }
 
 /** Workspace-local layout, decoration, and last known cwd. Shells, commands, input, and output never belong here. */
@@ -53,7 +55,7 @@ function read_memory(value: unknown): tab_memory {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
       continue;
     }
-    const { id, name, profile_id, renamed, cwd, marker, pdf, markdown } = entry as Record<string, unknown>;
+    const { id, name, profile_id, renamed, cwd, marker, pdf, markdown, document } = entry as Record<string, unknown>;
     if (!is_identifier(id) || identifiers.has(id) || !is_tab_name(name)) {
       continue;
     }
@@ -61,10 +63,11 @@ function read_memory(value: unknown): tab_memory {
       continue;
     }
     const descriptor: remembered_tab = { id, name: name.trim() };
+    if ([pdf, markdown, document].filter(value => value !== undefined).length > 1) continue;
     if (pdf !== undefined) {
       const uri = pdf && typeof pdf === 'object' && 'uri' in pdf ? pdf.uri : undefined;
       if (profile_id !== undefined || markdown !== undefined || !is_pdf_position(pdf) || !is_pdf_uri(uri)) continue;
-      descriptor.pdf = { uri, page: pdf.page, zoom: pdf.zoom };
+      descriptor.pdf = { uri, ...copy_pdf_position(pdf) };
       const source_uri = 'source_uri' in pdf ? pdf.source_uri : undefined;
       if (is_pdf_source_uri(source_uri, uri)) descriptor.pdf.source_uri = source_uri;
     }
@@ -72,6 +75,13 @@ function read_memory(value: unknown): tab_memory {
       const uri = markdown && typeof markdown === 'object' && 'uri' in markdown ? markdown.uri : undefined;
       if (profile_id !== undefined || !is_markdown_position(markdown) || !is_markdown_uri(uri)) continue;
       descriptor.markdown = { uri, scroll: markdown.scroll };
+    }
+    if (document !== undefined) {
+      const uri = document && typeof document === 'object' && 'uri' in document ? document.uri : undefined;
+      const format = document_format_for_uri(uri);
+      if (profile_id !== undefined || typeof uri !== 'string' || !format || !is_document_position(document)
+        || !('format' in document) || document.format !== format) continue;
+      descriptor.document = { uri, format, scroll: document.scroll };
     }
     identifiers.add(id);
     if (profile_id !== undefined) {
@@ -130,6 +140,12 @@ export class sidebar_tabs {
         const state = descriptor.markdown;
         if (preview_count >= 8 || this.current_tabs.some(tab => is_markdown_tab(tab) && tab.uri === state.uri)) continue;
         this.current_tabs.push({ id: descriptor.id, name: descriptor.name, kind: 'markdown', ...state,
+          ...(descriptor.marker === undefined ? {} : { marker: copy_tab_marker(descriptor.marker) }) });
+        preview_count++;
+      } else if (descriptor.document) {
+        const state = descriptor.document;
+        if (preview_count >= 8 || this.current_tabs.some(tab => is_document_tab(tab) && tab.uri === state.uri)) continue;
+        this.current_tabs.push({ id: descriptor.id, name: descriptor.name, kind: 'document', ...state,
           ...(descriptor.marker === undefined ? {} : { marker: copy_tab_marker(descriptor.marker) }) });
         preview_count++;
       } else if (descriptor.profile_id !== undefined) {
@@ -247,12 +263,39 @@ export class sidebar_tabs {
     return true;
   }
 
+  open_document(uri: string, name: string): document_tab {
+    const format = document_format_for_uri(uri);
+    if (!format || !is_tab_name(name)) throw new Error('Choose an HTML, CSS, JSON or JSONC file.');
+    let tab = this.current_tabs.find((item): item is document_tab => is_document_tab(item) && item.uri === uri);
+    if (!tab) {
+      this.assert_capacity();
+      if (this.current_tabs.filter(item => !is_terminal_tab(item)).length >= 8) {
+        throw new Error('Close a preview tab before opening another (maximum 8 per sidebar).');
+      }
+      tab = { kind: 'document', id: this.create_identifier(), name: name.trim(), uri, format, scroll: 0 };
+      this.current_tabs.push(tab);
+    }
+    this.selected_id = tab.id;
+    this.expanded.add(tab.id);
+    return copy_tab(tab);
+  }
+
+  set_document_position(id: string, position: document_position): boolean {
+    const tab = this.current_tabs.find(tab => tab.id === id);
+    if (!tab || !is_document_tab(tab) || !is_document_position(position) || tab.scroll === position.scroll) return false;
+    tab.scroll = position.scroll;
+    return true;
+  }
+
   set_pdf_position(id: string, position: pdf_position): boolean {
     const tab = this.current_tabs.find(tab => tab.id === id);
     if (!tab || !is_pdf_tab(tab) || !is_pdf_position(position)
-      || (tab.page === position.page && tab.zoom === position.zoom)) return false;
+      || (tab.page === position.page && tab.zoom === position.zoom
+        && tab.mode === position.mode && tab.dark === position.dark)) return false;
     tab.page = position.page;
     tab.zoom = position.zoom;
+    if (position.mode === undefined) delete tab.mode; else tab.mode = position.mode;
+    if (position.dark === undefined) delete tab.dark; else tab.dark = position.dark;
     return true;
   }
 
@@ -359,9 +402,10 @@ export class sidebar_tabs {
         descriptor.renamed = true;
       }
       if (is_terminal_tab(tab) && tab.cwd !== undefined) descriptor.cwd = tab.cwd;
-      if (is_pdf_tab(tab)) descriptor.pdf = { uri: tab.uri, page: tab.page, zoom: tab.zoom,
+      if (is_pdf_tab(tab)) descriptor.pdf = { uri: tab.uri, ...copy_pdf_position(tab),
         ...(tab.source_uri === undefined ? {} : { source_uri: tab.source_uri }) };
       if (is_markdown_tab(tab)) descriptor.markdown = { uri: tab.uri, scroll: tab.scroll };
+      if (is_document_tab(tab)) descriptor.document = { uri: tab.uri, format: tab.format, scroll: tab.scroll };
       if (tab.marker !== undefined) descriptor.marker = copy_tab_marker(tab.marker);
       descriptors.push(descriptor);
     }

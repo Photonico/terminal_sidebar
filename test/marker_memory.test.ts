@@ -107,7 +107,7 @@ test('old workspace and Memento preferences migrate once, while file tombstones 
   assert.deepEqual(legacy, before);
 });
 
-test('temporary and document markers remain local and invalid identities cannot escape storage', async () => {
+test('temporary and unidentified document markers remain local and invalid identities cannot escape storage', async () => {
   const shared = store();
   for (const tab of [
     { id: 'tab_0', name: 'Term 0', marker: bookmark },
@@ -159,4 +159,19 @@ test('storage does not evict removal records when its preference limit is reache
   await shared.memory.set('left', { profile_id: 'profile_0' }, undefined);
   assert.equal(shared.read('profile_0').marker, null);
   assert.equal(readdirSync(shared.directory).length, 1024);
+});
+
+
+test('document markers follow the same URI across sides and workspaces, with explicit removals', async () => {
+  const shared = store();
+  const tab = { kind: 'pdf', uri: 'file:///papers/thesis.pdf' };
+  await shared.memory.set('left', tab, bookmark);
+  const other = new marker_memory(shared.directory, shared.storage);
+  assert.deepEqual(other.marker_for('right', tab), bookmark);
+  assert.equal(other.marker_for('right', { ...tab, uri: 'file:///other/thesis.pdf' }), undefined);
+  await other.set('right', tab, undefined);
+  await shared.memory.migrate('left', [{ ...tab, marker: bookmark }]);
+  assert.equal(shared.memory.marker_for('left', { ...tab, marker: bookmark }), undefined);
+  assert.match(readdirSync(shared.directory)[0], /^document_[a-f0-9]{64}\.json$/);
+  assert.doesNotMatch(readFileSync(path.join(shared.directory, readdirSync(shared.directory)[0]), 'utf8'), /papers|thesis/);
 });

@@ -64,6 +64,7 @@ export class terminal_menu {
       button.type = 'button';
       button.role = 'menuitem';
       button.textContent = item.label;
+      button.title = item.label;
       button.disabled = item.disabled ?? false;
       button.addEventListener('click', () => {
         this.close(false);

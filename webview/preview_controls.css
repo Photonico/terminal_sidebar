@@ -1,0 +1,18 @@
+.preview-toolbar { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; padding: 4px 6px; border-bottom: 1px solid var(--view-border); background: var(--vscode-sideBar-background, var(--view-background)); }
+.preview-toolbar-left, .preview-toolbar-right { display: flex; flex: 0 1 auto; flex-wrap: wrap; align-items: center; gap: 2px; min-width: 0; max-width: 100%; }
+.preview-toolbar-right { margin-left: auto; gap: 4px; }
+.preview-toolbar .preview-control { height: 24px; border: 1px solid var(--vscode-input-border, transparent); border-radius: var(--tab-radius, 4px); font-size: 11px; }
+.preview-toolbar .preview-control:focus-within { border-color: var(--vscode-focusBorder); box-shadow: inset 0 0 0 1px var(--vscode-focusBorder); outline: none; }
+.preview-toolbar .preview-zoom-control { position: relative; display: inline-flex; flex: 0 0 auto; width: 90px; overflow: hidden; border-color: var(--vscode-dropdown-border, transparent); color: var(--vscode-dropdown-foreground, var(--view-foreground)); background: var(--vscode-dropdown-background, var(--view-background)); }
+.preview-zoom-control select, .preview-zoom-control select:focus, .preview-zoom-control select:focus-visible, .preview-zoom-control select:active { appearance: none; width: 100%; min-width: 0; max-width: none; height: 100%; margin: 0; padding: 2px 22px 2px 8px; border: 0; border-radius: inherit; outline: none; background: transparent; color: inherit; font-size: 11px; cursor: pointer; }
+.preview-zoom-control > .codicon { position: absolute; right: 5px; top: 50%; transform: translateY(-50%); pointer-events: none; }
+.preview-zoom-control option { color: var(--vscode-dropdown-foreground, var(--view-foreground)); background: var(--vscode-dropdown-background, var(--view-background)); }
+
+/* All document readers use the same hit area, circular surface and icon box. */
+.preview-toolbar .icon-button { width: 24px; height: 24px; border-width: var(--action_inset, 2px); border-radius: 50%; padding: 2px; background-clip: padding-box; color: var(--vscode-icon-foreground, var(--view-foreground)); }
+.preview-toolbar .icon-button > .codicon { display: block; flex: 0 0 16px; width: 16px; height: 16px; }
+.preview-toolbar .icon-button:hover:not(:disabled) { background-color: var(--vscode-toolbar-hoverBackground, transparent); }
+.preview-toolbar .icon-button:active:not(:disabled), .preview-toolbar .icon-button[aria-pressed="true"], .preview-toolbar .icon-button[aria-expanded="true"] { background-color: var(--vscode-toolbar-activeBackground, var(--vscode-toolbar-hoverBackground, transparent)); }
+.preview-toolbar .icon-button:focus-visible { border-radius: 50%; outline: 1px solid var(--vscode-focusBorder); outline-offset: -2px; }
+
+.preview-toolbar .preview-zoom-symbol { display: block; flex: 0 0 16px; width: 16px; height: 16px; stroke-width: 1; }

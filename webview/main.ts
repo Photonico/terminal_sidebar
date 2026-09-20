@@ -1,3 +1,6 @@
+import { global_search } from './global_search';
+import { snapshot_terminal, reveal_terminal } from './terminal_text';
+import type { search_location } from '../src/global_search_protocol';
 import { Terminal, type ITheme, type IDisposable } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
@@ -6,6 +9,7 @@ import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { configuration_draft } from '../src/draft';
 import { tab_reordering } from './reordering';
 import { terminal_menu } from './menu';
+import { tab_actions } from './tab_actions';
 import { tab_rename } from './rename';
 import { terminal_search, is_find_shortcut } from './search';
 import { create_tab_marker, tab_marker_picker } from './tab_marker';
@@ -14,9 +18,10 @@ import { install_terminal_links } from './terminal_links';
 import { terminal_text, terminal_html, terminal_markdown } from './export';
 import { terminal_pdf } from './pdf_export';
 import { pdf_view } from './pdf_view';
+import { document_view } from './document_view';
 import { markdown_view } from './markdown_view';
 import { startup_handshake } from './startup_handshake';
-import { is_terminal_tab, is_pdf_tab, is_markdown_tab, type sidebar_tab } from '../src/types';
+import { is_terminal_tab, is_pdf_tab, is_markdown_tab, is_document_tab, type sidebar_tab } from '../src/types';
 import { is_export_payload } from '../src/export_format';
 import type {
   appearance as terminal_appearance,
@@ -40,13 +45,8 @@ declare function acquireVsCodeApi(): { postMessage(message: client_message): voi
 const vscode = acquireVsCodeApi();
 const is_mac = /Mac|iPhone|iPad/.test(navigator.platform);
 const maximum_profiles = 32;
-/*! Codicons edit icon, unmodified path, Copyright Microsoft Corporation.
- * Source: https://github.com/microsoft/vscode-codicons/blob/main/src/icons/edit.svg
- * Licensed under CC BY 4.0: https://creativecommons.org/licenses/by/4.0/
- */
 const icons = {
   add: '<path d="M8 3v10M3 8h10"/>',
-  edit: '<path fill="currentColor" stroke="none" d="M14.236 1.76386C13.2123 0.740172 11.5525 0.740171 10.5289 1.76386L2.65722 9.63549C2.28304 10.0097 2.01623 10.4775 1.88467 10.99L1.01571 14.3755C0.971767 14.5467 1.02148 14.7284 1.14646 14.8534C1.27144 14.9783 1.45312 15.028 1.62432 14.9841L5.00978 14.1151C5.52234 13.9836 5.99015 13.7168 6.36433 13.3426L14.236 5.47097C15.2596 4.44728 15.2596 2.78755 14.236 1.76386ZM11.236 2.47097C11.8691 1.8378 12.8957 1.8378 13.5288 2.47097C14.162 3.10413 14.162 4.1307 13.5288 4.76386L12.75 5.54269L10.4571 3.24979L11.236 2.47097ZM9.75002 3.9569L12.0429 6.24979L5.65722 12.6355C5.40969 12.883 5.10023 13.0595 4.76117 13.1465L2.19447 13.8053L2.85327 11.2386C2.9403 10.8996 3.1168 10.5901 3.36433 10.3426L9.75002 3.9569Z"/>',
   restart: '<path d="M3.1 5.1a5.5 5.5 0 1 1-.6 5.1M3 1.8v3.8h3.8"/>',
   close: '<path d="m4 4 8 8M4 12l8-8"/>',
   save: '<path d="M3 2h8l3 3v9H2V2Zm2 0v4h5V2M5 14V9h6v5"/>',
@@ -73,12 +73,7 @@ app.innerHTML = `
   <header id="terminal-header">
     <div id="terminal-tabs" role="tablist" aria-label="Open tabs"></div>
     <span id="left-heading">Terminals</span>
-    <div id="tab-actions" role="toolbar" aria-label="Tab actions">
-      <button id="add-tab" class="icon-button" type="button" aria-label="New terminal" title="New terminal">${icon('add')}</button>
-      <button id="open_preview" class="icon-button" type="button" aria-label="Open PDF, Markdown or LaTeX preview" title="Open preview…"><span class="codicon codicon-open-preview" aria-hidden="true"></span></button>
-      <button id="rename_tab" class="icon-button" type="button" aria-label="Rename terminal" title="Rename terminal" disabled>${icon('edit')}</button>
-      <button id="close-tab" class="icon-button" type="button" aria-label="Close active terminal" title="Close active terminal">${icon('close')}</button>
-    </div>
+    <div id="tab-actions"></div>
     <div id="configuration-toolbar" role="toolbar" aria-label="Configuration actions" hidden>
       <button id="save-action" class="icon-button" type="button" aria-label="Save startup configuration" title="Save startup configuration">${icon('save')}</button>
       <button id="undo-action" class="icon-button" type="button" aria-label="Undo configuration change" title="Undo configuration change">${icon('undo')}</button>
@@ -86,14 +81,14 @@ app.innerHTML = `
       <button id="close-action" class="icon-button" type="button" aria-label="Cancel configuration changes" title="Cancel configuration changes">${icon('close')}</button>
     </div>
   </header>
-  <div id="error-banner" role="alert" aria-atomic="true" hidden><span id="error-icon" aria-hidden="true">${icon('warning')}</span><span id="error-message"></span><button id="dismiss-error" type="button" aria-label="Dismiss error">×</button></div>
+  <div id="error-banner" role="alert" aria-atomic="true" hidden><span id="error-icon" aria-hidden="true">${icon('warning')}</span><span id="error-message"></span><button id="dismiss-error" title="Dismiss error" type="button" aria-label="Dismiss error">×</button></div>
   <main id="terminal-content">
-    <div id="trust-panel" class="empty-panel" hidden><p>Trust this workspace to run terminals.</p><button id="trust-button" class="primary" type="button">Manage Workspace Trust</button></div>
+    <div id="trust-panel" class="empty-panel" hidden><p>Trust this workspace to run terminals.</p><button id="trust-button" title="Manage workspace trust" class="primary" type="button">Manage Workspace Trust</button></div>
     <div id="empty-panel" class="empty-panel" hidden>
       <p>No open terminals. Your startup configuration is unchanged.</p>
-      <button id="add-first-tab" class="primary" type="button">New terminal</button>
+      <button id="add-first-tab" title="New terminal · Right-click for terminal or document preview" class="primary" type="button">New terminal</button>
       <button id="open-other-sidebar" class="secondary" type="button">Open primary side bar terminals</button>
-      <button id="configure-empty" class="secondary" type="button">Configure startup terminals</button>
+      <button id="configure-empty" title="Configure startup terminals" class="secondary" type="button">Configure startup terminals</button>
     </div>
     <div id="terminal-host"></div>
   </main>
@@ -103,7 +98,7 @@ app.innerHTML = `
     <p class="configuration-intro">These profiles open at startup. Closing or adding a terminal during use does not change them. Blank Shell uses the default; keep secrets out of synced commands.</p>
     <form id="profile-form" novalidate>
       <div id="profile-groups"></div>
-      <div class="configuration-actions"><button id="save-profiles" class="primary" type="submit">Save</button><button id="cancel-configuration" class="secondary" type="button">Cancel</button><button id="return_to_terminals" class="secondary" type="button">Return to terminals</button></div>
+      <div class="configuration-actions"><button id="save-profiles" title="Save startup configuration" class="primary" type="submit">Save</button><button id="cancel-configuration" title="Discard configuration changes" class="secondary" type="button">Cancel</button><button id="return_to_terminals" title="Return to terminals and keep the configuration draft" class="secondary" type="button">Return to terminals</button></div>
     </form>
   </section>`;
 
@@ -129,6 +124,7 @@ interface sidebar_pane {
   section?: HTMLElement;
   section_button?: HTMLButtonElement;
   section_label?: HTMLSpanElement;
+  child_actions?: tab_actions;
 }
 
 interface terminal_view extends sidebar_pane {
@@ -146,6 +142,7 @@ interface terminal_view extends sidebar_pane {
 const terminal_views = new Map<string, terminal_view>();
 const pdf_views = new Map<string, pdf_view>();
 const markdown_views = new Map<string, markdown_view>();
+const document_views = new Map<string, document_view>();
 const sessions = new Map<string, session_info>();
 const activated_views = new Set<string>();
 const unread_tabs = new Set<string>();
@@ -176,6 +173,8 @@ let appearance: terminal_appearance = {
 };
 
 const action_menu = new terminal_menu();
+const header_actions = create_tab_actions(() => active_id);
+element('tab-actions').append(header_actions.root);
 let menu_tab_id: string | undefined;
 const rename_editor = new tab_rename({
   anchor: id => document.getElementById(`${side === 'left' ? 'section' : 'tab'}-${id}`) ?? undefined,
@@ -190,16 +189,22 @@ const marker_picker = new tab_marker_picker({
     : 'var(--vscode-tab-inactiveForeground, var(--view-foreground))',
   finished: id => document.getElementById(`${side === 'left' ? 'section' : 'tab'}-${id}`)?.focus(),
 });
+let global_find_mode = false;
+const all_tabs_search = new global_search(send);
+terminal_content.insertBefore(all_tabs_search.root, terminal_host);
+const pending_search_reveals = new Map<string, search_location>();
 const find_widget = new terminal_search({
   parent: terminal_content,
   before: terminal_host,
   target: () => {
+    if (global_find_mode && trusted && !configuring) return { id: 'all_open_tabs', search: all_tabs_search };
     const view = active_id && trusted && !configuring
-      ? terminal_views.get(active_id) ?? pdf_views.get(active_id) ?? markdown_views.get(active_id) : undefined;
+      ? terminal_views.get(active_id) ?? pdf_views.get(active_id) ?? markdown_views.get(active_id) ?? document_views.get(active_id) : undefined;
     return view && active_id ? { id: active_id, search: view.search } : undefined;
   },
-  focus: focus_terminal,
+  focus: id => { const target = id === 'all_open_tabs' ? active_id : id; if (target) focus_terminal(target); },
   layout: schedule_fit,
+  closed: () => { all_tabs_search.end(); global_find_mode = false; },
 });
 
 const reorder_controllers = (['left', 'right'] as const).map(sidebar => new tab_reordering({
@@ -245,6 +250,9 @@ function update_appearance(): void {
   app.style.setProperty('--view-background', theme.background ?? '#1e1e1e');
   app.style.setProperty('--terminal-foreground', theme.foreground ?? '#cccccc');
   app.style.setProperty('--terminal_font_family', appearance.font_family);
+  if (appearance.markdown_font_family) app.style.setProperty('--markdown_font_family', appearance.markdown_font_family);
+  else app.style.removeProperty('--markdown_font_family');
+  for (const view of markdown_views.values()) view.set_font(appearance.markdown_font_choice ?? 'default');
   app.dataset.verticalScrollbar = appearance.editor_scrollbar_vertical_size === 0 ? 'hidden' : appearance.editor_scrollbar_vertical;
   app.dataset.horizontalScrollbar = appearance.editor_scrollbar_horizontal_size === 0 ? 'hidden' : appearance.editor_scrollbar_horizontal;
   app.style.setProperty('--scrollbar-vertical-size', `${app.dataset.verticalScrollbar === 'hidden' ? 0 : appearance.editor_scrollbar_vertical_size}px`);
@@ -383,13 +391,17 @@ function ensure_terminal(tab: terminal_tab): terminal_view {
 
 function ensure_pane(tab: sidebar_tab): sidebar_pane {
   if (is_terminal_tab(tab)) return ensure_terminal(tab);
-  let view: pdf_view | markdown_view | undefined = is_pdf_tab(tab) ? pdf_views.get(tab.id) : markdown_views.get(tab.id);
+  let view: pdf_view | markdown_view | document_view | undefined = pdf_views.get(tab.id) ?? markdown_views.get(tab.id) ?? document_views.get(tab.id);
   if (!view) {
     if (is_pdf_tab(tab)) {
       view = new pdf_view(tab, send);
       pdf_views.set(tab.id, view);
+    } else if (is_document_tab(tab)) {
+      view = new document_view(tab, send, () => run_action('find'));
+      document_views.set(tab.id, view);
     } else {
       view = new markdown_view(tab, send);
+      view.set_font(appearance.markdown_font_choice ?? 'default');
       markdown_views.set(tab.id, view);
     }
     view.pane.addEventListener('focusin', () => {
@@ -404,7 +416,7 @@ function ensure_pane(tab: sidebar_tab): sidebar_pane {
 
 function set_pane_visible(id: string): void {
   const visible = is_visible_tab(id);
-  const preview = pdf_views.get(id) ?? markdown_views.get(id);
+  const preview = pdf_views.get(id) ?? markdown_views.get(id) ?? document_views.get(id);
   if (preview) preview.set_visible(visible);
   else {
     const view = terminal_views.get(id);
@@ -442,7 +454,7 @@ function schedule_fit(): void {
 function focus_terminal(id: string): void {
   requestAnimationFrame(() => {
     if (is_visible_tab(id)) {
-      const preview = pdf_views.get(id) ?? markdown_views.get(id);
+      const preview = pdf_views.get(id) ?? markdown_views.get(id) ?? document_views.get(id);
       if (preview) preview.focus();
       else terminal_views.get(id)?.terminal.focus();
     } else if (!configuring) {
@@ -488,6 +500,22 @@ function add_tab(): void {
   send({ type: 'add_tab' });
 }
 
+function create_tab_actions(target: () => string | undefined): tab_actions {
+  return new tab_actions(action_menu, {
+    create: add_tab,
+    preview: () => { if (trusted && !saving) send({ type: 'open_preview' }); },
+    find: () => {
+      const id = target();
+      if (!id) return;
+      if (side === 'left') set_expanded(id, true); else select_tab(id);
+      run_action('find');
+    },
+    find_all: () => { void open_global_find(); },
+    close: () => close_tab(target()),
+    close_all: () => { if (!saving) send({ type: 'close_all_tabs' }); },
+  });
+}
+
 function request_rename(id: string | undefined): void {
   if (!id || configuring || saving || !open_tabs.some(tab => tab.id === id)) {
     return;
@@ -500,7 +528,7 @@ function request_rename(id: string | undefined): void {
 }
 
 function restart_tab(id: string): void {
-  const preview = pdf_views.get(id) ?? markdown_views.get(id);
+  const preview = pdf_views.get(id) ?? markdown_views.get(id) ?? document_views.get(id);
   if (trusted && preview) { preview.refresh(); return; }
   const view = terminal_views.get(id);
   if (trusted && view) {
@@ -523,9 +551,13 @@ function show_tab_menu(id: string, x: number, y: number): void {
       const tab = open_tabs.find(tab => tab.id === id);
       if (tab) marker_picker.open(id, tab.name, tab.marker);
     } },
+    { label: 'Find in this tab', action: () => { select_tab(id); run_action('find'); } },
+    { label: 'Find in all open tabs', action: () => { void open_global_find(); } },
     { label: is_terminal ? 'Restart' : 'Reload preview', disabled: !trusted, action: () => restart_tab(id) },
+    { label: is_terminal ? 'Export…' : 'Save a copy…', disabled: !trusted, action: () => {
+      if (is_terminal) export_output(id); else send({ type: 'save_document', id });
+    } },
     { label: 'Close', action: () => close_tab(id) },
-    ...(is_terminal ? [{ label: 'Export…', disabled: !trusted, action: () => export_output(id) }] : []),
   ], x, y, () => document.getElementById(`${side === 'left' ? 'section' : 'tab'}-${id}`)?.focus());
 }
 
@@ -720,18 +752,8 @@ function ensure_section(tab: sidebar_tab, view: sidebar_pane): void {
       element(`section-${visible_order[next_index]!.id}`).focus();
     });
     attach_middle_close(button, tab.id);
-    const rename_button = document.createElement('button');
-    rename_button.type = 'button';
-    rename_button.className = 'icon-button section_rename';
-    rename_button.title = 'Rename tab';
-    rename_button.innerHTML = icon('edit');
-    rename_button.addEventListener('click', () => request_rename(tab.id));
-    const close_button = document.createElement('button');
-    close_button.type = 'button';
-    close_button.className = 'icon-button section-close';
-    close_button.innerHTML = icon('close');
-    close_button.addEventListener('click', () => close_tab(tab.id));
-    heading.append(button, rename_button, close_button);
+    view.child_actions = create_tab_actions(() => tab.id);
+    heading.append(button, view.child_actions.root);
     section.append(heading, view.pane);
     view.section = section;
     view.section_button = button;
@@ -747,12 +769,7 @@ function ensure_section(tab: sidebar_tab, view: sidebar_pane): void {
   view.section!.dataset.active = String(active_id === tab.id);
   view.section!.dataset.expanded = String(expanded_ids.has(tab.id));
   view.section!.dataset.status = sessions.get(tab.id)?.status ?? 'idle';
-  const rename_button = view.section!.querySelector<HTMLButtonElement>('.section_rename')!;
-  rename_button.setAttribute('aria-label', `Rename tab: ${tab.name}`);
-  rename_button.disabled = saving;
-  const close_button = view.section!.querySelector<HTMLButtonElement>('.section-close')!;
-  close_button.title = `Close ${tab.name}`;
-  close_button.setAttribute('aria-label', close_button.title);
+  view.child_actions?.update(trusted, true, saving);
 }
 
 function render_terminals(): void {
@@ -776,7 +793,7 @@ function render_terminals(): void {
       tab_completions.delete(id);
     }
   }
-  for (const views of [pdf_views, markdown_views]) {
+  for (const views of [pdf_views, markdown_views, document_views]) {
     for (const [id, view] of views) {
       if (!open_tabs.some(tab => tab.id === id)) {
         find_widget.release(id);
@@ -833,10 +850,7 @@ function render_terminals(): void {
 }
 
 function update_actions(): void {
-  element<HTMLButtonElement>('add-tab').disabled = !trusted || saving;
-  element<HTMLButtonElement>('open_preview').disabled = !trusted || saving;
-  element<HTMLButtonElement>('rename_tab').disabled = !active_id || saving;
-  element<HTMLButtonElement>('close-tab').disabled = !active_id || saving;
+  header_actions.update(trusted, !!active_id, saving);
   element<HTMLButtonElement>('save-action').disabled = saving;
   element<HTMLButtonElement>('close-action').disabled = saving;
   element<HTMLButtonElement>('undo-action').disabled = !draft.can_undo || saving;
@@ -878,7 +892,7 @@ function update_status(): void {
     status.textContent = 'No open terminals';
   }
   else if (selected && !is_terminal_tab(selected)) {
-    status.textContent = `${is_pdf_tab(selected) ? 'PDF' : 'Markdown'} preview`;
+    status.textContent = `${is_pdf_tab(selected) ? 'PDF' : is_document_tab(selected) ? selected.format.toUpperCase() : 'Markdown'} preview`;
   }
   else if (session?.message) {
     status.textContent = session.message;
@@ -910,6 +924,7 @@ function render_content(): void {
   element('trust-panel').hidden = trusted || !received_state;
   element('empty-panel').hidden = !trusted || open_tabs.length > 0;
   element('open-other-sidebar').textContent = `Open ${side_label(side === 'left' ? 'right' : 'left').toLowerCase()} terminals`;
+  element('open-other-sidebar').title = element('open-other-sidebar').textContent ?? '';
   terminal_host.hidden = !trusted || open_tabs.length === 0;
   render_terminals();
   update_actions();
@@ -1202,6 +1217,7 @@ function render_draft(): void {
       // Presentation state is separate from the draft and its undo history.
       configuration_group_expanded[profile_side] = expanded;
       toggle.setAttribute('aria-expanded', String(expanded));
+      toggle.title = `${expanded ? 'Collapse' : 'Expand'} ${side_label(profile_side)} startup profiles`;
       content.hidden = !expanded;
     }
 
@@ -1227,6 +1243,7 @@ function render_draft(): void {
     add_button.className = 'secondary add-profile';
     add_button.type = 'button';
     add_button.textContent = `+ Add ${profile_side} startup profile`;
+    add_button.title = `Add startup profile to the ${side_label(profile_side)}`;
     add_button.disabled = saving || draft.value[profile_side].length >= maximum_profiles;
     add_button.addEventListener('click', () => {
       if (saving || draft.value[profile_side].length >= maximum_profiles) {
@@ -1318,11 +1335,33 @@ async function save_output(id: string, format: export_format): Promise<void> {
   }
 }
 
+function reveal_document_match(id: string): void {
+  const location = pending_search_reveals.get(id);
+  const view = pdf_views.get(id) ?? markdown_views.get(id) ?? document_views.get(id);
+  if (location && view?.reveal_match(location)) pending_search_reveals.delete(id);
+}
+
+async function open_global_find(): Promise<void> {
+  if (!trusted || configuring) return;
+  find_widget.close(false);
+  global_find_mode = true;
+  try {
+    await all_tabs_search.prepare();
+    find_widget.set_scope('Find in all open tabs');
+    find_widget.open();
+  } catch {
+    show_error('Global search could not start. Try again.');
+  }
+}
+
 function run_action(action: 'save' | 'undo' | 'redo' | 'close' | 'add' | 'find'): void {
   if (saving) {
     return;
   }
   if (action === 'find') {
+    if (global_find_mode) find_widget.close(false);
+    global_find_mode = false;
+    find_widget.set_scope('Find in active tab');
     marker_picker.close(false);
     if (!configuring && trusted) {
       if (active_id && side === 'left' && !expanded_ids.has(active_id)) set_expanded(active_id, true);
@@ -1401,7 +1440,7 @@ document.addEventListener('keydown', event => {
         select_tab(id);
       }
     }
-    find_widget.open();
+    run_action('find');
   } else if (event.key === 'Escape' && !event.isComposing && find_widget.visible) {
     event.preventDefault();
     event.stopPropagation();
@@ -1422,11 +1461,8 @@ tab_strip.addEventListener('wheel', event => {
     tab_strip.scrollLeft += event.deltaY;
   }
 }, { passive: false });
-element('add-tab').addEventListener('click', add_tab);
-element('open_preview').addEventListener('click', () => send({ type: 'open_preview' }));
-element('rename_tab').addEventListener('click', () => request_rename(active_id));
-element('close-tab').addEventListener('click', () => close_tab(active_id));
 element('add-first-tab').addEventListener('click', add_tab);
+element('add-first-tab').addEventListener('contextmenu', event => header_actions.new_menu(event, element('add-first-tab')));
 element('open-other-sidebar').addEventListener('click', () => send({ type: 'open_other_sidebar' }));
 element('configure-empty').addEventListener('click', () => send({ type: 'configure' }));
 element('trust-button').addEventListener('click', () => send({ type: 'trust' }));
@@ -1465,6 +1501,26 @@ window.addEventListener('message', (event: MessageEvent<host_message>) => {
     return;
   }
   switch (message.type) {
+    case 'search_catalog': case 'search_source':
+      all_tabs_search.receive(message);
+      break;
+    case 'search_snapshot': {
+      const view = terminal_views.get(message.id);
+      if (view) send({ type: 'search_snapshot', request: message.request, snapshot: snapshot_terminal(view.terminal) });
+      break;
+    }
+    case 'search_reveal': {
+      if (configuring) return_to_terminals();
+      select_tab(message.id, true);
+      if (side === 'left') set_expanded(message.id, true);
+      const terminal = terminal_views.get(message.id);
+      if (terminal) reveal_terminal(terminal.terminal, message.location);
+      else {
+        pending_search_reveals.set(message.id, message.location);
+        reveal_document_match(message.id);
+      }
+      break;
+    }
     case 'state': {
       handshake.acknowledge();
       const previous_active_id = active_id;
@@ -1517,13 +1573,20 @@ window.addEventListener('message', (event: MessageEvent<host_message>) => {
       break;
     }
     case 'pdf_source':
-      void pdf_views.get(message.id)?.load(message.url);
+      void pdf_views.get(message.id)?.load(message.url).then(() => reveal_document_match(message.id));
       break;
     case 'pdf_error':
       pdf_views.get(message.id)?.error(message.message);
       break;
+    case 'document_source':
+      void document_views.get(message.id)?.load(message.source).then(() => reveal_document_match(message.id));
+      break;
+    case 'document_error':
+      document_views.get(message.id)?.error(message.message);
+      break;
     case 'markdown_source':
       markdown_views.get(message.id)?.load(message.source);
+      reveal_document_match(message.id);
       break;
     case 'markdown_error':
       markdown_views.get(message.id)?.error(message.message);
@@ -1604,8 +1667,9 @@ window.addEventListener('beforeunload', () => {
   rename_editor.dispose();
   marker_picker.dispose();
   find_widget.dispose();
+  all_tabs_search.dispose();
   action_menu.dispose();
-  for (const view of [...pdf_views.values(), ...markdown_views.values()]) view.dispose();
+  for (const view of [...pdf_views.values(), ...markdown_views.values(), ...document_views.values()]) view.dispose();
   for (const view of terminal_views.values()) {
     view.links.dispose();
     view.terminal.dispose();

@@ -1,0 +1,14 @@
+.pdf-outline { min-width: 0; min-height: 0; overflow: auto; color: var(--vscode-sideBar-foreground, var(--view-foreground)); background: var(--vscode-sideBar-background); font-size: 12px; }
+.pdf-outline[hidden], .pdf-outline [hidden] { display: none; }
+.pdf-outline-heading { padding: 8px; font-weight: 600; }
+.pdf-outline-status { margin: 0; padding: 6px 8px; color: var(--vscode-descriptionForeground); overflow-wrap: anywhere; }
+.pdf-outline-list { list-style: none; margin: 0; padding: 0 4px; }
+.pdf-outline-list .pdf-outline-list { padding-right: 0; padding-left: 14px; }
+.pdf-outline-row { display: flex; align-items: flex-start; min-width: 0; border-radius: 2px; }
+.pdf-outline-toggle, .pdf-outline-link, .pdf-outline-retry { border: 0; border-radius: 2px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.pdf-outline-toggle, .pdf-outline-spacer { flex: 0 0 20px; width: 20px; min-height: 24px; }
+.pdf-outline-toggle { padding: 2px; text-align: center; }
+.pdf-outline-link, .pdf-outline-label { display: block; min-width: 0; flex: 1; padding: 4px; text-align: left; overflow-wrap: anywhere; white-space: normal; line-height: 16px; }
+.pdf-outline-retry { margin: 4px 8px; padding: 4px 8px; }
+.pdf-outline-toggle:hover, .pdf-outline-link:hover, .pdf-outline-retry:hover { background: var(--vscode-list-hoverBackground); color: var(--vscode-list-hoverForeground, var(--view-foreground)); }
+.pdf-outline button:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }

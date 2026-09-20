@@ -98,14 +98,17 @@ export class tab_marker_picker {
     const apply = document.createElement('button');
     apply.type = 'submit';
     apply.textContent = 'Apply';
+    apply.title = 'Apply tab marker';
     apply.className = 'tab_marker_apply';
     const cancel = document.createElement('button');
     cancel.type = 'button';
     cancel.textContent = 'Cancel';
+    cancel.title = 'Cancel tab marker changes';
     cancel.addEventListener('click', () => this.close());
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.textContent = 'Remove';
+    remove.title = 'Remove tab marker';
     remove.addEventListener('click', () => this.commit(undefined));
     footer.append(apply, cancel, remove);
     this.root.append(heading, this.icon_picker.root, color_group, this.preview, footer);

@@ -6,17 +6,25 @@
 
 The Primary Side Bar contains collapsible terminal sections. Several sections can stay open and share the available height. The Secondary Side Bar uses a tab strip. Each terminal has its own process; hiding a view or folding a section keeps that process alive. The ordinary VS Code terminal panel remains available.
 
-Use **+** for a new shell, the pencil to rename, and **×** to close. In the Secondary Side Bar, double-click blank tab-strip space to create a terminal, or middle-click a tab to close it. Drag headings to reorder them. Keyboard alternatives are **Alt+Shift+Up/Down** in the Primary Side Bar and **Alt+Shift+Left/Right** in the Secondary Side Bar.
+Child-tab controls are **New**, **Search**, and **Close**. Right-click **+** for a terminal or document preview, or **×** to close every open tab in that side bar. In the Secondary Side Bar, double-click blank tab-strip space to create a terminal, or middle-click a tab to close it. Drag headings to reorder them. Keyboard alternatives are **Alt+Shift+Up/Down** in the Primary Side Bar and **Alt+Shift+Left/Right** in the Secondary Side Bar.
 
-Right-click a terminal tab for rename, marker, restart, close, and export actions. Document tabs offer actions appropriate to a preview. The arrow in either title toolbar opens the other side, even when that view is hidden.
+Right-click a terminal tab for rename, marker, restart, close, and export actions. Document tabs offer **Save a copy…** for the original file. The arrow in either title toolbar opens the other side, even when that view is hidden. **… → Usage** opens this guide's workflows in English, Chinese, or Japanese; **About** shows version, author, repository, and license information.
 
-## Markdown, PDF, and LaTeX previews
+## Document previews
 
-Use **Terminal Sidebar: Open Preview…**, its side-specific toolbar command, or the document's context menu. Documents share tab ordering, markers, and the Primary Side Bar's folding layout with terminals. Opening a preview never adds a shell startup profile.
+Use **Terminal Sidebar: Preview in Sidebar Terminal**, the preview icon in the editor title toolbar, or the document's context menu. Documents share tab ordering, markers, and the Primary Side Bar's folding layout with terminals. Opening a preview never adds a shell startup profile.
 
-Markdown previews show headings, lists, tables, fenced code, links, and local images. Saving from Vim, Neovim, VS Code, or another editor refreshes the preview, including editors that replace the file while saving. Markdown must be UTF-8 and smaller than 4 MiB. Raw HTML appears as text; scripts and command links do not run. Images must be inside the document's directory or its subdirectories. Remote images are not loaded. This is a read-only preview, not a Markdown editor.
+Markdown supports ordinary CommonMark/GFM syntax, including tables, task lists, strikethrough, fenced code, links, and local images, plus footnotes and KaTeX math (`$…$`, `$$…$$`, `\(…\)`, `\[…\]`, and fenced `math`). Raw HTML appears as text. Unsupported or oversized formulas remain readable as source; this is not a full LaTeX compiler or a renderer for every Markdown extension.
 
-PDF previews have page navigation, zoom, selectable text, and automatic refresh after a rebuild. An incomplete or temporarily missing output keeps its last valid preview. With a mouse wheel or trackpad, continue scrolling down at the bottom of a page to open the next page, or up at the top to return to the previous one. Pages render as needed to keep long documents responsive. **h/l** also changes PDF pages; **j/k** scrolls. Markdown supports **j/k** for scrolling and **g/G** for the beginning/end. Page, zoom, and Markdown scroll positions are saved with the workspace.
+Use **Change preview font** for a dropdown beside its button. **Default** follows VS Code; **Editor font** follows the editor's font setting. **Custom font…** accepts a font name or fallback list directly in the dropdown. The User setting `terminalSidebar.markdownFontFamily` follows Settings Sync when enabled. Install any custom font on each device. **Open source file**, beside refresh, returns to the document in the main editor.
+
+HTML (`.html` or `.htm`) renders as a static page with local images and stylesheets. Scripts, forms, embedded frames, and remote resources are inactive. CSS, JSON, and JSONC display formatted source; JSONC comments are retained. Invalid or expensive formatting falls back to the original text. Source files are never rewritten.
+
+Text previews require UTF-8 files up to 4 MiB. Saving from Vim, Neovim, or another editor refreshes them, including replace-on-save. Resources must be in the document's directory or its subdirectories. Markdown filename aliases `.markdown`, `.mdown`, `.mkd`, `.mkdn`, and `.mdwn` are also supported.
+
+PDF controls offer contents, page selection, zoom, and refresh. The gear selects continuous scrolling (default), single page, two pages, or dark reading. **Cmd/Ctrl + mouse wheel** zooms; **h/l** turns pages and **j/k** scrolls. Only nearby pages render. Page, zoom, and browsing preferences are remembered per workspace. Dark reading inverts page colours, including images; turn it off to inspect original colours.
+
+Rebuilding a PDF refreshes it automatically; an incomplete or missing output keeps the last valid preview. Text previews share scroll and zoom controls, including **Cmd/Ctrl + mouse wheel** and **Cmd/Ctrl +/-/0**. Markdown and HTML also offer a vertical heading outline beside the document. Use **j/k** to scroll and **g/G** for the beginning/end; reading positions are remembered.
 
 Opening `.tex` locates an existing compiled PDF. Root comments such as `% !TEX root = ../main.tex`, LaTeX Workshop output-directory settings, and common output folders help find it. If several PDFs match, choose one; if none exists, compile first or select the PDF manually. Terminal Sidebar does not run a LaTeX compiler or evaluate project build scripts. Continue using `latexmk`, LaTeX Workshop, or your existing workflow.
 
@@ -24,7 +32,7 @@ Double-click a PDF location for reverse **SyncTeX** navigation to the source in 
 
 ## Find, links, and status
 
-Press **Cmd+F** on macOS or **Ctrl+F** on Windows/Linux in a terminal or preview. Find supports previous/next, case sensitivity, whole words, regular expressions, result counts, and highlighting. **Esc** closes Find and returns focus. Document search covers all PDF pages or the rendered Markdown text. Image-only PDFs have no searchable text unless another tool adds a text layer. Large searches and expensive regular expressions have limits to keep the view responsive.
+Press **Cmd+F** on macOS or **Ctrl+F** on Windows/Linux in a terminal or preview. Find supports previous/next, case sensitivity, whole words, regular expressions, counts, and highlighting. Right-click the search button or a tab and choose **Find in all open tabs** to search both sidebars: terminal buffers, all PDF pages, rendered Markdown/HTML, and formatted source. Click a result to open its tab; Next/Previous moves between matches. Global results are a snapshot: reopen global Find after output or files change. **Esc** closes Find and returns focus. Image-only PDFs need a text layer from another tool. Large searches and expensive regular expressions have limits to keep the view responsive.
 
 In a terminal, **Cmd-click / Ctrl-click** opens HTTP(S) links and source locations such as `src/app.ts:12:3`. Relative paths use the last known working directory; not every diagnostic format is recognized.
 
@@ -34,7 +42,7 @@ The tab dot reports the latest shell-reported command: running, failed, or compl
 
 **Change tab marker** offers bookmark, tag, flag, star, and ask, plus a searchable catalog under **Others**. Colours come from the theme's terminal palette and active/inactive tab foreground colours. Inactive icons blend the selected colour with the normal foreground. Tab-name text keeps its usual theme colour.
 
-Startup-profile markers are saved by side and stable profile ID, so the same profile keeps its icon across repositories. Existing workspace choices are imported when no shared preference exists. Removing a shared icon also stays removed. Display names are not used to match profiles. Temporary terminals and document tabs have no shared profile identity, so their icons remain workspace-local.
+Startup-profile markers are saved by side and stable profile ID, so the same profile keeps its icon across repositories. Existing workspace choices are imported when no shared preference exists. Removing a shared icon also stays removed. Display names are not used to match profiles. Document icons follow the same file across workspaces and sides. Temporary terminal icons remain workspace-local.
 
 Each workspace remembers tab order, names, selected tabs, expanded sections, and reading positions. Terminal working directories are restored when available. Typed input and output are not stored as layout memory, and the extension does not continuously log terminal output.
 
@@ -69,7 +77,7 @@ Startup profiles are User settings; repository settings cannot inject startup co
 
 ## Export terminal output
 
-**Save** or **Export** offers HTML, PDF, Markdown, and Plain text. Exports capture the retained buffer, not unlimited command history.
+Right-click a terminal tab and choose **Export…** for HTML, PDF, Markdown, or Plain text. Exports capture the retained buffer, not unlimited command history.
 
 - HTML preserves colours without scripts or active links. Printing it from a browser can produce selectable PDF text; enable background graphics to retain colours.
 - PDF preserves browser-rendered colours, fonts, and Unicode as page images. Text in this export is not selectable or searchable.

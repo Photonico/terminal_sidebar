@@ -37,8 +37,8 @@ export class codicon_picker {
     for (const name of common_icons) {
       const button = document.createElement('button');
       button.type = 'button';
-      button.title = name;
-      button.setAttribute('aria-label', name);
+      button.title = `Use ${name} icon`;
+      button.setAttribute('aria-label', button.title);
       button.append(codicon(name));
       button.addEventListener('click', () => this.choose(name));
       this.common.set(name, button);
@@ -47,6 +47,8 @@ export class codicon_picker {
     this.others.type = 'button';
     this.others.className = 'codicon_others';
     this.others.textContent = 'Others';
+    this.others.title = 'Choose from all Codicons';
+    this.others.setAttribute('aria-label', 'Choose from all Codicons');
     this.others.setAttribute('aria-expanded', 'false');
     this.others.addEventListener('click', () => this.toggle());
     row.append(this.others);
@@ -94,7 +96,7 @@ export class codicon_picker {
     this.selected = icon;
     for (const [name, button] of this.common) button.setAttribute('aria-pressed', String(name === icon));
     this.others.dataset.selected = String(!this.common.has(icon));
-    this.others.title = this.common.has(icon) ? 'Choose from all Codicons' : `Selected icon: ${icon}`;
+    this.others.title = this.common.has(icon) ? 'Choose from all Codicons' : `Choose from all Codicons · Selected: ${icon}`;
   }
 
   close(restore = false): void {
@@ -128,6 +130,8 @@ export class codicon_picker {
       option.role = 'option';
       option.id = `codicon_option_${name}`;
       option.tabIndex = -1;
+      option.title = `Use ${name} icon`;
+      option.setAttribute('aria-label', option.title);
       option.setAttribute('aria-selected', String(name === this.selected));
       const caption = document.createElement('span');
       caption.textContent = name;

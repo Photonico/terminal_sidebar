@@ -10,7 +10,7 @@ import { setImmediate as next_turn, setTimeout as delay } from 'node:timers/prom
 import { runInNewContext as run_in_new_context } from 'node:vm';
 import { build } from 'esbuild';
 import type * as vscode from 'vscode';
-import { is_terminal_tab, is_pdf_tab, is_markdown_tab } from '../src/types';
+import { is_terminal_tab, is_pdf_tab, is_markdown_tab, is_document_tab } from '../src/types';
 import type { client_message, host_message, sidebar_configuration, sidebar_side, terminal_profile, sidebar_tab } from '../src/types';
 import type { latex_pdf_candidates, synctex_location } from '../src/latex_preview';
 import type { pty_process, pty_spawn_options } from '../src/sessions';
@@ -264,6 +264,7 @@ async function harness(options: harness_options = {}) {
   const opened_files: string[] = [];
   const editable_copies: Array<{ content: string; language: string }> = [];
   const saved_files: Array<{ path: string; text: string; bytes: Buffer }> = [];
+  const copied_files: Array<{ source: string; target: string; overwrite?: boolean }> = [];
   const save_dialogs: vscode.SaveDialogOptions[] = [];
   const open_dialogs: vscode.OpenDialogOptions[] = [];
   const shown_documents: Array<{ document: { uri?: fake_uri }; options: vscode.TextDocumentShowOptions | undefined }> = [];
@@ -289,6 +290,9 @@ async function harness(options: harness_options = {}) {
       workspaceFolders: options.workspace_uri ? [{ uri: options.workspace_uri }] : [],
       fs: {
         writeFile: async (uri: { fsPath: string }, data: Uint8Array) => { saved_files.push({ path: uri.fsPath, text: Buffer.from(data).toString('utf8'), bytes: Buffer.from(data) }); },
+        copy: async (source: fake_uri, target: fake_uri, copy_options?: { overwrite?: boolean }) => {
+          copied_files.push({ source: source.toString(), target: target.toString(), overwrite: copy_options?.overwrite });
+        },
         stat: async (uri: { fsPath: string }) => { const item = await stat(uri.fsPath); return { type: item.isFile() ? 1 : 2, ctime: item.ctimeMs, mtime: item.mtimeMs, size: item.size }; },
       },
       getWorkspaceFolder: () => options.workspace_uri ? { uri: options.workspace_uri } : undefined,
@@ -335,6 +339,7 @@ async function harness(options: harness_options = {}) {
       },
     },
     window: {
+      activeTextEditor: undefined as { document: { uri: fake_uri } } | undefined,
       registerWebviewViewProvider: (id: string, provider: vscode.WebviewViewProvider) => {
         assert.ok(!providers.has(id), `view ${id} is registered once`);
         providers.set(id, provider);
@@ -356,7 +361,7 @@ async function harness(options: harness_options = {}) {
       },
       showSaveDialog: async (save_options: vscode.SaveDialogOptions) => {
         save_dialogs.push({ ...save_options, filters: structuredClone(save_options.filters) });
-        return options.save_destination ? { fsPath: options.save_destination, scheme: 'file' } : undefined;
+        return options.save_destination ? fake_uri.file(options.save_destination) : undefined;
       },
       showQuickPick: async () => undefined,
       showInputBox: async (input_options: vscode.InputBoxOptions) => {
@@ -432,7 +437,7 @@ async function harness(options: harness_options = {}) {
 
   return {
     api, commands, providers, executions, processes, spawns, updates, memory, errors, input_boxes,
-    warnings, links, opened_files, editable_copies, saved_files, save_dialogs, global_memory,
+    warnings, links, opened_files, editable_copies, saved_files, copied_files, save_dialogs, global_memory,
     global_storage_directory: context.globalStorageUri.fsPath,
     open_dialogs, shown_documents, watchers, sync_calls,
     configuration: () => structuredClone(configuration_value),
@@ -687,6 +692,72 @@ test('pending terminal confirmation excludes duplicate close and restart request
   assert.equal(runtime.processes.length, 3);
   assert.equal(runtime.processes[2].killed, 0);
   assert.ok(view.state().tabs.some(tab => tab.id === id));
+});
+
+test('close all removes idle terminals and previews without confirmation and leaves the other side unchanged', async test_case => {
+  const files = preview_fixture(test_case);
+  const runtime = await harness({ memory: files.memory });
+  test_case.after(() => runtime.dispose());
+  const left = await runtime.view('left');
+  const left_before = left.state();
+  const left_processes = [...runtime.processes];
+  const right = await runtime.view('right');
+  const right_processes = runtime.processes.slice(left_processes.length);
+  for (const process of right_processes) process.data.fire('\x1b]133;A\x07');
+  await right.send({ type: 'load_pdf', id: 'pdf' });
+  await right.send({ type: 'load_markdown', id: 'markdown' });
+  assert.ok(runtime.watchers.length > 0);
+  await right.send({ type: 'close_all_tabs' });
+  assert.deepEqual(right.state().tabs, []);
+  assert.deepEqual(runtime.warnings, []);
+  assert.ok(right_processes.every(process => process.killed === 1));
+  assert.ok(left_processes.every(process => process.killed === 0));
+  assert.ok(runtime.watchers.every(watcher => watcher.disposed));
+  assert.deepEqual(left.state(), left_before);
+  assert.deepEqual(runtime.configuration(), initial_configuration);
+  assert.deepEqual(runtime.updates, []);
+  await right.send({ type: 'close_all_tabs' });
+  assert.deepEqual(runtime.warnings, [], 'closing an empty side is a no-op');
+  const restored = await harness({ memory: runtime.memory });
+  test_case.after(() => restored.dispose());
+  const reopened = (await restored.view('right')).state().tabs;
+  assert.deepEqual(reopened.map(tab => tab.name), initial_configuration.right.map(profile => profile.name),
+    'closing runtime tabs preserves startup profiles but does not reopen the closed previews');
+});
+
+test('close all confirms once, cancels atomically and never closes tabs opened during its pending confirmation', async test_case => {
+  let finish_warning!: (choice: string | undefined) => void;
+  const runtime = await harness({ warning: () => new Promise(resolve => { finish_warning = resolve; }) });
+  test_case.after(() => runtime.dispose());
+  const right = await runtime.view('right');
+  const original_tabs = right.state().tabs;
+  const original_processes = [...runtime.processes];
+  const left = await runtime.view('left');
+  const left_before = left.state();
+  const left_processes = runtime.processes.slice(original_processes.length);
+  await right.send({ type: 'close_all_tabs' });
+  await right.send({ type: 'close_all_tabs' });
+  await right.send({ type: 'close_tab', id: original_tabs[0].id });
+  await right.send({ type: 'restart', id: original_tabs[1].id, cols: 80, rows: 24 });
+  assert.equal(runtime.warnings.length, 1, 'duplicate and individual actions share the pending guard');
+  finish_warning(undefined);
+  await next_turn();
+  assert.deepEqual(right.state().tabs, original_tabs);
+  assert.ok(original_processes.every(process => process.killed === 0));
+  await right.send({ type: 'close_all_tabs' });
+  await right.send({ type: 'add_tab' });
+  const fresh = right.state().tabs.at(-1)!;
+  const fresh_process = runtime.processes.at(-1)!;
+  await right.send({ type: 'close_all_tabs' });
+  assert.equal(runtime.warnings.length, 2, 'one confirmation for every group, even with multiple busy terminals');
+  finish_warning('Close all tabs');
+  await next_turn();
+  assert.deepEqual(right.state().tabs.map(tab => ({ id: tab.id, name: tab.name })), [{ id: fresh.id, name: fresh.name }]);
+  assert.ok(original_processes.every(process => process.killed === 1));
+  assert.equal(fresh_process.killed, 0);
+  assert.ok(left_processes.every(process => process.killed === 0));
+  assert.deepEqual(left.state(), left_before);
+  assert.deepEqual(runtime.updates, []);
 });
 
 test('web/file links use validated messages and trusted terminals', async test_case => {
@@ -1204,6 +1275,8 @@ test('both sidebars inherit editor scrollbar defaults and terminal text settings
   const left = await runtime.view('left');
   const right = await runtime.view('right');
   const expected_appearance = {
+    markdown_font_family: '',
+    markdown_font_choice: 'default',
     font_family: 'Editor Mono', font_size: 16, cursor_blink: false, scrollback: 1000,
     editor_scrollbar_vertical: 'auto', editor_scrollbar_horizontal: 'auto',
     editor_scrollbar_vertical_size: 14, editor_scrollbar_horizontal_size: 12,
@@ -1369,6 +1442,85 @@ function preview_fixture(test_case: { after(callback: () => void): void }) {
   }]]);
   return { directory, pdf, markdown, tex, memory };
 }
+
+test('saving every preview kind copies the source URI and proposes its filename instead of its renamed tab', async test_case => {
+  const files = preview_fixture(test_case);
+  const destination = path.join(files.directory, 'chosen copy #1.pdf');
+  const runtime = await harness({ configuration: { left: [], right: [] }, save_destination: destination });
+  test_case.after(() => runtime.dispose());
+  const view = await runtime.view('right');
+  const sources = [files.pdf, files.markdown, ...['html', 'css', 'json', 'jsonc'].map(extension => {
+    const filename = path.join(files.directory, `source name #1.${extension}`);
+    writeFileSync(filename, 'source content');
+    return filename;
+  })];
+  for (const filename of sources) {
+    await runtime.command('terminalSidebar.openPreview', fake_uri.file(filename));
+    const tab = view.state().tabs.at(-1)!;
+    await view.send({ type: 'rename_tab', id: tab.id, name: 'Different display name' });
+    await view.send({ type: 'save_document', id: tab.id });
+    const copy = runtime.copied_files.at(-1)!;
+    assert.deepEqual(copy, {
+      source: fake_uri.file(filename).toString(), target: fake_uri.file(destination).toString(), overwrite: true,
+    });
+    const extension = path.extname(filename);
+    const suggested = path.join(files.directory, `${path.basename(filename, extension)}_copy${extension}`);
+    assert.equal(runtime.save_dialogs.at(-1)?.defaultUri?.toString(), fake_uri.file(suggested).toString());
+    assert.equal(view.state().tabs.at(-1)?.name, 'Different display name');
+  }
+  assert.equal(runtime.copied_files.length, sources.length);
+  assert.deepEqual(runtime.saved_files, [], 'binary and source files use the filesystem copy API without text conversion');
+  assert.equal(runtime.processes.length, 0);
+  assert.ok(!view.messages.some(message => message.type === 'error'));
+});
+
+test('saving a preview respects cancellation, rejects its source as destination and ignores terminal or missing IDs', async test_case => {
+  const files = preview_fixture(test_case);
+  const cancelled = await harness({ memory: files.memory });
+  const same_source = await harness({ memory: files.memory, save_destination: files.pdf });
+  test_case.after(() => { cancelled.dispose(); same_source.dispose(); });
+  const cancelled_view = await cancelled.view('right');
+  const before = cancelled_view.state().tabs;
+  await cancelled_view.send({ type: 'save_document', id: 'pdf' });
+  assert.equal(cancelled.save_dialogs.length, 1);
+  assert.deepEqual(cancelled.copied_files, []);
+  assert.deepEqual(cancelled_view.state().tabs, before);
+  const terminal_id = cancelled_view.state().tabs.find(is_terminal_tab)!.id;
+  await cancelled_view.send({ type: 'save_document', id: terminal_id });
+  await cancelled_view.send({ type: 'save_document', id: 'missing' });
+  assert.equal(cancelled.save_dialogs.length, 1, 'only a live preview can open Save copy');
+  const same_view = await same_source.view('right');
+  await same_view.send({ type: 'save_document', id: 'pdf' });
+  assert.deepEqual(same_source.copied_files, []);
+  assert.ok(same_view.messages.some(message => message.type === 'error' && /different filename/.test(message.message)));
+});
+
+test('pending preview saves deduplicate requests and recheck workspace trust before copying', async test_case => {
+  const files = preview_fixture(test_case);
+  const runtime = await harness({ memory: files.memory });
+  test_case.after(() => runtime.dispose());
+  const view = await runtime.view('right');
+  let finish_save!: (uri: fake_uri | undefined) => void;
+  let dialogs = 0;
+  runtime.api.window.showSaveDialog = async () => {
+    dialogs++;
+    return new Promise(resolve => { finish_save = resolve; });
+  };
+  await view.send({ type: 'save_document', id: 'pdf' });
+  await view.send({ type: 'save_document', id: 'pdf' });
+  assert.equal(dialogs, 1);
+  runtime.api.workspace.isTrusted = false;
+  finish_save(fake_uri.file(path.join(files.directory, 'copy.pdf')));
+  await next_turn();
+  assert.deepEqual(runtime.copied_files, []);
+  await view.send({ type: 'save_document', id: 'pdf' });
+  assert.equal(dialogs, 1, 'untrusted workspaces do not open the save dialog');
+  runtime.api.workspace.isTrusted = true;
+  await view.send({ type: 'save_document', id: 'pdf' });
+  assert.equal(dialogs, 2, 'cancellation releases the pending action guard');
+  finish_save(undefined);
+  await next_turn();
+});
 
 async function wait_for(predicate: () => boolean, description: string): Promise<void> {
   const deadline = Date.now() + 3500;
@@ -1579,4 +1731,223 @@ test('pending reverse SyncTeX requests are deduplicated and cannot reopen a clos
   await next_turn();
   assert.deepEqual(runtime.opened_files, []);
   assert.deepEqual(runtime.shown_documents, []);
+});
+
+test('global find enumerates both sides, reads inactive documents and routes terminal snapshots by side', async test_case => {
+  const files = preview_fixture(test_case);
+  const runtime = await harness({ memory: files.memory });
+  test_case.after(() => runtime.dispose());
+  const left = await runtime.view('left');
+  const right = await runtime.view('right');
+  right.hide();
+  await left.send({ type: 'search_catalog', request: 'catalog' });
+  const catalog = left.messages.find(message => message.type === 'search_catalog');
+  assert.ok(catalog?.type === 'search_catalog');
+  assert.ok(catalog.tabs.some(tab => tab.side === 'right' && tab.kind === 'pdf'));
+  assert.ok(catalog.tabs.some(tab => tab.side === 'right' && tab.kind === 'markdown'));
+  assert.ok(catalog.tabs.some(tab => tab.side === 'left' && tab.kind === 'terminal'));
+  await left.send({ type: 'search_read', request: 'markdown_request', side: 'right', id: 'markdown' });
+  await wait_for(() => left.messages.some(message => message.type === 'search_source' && message.request === 'markdown_request'), 'Markdown snapshot arrives');
+  const markdown = left.messages.find(message => message.type === 'search_source' && message.request === 'markdown_request');
+  assert.ok(markdown?.type === 'search_source' && markdown.source?.kind === 'markdown');
+  assert.match(markdown.source.text, /Updated with Vim/);
+  await left.send({ type: 'search_read', request: 'pdf_request', side: 'right', id: 'pdf' });
+  const pdf = left.messages.find(message => message.type === 'search_source' && message.request === 'pdf_request');
+  assert.ok(pdf?.type === 'search_source' && pdf.source?.kind === 'pdf');
+  assert.ok(left.webview.options.localResourceRoots?.some(uri => uri.fsPath === files.directory));
+  const terminal = right.state().tabs.find(is_terminal_tab)!;
+  await left.send({ type: 'search_read', request: 'terminal_request', side: 'right', id: terminal.id });
+  const snapshot = right.messages.find(message => message.type === 'search_snapshot');
+  assert.ok(snapshot?.type === 'search_snapshot');
+  await left.send({ type: 'search_snapshot', request: snapshot.request, snapshot: { text: 'wrong side', rows: [] } });
+  assert.ok(!left.messages.some(message => message.type === 'search_source' && message.request === 'terminal_request'));
+  await right.send({ type: 'search_snapshot', request: snapshot.request, snapshot: { text: 'needle', rows: [{ row: 0, offset: 0 }] } });
+  const result = left.messages.find(message => message.type === 'search_source' && message.request === 'terminal_request');
+  assert.ok(result?.type === 'search_source' && result.source?.kind === 'terminal');
+  assert.equal(result.source.snapshot.text, 'needle');
+  await left.send({ type: 'search_read', request: 'missing', side: 'right', id: 'closed_tab' });
+  const missing = left.messages.find(message => message.type === 'search_source' && message.request === 'missing');
+  assert.ok(missing?.type === 'search_source' && missing.error);
+});
+
+test('document marker choices are applied when the same file is opened in another workspace', async test_case => {
+  const files = preview_fixture(test_case);
+  const global_memory = new Map<string, unknown>();
+  const first = await harness({ memory: files.memory, global_memory });
+  const second = await harness({ global_memory });
+  test_case.after(() => { first.dispose(); second.dispose(); });
+  const original = await first.view('right');
+  const marker = { icon: 'bookmark', color: 'ansiBlue' } as const;
+  await original.send({ type: 'set_tab_marker', id: 'pdf', marker });
+  const other = await second.view('right');
+  await second.command('terminalSidebar.openPdf', fake_uri.file(files.pdf));
+  await other.send({ type: 'ready', renderer_id: other.renderer_id });
+  assert.deepEqual(other.state().tabs.find(is_pdf_tab)?.marker, marker);
+  await other.send({ type: 'set_tab_marker', id: other.state().tabs.find(is_pdf_tab)!.id });
+  original.hide();
+  original.show();
+  assert.equal(original.state().tabs.find(is_pdf_tab)?.marker, undefined);
+});
+
+test('preview commands and document links route every supported Markdown filename to the same renderer', async test_case => {
+  const files = preview_fixture(test_case);
+  const runtime = await harness({ configuration: { left: [], right: [] } });
+  test_case.after(() => runtime.dispose());
+  const view = await runtime.view('right');
+  await runtime.command('terminalSidebar.openMarkdown', fake_uri.file(files.markdown));
+  const source = view.state().tabs.find(is_markdown_tab)!;
+  for (const extension of ['md', 'markdown', 'mdown', 'mkd', 'mkdn', 'mdwn']) {
+    const direct_uri = fake_uri.file(path.join(files.directory, `direct.${extension.toUpperCase()}`));
+    await runtime.command('terminalSidebar.openPreview', direct_uri);
+    assert.ok(view.state().tabs.some(tab => is_markdown_tab(tab) && tab.uri === direct_uri.toString()), extension);
+    const linked_uri = fake_uri.file(path.join(files.directory, `linked.${extension}`));
+    await view.send({ type: 'open_markdown_link', id: source.id, href: `linked.${extension}` });
+    assert.ok(view.state().tabs.some(tab => is_markdown_tab(tab) && tab.uri === linked_uri.toString()), `linked ${extension}`);
+    for (const uri of [direct_uri, linked_uri]) {
+      const opened = view.state().tabs.find(tab => is_markdown_tab(tab) && tab.uri === uri.toString())!;
+      await view.send({ type: 'close_tab', id: opened.id });
+    }
+  }
+  assert.equal(runtime.open_dialogs.length, 0);
+  assert.deepEqual(runtime.opened_files, [], 'previewable document links do not open a source editor');
+  assert.equal(runtime.processes.length, 0, 'previewing documents never starts a shell');
+});
+
+test('editor preview uses the active Markdown alias and file pickers offer every supported alias', async test_case => {
+  const files = preview_fixture(test_case);
+  const runtime = await harness({ configuration: { left: [], right: [] } });
+  test_case.after(() => runtime.dispose());
+  const view = await runtime.view('right');
+  const document = fake_uri.file(path.join(files.directory, 'active.mdown'));
+  runtime.api.window.activeTextEditor = { document: { uri: document } };
+  await runtime.command('terminalSidebar.openPreview');
+  assert.ok(view.state().tabs.some(tab => is_markdown_tab(tab) && tab.uri === document.toString()));
+  assert.equal(runtime.open_dialogs.length, 0);
+
+  runtime.api.window.activeTextEditor = undefined;
+  const tabs_before = view.state().tabs;
+  await runtime.command('terminalSidebar.openMarkdown');
+  await runtime.command('terminalSidebar.openPreview');
+  const [markdown_picker, document_picker] = runtime.open_dialogs;
+  for (const extension of ['md', 'markdown', 'mdown', 'mkd', 'mkdn', 'mdwn']) {
+    assert.ok(Object.values(markdown_picker.filters ?? {}).flat().includes(extension), `Markdown picker: ${extension}`);
+    assert.ok(Object.values(document_picker.filters ?? {}).flat().includes(extension), `Document picker: ${extension}`);
+  }
+  assert.deepEqual(view.state().tabs, tabs_before, 'cancelling a picker leaves all tabs unchanged');
+});
+
+test('preview rejects unsupported and ambiguous targets without creating a tab or starting a process', async test_case => {
+  const runtime = await harness({ configuration: { left: [], right: [] } });
+  test_case.after(() => runtime.dispose());
+  const view = await runtime.view('right');
+  for (const uri of [
+    'file:///project/code.js', 'file:///project/data.xml', 'file:///project/data.yaml',
+    'untitled:/notes.md', 'https://example.com/paper.pdf',
+    'file:///notes.md?revision=other', 'file:///paper.pdf#page=2', 'file:///paper.tex?query=other',
+  ]) {
+    view.messages.length = 0;
+    await runtime.command('terminalSidebar.openPreview', fake_uri.parse(uri));
+    assert.ok(view.messages.some(message => message.type === 'error'), `invalid target is explained: ${uri}`);
+  }
+  assert.equal(runtime.open_dialogs.length, 0, 'an invalid explicit target is not replaced with a different selection');
+  assert.equal(runtime.processes.length, 0);
+  assert.deepEqual(runtime.opened_files, []);
+});
+
+test('HTML and source previews restore positions, refresh after atomic saves and never create shell sessions', async test_case => {
+  const files = preview_fixture(test_case);
+  const documents = [
+    { extension: 'html', text: '<h1>Host preview fixture</h1>' },
+    { extension: 'css', text: 'body{color:red}' },
+    { extension: 'json', text: '{"preview":true}' },
+    { extension: 'jsonc', text: '{\n// Comment is preserved\n"preview":true\n}' },
+  ];
+  const runtime = await harness({ configuration: { left: [], right: [] } });
+  test_case.after(() => runtime.dispose());
+  const right = await runtime.view('right');
+  for (const document of documents) {
+    const uri = fake_uri.file(path.join(files.directory, `example.${document.extension}`));
+    writeFileSync(uri.fsPath, document.text);
+    await runtime.command('terminalSidebar.openPreview', uri);
+    const tab = right.state().tabs.find(tab => is_document_tab(tab) && tab.uri === uri.toString());
+    assert.ok(tab && is_document_tab(tab));
+    assert.equal(tab.format, document.extension);
+    await right.send({ type: 'document_position', id: tab.id, position: { scroll: 120 } });
+    await right.send({ type: 'load_document', id: tab.id });
+    await right.send({ type: 'activate', id: tab.id, cols: 80, rows: 24 });
+    await right.send({ type: 'input', id: tab.id, data: 'should never run\r' });
+    await right.send({ type: 'resize', id: tab.id, cols: 100, rows: 30 });
+  }
+  await wait_for(() => right.messages.filter(message => message.type === 'document_source').length === 4, 'all document types load');
+  assert.equal(runtime.processes.length, 0);
+  assert.equal(runtime.watchers.length, 4);
+  assert.ok(right.webview.options.localResourceRoots?.some(uri => uri.fsPath === files.directory));
+  const source = right.messages.find(message => message.type === 'document_source' && message.source.text === documents[0].text);
+  assert.ok(source?.type === 'document_source');
+  assert.ok(source.source.base_url.endsWith('/'));
+
+  const html_file = fake_uri.file(path.join(files.directory, 'example.html'));
+  const html = right.state().tabs.find(tab => is_document_tab(tab) && tab.uri === html_file.toString())!;
+  writeFileSync(html_file.fsPath, '<p>Replaced with an atomic save</p>');
+  runtime.watchers[0].created.fire(html_file);
+  await wait_for(() => right.messages.some(message => message.type === 'document_source'
+    && message.id === html.id && message.source.text.includes('atomic save')), 'file replacement refreshes HTML');
+  const restored = await harness({ configuration: { left: [], right: [] }, memory: runtime.memory });
+  test_case.after(() => restored.dispose());
+  const next = await restored.view('right');
+  assert.equal(next.state().tabs.filter(is_document_tab).length, 4);
+  assert.ok(next.state().tabs.filter(is_document_tab).every(tab => tab.scroll === 120));
+  assert.equal(restored.processes.length, 0);
+
+  await right.send({ type: 'close_tab', id: html.id });
+  assert.equal(runtime.watchers[0].disposed, true);
+  assert.equal(runtime.warnings.length, 0, 'closing a document never warns about a foreground command');
+  const count = right.messages.length;
+  await right.send({ type: 'load_document', id: html.id });
+  assert.equal(right.messages.length, count, 'a stale request cannot revive a closed document');
+});
+
+test('document global search snapshots carry their format and links reuse preview routing', async test_case => {
+  const files = preview_fixture(test_case);
+  const uri = fake_uri.file(path.join(files.directory, 'sample.jsonc'));
+  writeFileSync(uri.fsPath, '{\n// quantum source search\n"enabled":true\n}');
+  const runtime = await harness({ configuration: { left: [], right: [] } });
+  test_case.after(() => runtime.dispose());
+  const left = await runtime.view('left');
+  const right = await runtime.view('right');
+  await runtime.command('terminalSidebar.openPreview', uri);
+  const tab = right.state().tabs.find(is_document_tab)!;
+  await left.send({ type: 'search_catalog', request: 'documents' });
+  const catalog = left.messages.find(message => message.type === 'search_catalog');
+  assert.ok(catalog?.type === 'search_catalog' && catalog.tabs.some(item => item.id === tab.id && item.kind === 'document'));
+  await left.send({ type: 'search_read', request: 'document_text', side: 'right', id: tab.id });
+  await wait_for(() => left.messages.some(message => message.type === 'search_source'), 'source snapshot arrives');
+  const result = left.messages.find(message => message.type === 'search_source');
+  assert.ok(result?.type === 'search_source' && result.source?.kind === 'document');
+  assert.equal(result.source.format, 'jsonc');
+  assert.match(result.source.text, /quantum source search/);
+  await right.send({ type: 'open_document_link', id: tab.id, href: 'sibling.css' });
+  assert.ok(right.state().tabs.some(item => is_document_tab(item) && item.format === 'css'));
+  await right.send({ type: 'open_document_link', id: tab.id, href: uri.toString() });
+  assert.deepEqual(runtime.opened_files, [uri.fsPath], 'the source button opens the current source in the editor');
+  assert.equal(runtime.processes.length, 0);
+});
+
+test('untrusted workspaces cannot open or load HTML and source previews', async test_case => {
+  const memory = new Map([['terminalSidebar.tabs.right', {
+    version: 1, tabs: [{ id: 'html', name: 'Page', document: { uri: 'file:///page.html', format: 'html', scroll: 0 } }],
+    active_id: 'html', expanded_ids: ['html'], next_number: 0,
+  }]]);
+  const runtime = await harness({ trusted: false, configuration: { left: [], right: [] }, memory });
+  test_case.after(() => runtime.dispose());
+  const view = await runtime.view('right');
+  await runtime.command('terminalSidebar.openPreview', fake_uri.parse('file:///other.html'));
+  await view.send({ type: 'load_document', id: 'html' });
+  await view.send({ type: 'open_document_link', id: 'html', href: 'https://example.com/' });
+  await view.send({ type: 'search_read', request: 'blocked', side: 'right', id: 'html' });
+  assert.equal(view.state().tabs.length, 1);
+  assert.equal(runtime.watchers.length, 0);
+  assert.equal(runtime.processes.length, 0);
+  assert.deepEqual(runtime.links, []);
+  assert.ok(!view.messages.some(message => message.type === 'document_source' || message.type === 'search_source'));
 });

@@ -1,6 +1,8 @@
+import type { search_request, search_response } from './global_search_protocol';
 import type { tab_marker } from './tab_marker';
 import type { pdf_position } from './pdf_state';
 import type { markdown_position } from './markdown_state';
+import type { document_format, document_position, document_source } from './document_state';
 
 /** Persistent startup settings. Runtime tabs are a separate, workspace-local object. */
 export interface terminal_profile {
@@ -46,7 +48,20 @@ export interface markdown_tab extends markdown_position {
   marker?: tab_marker;
 }
 
-export type sidebar_tab = terminal_tab | pdf_tab | markdown_tab;
+export interface document_tab extends document_position {
+  kind: 'document';
+  id: string;
+  name: string;
+  uri: string;
+  format: document_format;
+  marker?: tab_marker;
+}
+
+export type sidebar_tab = terminal_tab | pdf_tab | markdown_tab | document_tab;
+
+export function is_document_tab(tab: sidebar_tab): tab is document_tab {
+  return tab.kind === 'document';
+}
 
 export function is_pdf_tab(tab: sidebar_tab): tab is pdf_tab {
   return tab.kind === 'pdf';
@@ -76,6 +91,8 @@ export interface session_info {
 }
 
 export interface appearance {
+  markdown_font_family?: string;
+  markdown_font_choice?: string;
   font_family: string;
   font_size: number;
   cursor_blink: boolean;
@@ -92,12 +109,14 @@ export interface shell_choice {
   source: 'profile' | 'environment' | 'path' | 'system';
 }
 
-export type host_message =
+export type host_message = search_response
   | { type: 'state'; side: sidebar_side; configuration: sidebar_configuration; tabs: sidebar_tab[]; sessions: session_info[]; trusted: boolean; appearance: appearance; active_id?: string; expanded_ids: string[]; shells: shell_choice[] }
   | { type: 'pdf_source'; id: string; url: string }
   | { type: 'pdf_error'; id: string; message: string }
   | { type: 'markdown_source'; id: string; source: { text: string; base_url: string } }
   | { type: 'markdown_error'; id: string; message: string }
+  | { type: 'document_source'; id: string; source: document_source }
+  | { type: 'document_error'; id: string; message: string }
   | { type: 'output'; id: string; data: string }
   | { type: 'session'; session: session_info }
   | { type: 'reset'; id: string }
@@ -107,7 +126,7 @@ export type host_message =
   | { type: 'action'; action: 'save' | 'undo' | 'redo' | 'close' | 'add' | 'find' }
   | { type: 'paste'; id: string; data: string };
 
-export type client_message =
+export type client_message = search_request
   | { type: 'ready'; renderer_id?: string }
   | { type: 'activate'; id: string; cols: number; rows: number }
   | { type: 'input'; id: string; data: string }
@@ -115,12 +134,18 @@ export type client_message =
   | { type: 'restart'; id: string; cols: number; rows: number }
   | { type: 'select'; id: string }
   | { type: 'close_tab'; id: string }
+  | { type: 'close_all_tabs' }
+  | { type: 'save_document'; id: string }
   | { type: 'add_tab' }
   | { type: 'open_pdf' }
   | { type: 'open_preview' }
   | { type: 'load_markdown'; id: string }
+  | { type: 'set_preview_font'; id: string; font: string }
   | { type: 'markdown_position'; id: string; position: markdown_position }
   | { type: 'open_markdown_link'; id: string; href: string }
+  | { type: 'load_document'; id: string }
+  | { type: 'document_position'; id: string; position: document_position }
+  | { type: 'open_document_link'; id: string; href: string }
   | { type: 'load_pdf'; id: string }
   | { type: 'pdf_reverse_sync'; id: string; page: number; x: number; y: number }
   | { type: 'pdf_position'; id: string; position: pdf_position }

@@ -1,0 +1,4 @@
+.document-badge { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; width: 24px; height: 24px; color: var(--vscode-descriptionForeground, var(--view-foreground)); }
+.document-badge > .codicon { display: block; }
+.document-badge-extension { width: auto; max-width: 64px; height: 20px; padding: 0 6px; overflow: hidden; border: 1px solid var(--view-border); border-radius: 999px; font-size: 10px; font-weight: 600; line-height: 18px; white-space: nowrap; }
+

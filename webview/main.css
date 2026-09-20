@@ -11,6 +11,7 @@ body {
   --action_inset: 2px;
   --scrollbar-vertical-size: 14px;
   --scrollbar-horizontal-size: 12px;
+  --status_clearance: calc((var(--vscode-font-size, 13px) - 2px) * 1.25 + 18px);
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -22,7 +23,7 @@ button, input, textarea, select { font: inherit; }
 button { cursor: pointer; color: inherit; }
 button:disabled { opacity: .45; cursor: default; }
 button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 1px solid var(--vscode-focusBorder, #007fd4); outline-offset: -1px; }
-#app { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; background: var(--vscode-sideBar-background, var(--view-background)); }
+#app { position: relative; display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; background: var(--vscode-sideBar-background, var(--view-background)); }
 
 /* The selected tab and terminal share one background, without a dividing rule. */
 #terminal-header { flex: 0 0 auto; display: flex; min-width: 0; min-height: var(--tab-height); background: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-sideBar-background, var(--view-background))); }
@@ -37,7 +38,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .terminal-tab:hover:not([aria-selected="true"]),
 .terminal-section:not([data-active="true"]) .section-heading:hover,
 #tab-actions .icon-button:hover:not(:disabled),
-.section_rename:hover:not(:disabled), .section-close:hover:not(:disabled), .row-button:hover:not(:disabled) { color: var(--vscode-tab-hoverForeground, var(--vscode-tab-inactiveForeground, var(--view-foreground))); }
+.section-heading .tab_action:hover:not(:disabled), .row-button:hover:not(:disabled) { color: var(--vscode-tab-hoverForeground, var(--vscode-tab-inactiveForeground, var(--view-foreground))); }
 .terminal-tab[aria-selected="true"],
 .terminal-section[data-active="true"] .section-heading { color: var(--terminal-foreground, var(--view-foreground)); }
 .terminal-tab[aria-selected="true"],
@@ -48,15 +49,18 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .icon-button { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 4px; border: 1px solid transparent; border-radius: var(--tab-radius); background: transparent; }
 .icon-button:hover:not(:disabled) { background-color: var(--vscode-toolbar-hoverBackground, #80808025); }
 /* Keep idle and hover surfaces circular at 20px inside the unchanged 24px hit area. */
-#tab-actions .icon-button, .section_rename, .section-close, .row-button { border-width: var(--action_inset); padding: 3px; border-radius: 50%; background-clip: padding-box; }
+#tab-actions .icon-button, .section-heading .tab_action, .row-button { border-width: var(--action_inset); padding: 3px; border-radius: 50%; background-clip: padding-box; }
 /* Default surfaces follow each sidebar's tab palette; the shared hover rule takes precedence. */
-.section_rename, .section-close, .row-button { background-color: var(--vscode-sideBarSectionHeader-background, var(--vscode-sideBar-background, var(--view-background))); }
+.section-heading .tab_action, .row-button { background-color: var(--vscode-sideBarSectionHeader-background, var(--vscode-sideBar-background, var(--view-background))); }
 :where(#tab-actions) .icon-button,
-:where(.terminal-section[data-active="true"]) .section_rename,
-:where(.terminal-section[data-active="true"]) .section-close { background-color: var(--view-background); }
+:where(.terminal-section[data-active="true"]) .tab_action { background-color: var(--view-background); }
 .icon-button svg, .section-chevron svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
 
-#terminal-content { flex: 1 1 auto; min-height: 0; min-width: 0; position: relative; }
+/* Keep the last output line above the floating badge, including while the
+   Primary Side Bar scrolls between independently expanded terminals. */
+#terminal-content { flex: 1 1 auto; min-height: 0; min-width: 0; position: relative; padding-bottom: var(--status_clearance); }
+body[data-side="left"] #terminal-content:has(> #terminal-host:not([hidden]) > .terminal-section:last-child[data-expanded="true"]),
+body[data-side="right"] #terminal-content:has(> #terminal-host:not([hidden]) > .terminal-pane:not([hidden])) { background: var(--view-background); }
 #terminal-host { height: 100%; width: 100%; position: relative; overflow: hidden; }
 .terminal-pane { position: absolute; inset: 0; min-width: 0; background: var(--view-background); }
 /* FitAddon measures padding on .xterm, so the last column stays inside the pane. */
@@ -95,25 +99,21 @@ body:is(.vscode-high-contrast, .vscode-high-contrast-light) .terminal-section:no
 .section-toggle { display: flex; flex: 1 1 auto; align-items: center; min-width: 0; padding: 0; border: 0; border-radius: var(--tab-radius); background: transparent; text-align: left; color: inherit; font-size: inherit; font-weight: normal; line-height: 20px; }
 /* Fill the space before the actions in every state; long names still truncate. */
 .section_caption { display: flex; flex: 1 1 auto; align-items: center; gap: var(--tab_content_gap); position: relative; isolation: isolate; height: 100%; min-width: 0; max-width: 100%; padding: 3px 4px; padding-right: calc(3 * var(--action_inset) + 2px); }
-/* Action circles have a 2-inset gap. Caption-to-rename uses 3 + 1 insets,
+/* Action circles have a 2-inset gap. Caption-to-action uses 3 + 1 insets,
    making its visible gap exactly twice as large (8px versus 4px). */
 .section_caption::before { content: ''; position: absolute; z-index: -1; inset: 3px calc(3 * var(--action_inset)) 3px var(--action_inset); border-radius: var(--tab-radius); background: var(--vscode-sideBarSectionHeader-background, var(--vscode-sideBar-background, var(--view-background))); pointer-events: none; }
 .section-chevron { display: flex; flex: 0 0 16px; align-items: center; justify-content: center; }
 .section-toggle[aria-expanded="true"] .section-chevron { transform: rotate(90deg); }
 .section-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.section_rename, .section-close { align-self: center; }
+.section-heading .tab_action { align-self: center; }
 .terminal-section[data-status="error"] .section-label { color: var(--vscode-errorForeground, #f48771); }
 /* Only the custom marker is tinted, including in a collapsed active section. */
 .terminal-tab[aria-selected="true"] .tab_marker,
 .terminal-section[data-active="true"] .section_caption > .tab_marker { color: var(--tab_marker_color); }
 .terminal-section .terminal-pane { position: relative; inset: auto; flex: 1 1 0; min-height: 48px; }
 
-/* Symmetric vertical spacing centres the full badge and removes its bottom offset. */
-#session-status { flex: 0 0 auto; display: flex; align-items: center; min-height: 20px; padding: 0 6px; border-top: 1px solid var(--view-border); background: var(--vscode-sideBar-background, var(--view-background)); font-size: calc(var(--vscode-font-size, 13px) - 2px); color: var(--vscode-descriptionForeground, var(--view-foreground)); }
-body[data-side="left"] #session-status { border-top: 0; }
-/* Follow the pane touching the footer, including after a collapse or reorder. */
-body[data-side="left"] #terminal-content:has(> #terminal-host:not([hidden]) > .terminal-section:last-child[data-expanded="true"]) + #session-status,
-body[data-side="right"] #terminal-content:has(> #terminal-host:not([hidden]) > .terminal-pane:not([hidden])) + #session-status { background: var(--view-background); }
+/* Float inside each sidebar without intercepting terminal input or scrolling. */
+#session-status { position: absolute; left: 6px; bottom: 6px; z-index: 5; display: flex; align-items: center; max-width: calc(100% - 12px); pointer-events: none; font-size: calc(var(--vscode-font-size, 13px) - 2px); line-height: 1.25; color: var(--vscode-descriptionForeground, var(--view-foreground)); }
 /* Lighten the theme's Activity Bar surface slightly without fixing its colour. */
 #status-badge { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; padding: 2px 6px; border: 1px solid var(--vscode-contrastBorder, transparent); border-radius: var(--tab-radius); background: color-mix(in srgb, var(--vscode-activityBar-background, var(--vscode-sideBar-background, var(--view-background))) 85%, white); color: var(--vscode-activityBar-foreground, var(--view-foreground)); }
 body.vscode-high-contrast #status-badge,
@@ -195,3 +195,6 @@ body.vscode-high-contrast button, body.vscode-high-contrast-light button { borde
 .status_dot[data-status="running"] { background: var(--vscode-testing-iconPassed, var(--vscode-terminal-ansiGreen, var(--view-foreground))); }
 .status_dot[data-status="error"] { background: var(--vscode-errorForeground, var(--vscode-terminal-ansiRed, var(--view-foreground))); }
 .status_dot[data-status="completed"] { background: var(--vscode-terminal-ansiBlue, var(--vscode-progressBar-background, var(--view-foreground))); }
+
+.tab_action_group { display: flex; flex: 0 0 auto; align-items: center; }
+.tab_action .codicon { display: block; font-size: 16px; }

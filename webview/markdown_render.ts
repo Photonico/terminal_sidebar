@@ -1,25 +1,17 @@
 import MarkdownIt from 'markdown-it';
+import { footnote } from '@mdit/plugin-footnote';
+import { tasklist } from '@mdit/plugin-tasklist';
 import { is_markdown_link, type markdown_source } from '../src/markdown_state';
+import { install_markdown_math } from './markdown_math';
 
-/** Images can only read descendants of the selected document's resource root. */
-export function markdown_image_url(value: string, base_url: string): string | undefined {
-  if (!value || /[\x00-\x20\x7f\\]/.test(value) || /^[a-z][a-z\d+.-]*:/i.test(value)
-    || value.startsWith('/')) return undefined;
-  try {
-    const base = new URL(base_url);
-    const image = new URL(value, base);
-    if (!base.pathname.endsWith('/') || image.origin !== base.origin || image.protocol !== base.protocol
-      || image.host !== base.host || !image.pathname.startsWith(base.pathname) || image.search) return undefined;
-    // Encoded path separators must not bypass the subtree check at the resource server.
-    const decoded = decodeURIComponent(image.pathname);
-    if (/[\x00-\x1f\x7f\\]/.test(decoded) || decoded.split('/').some(part => part === '..')) return undefined;
-    return image.toString();
-  } catch { return undefined; }
-}
+import { local_document_resource as markdown_image_url } from './document_resources';
+export { local_document_resource as markdown_image_url } from './document_resources';
 
 /** Raw HTML remains text. Every generated URL is separately constrained. */
 export function render_markdown(source: markdown_source): string {
-  const markdown = new MarkdownIt({ html: false, linkify: false, typographer: false, maxNesting: 40 });
+  const markdown = new MarkdownIt({ html: false, linkify: true, typographer: false, maxNesting: 40 });
+  markdown.use(footnote).use(tasklist, { disabled: true, label: false });
+  install_markdown_math(markdown);
   markdown.validateLink = is_markdown_link;
   const default_image = markdown.renderer.rules.image!;
   markdown.renderer.rules.image = (tokens, index, options, environment, renderer) => {

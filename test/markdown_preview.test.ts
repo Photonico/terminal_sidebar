@@ -9,7 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { build } from 'esbuild';
 import { is_markdown_link, is_markdown_position, is_markdown_uri, max_markdown_bytes } from '../src/markdown_state';
 import { markdown_image_url, render_markdown } from '../webview/markdown_render';
-import { normalize_search_text, type document_match } from '../webview/document_search';
+import { normalize_search_text } from '../webview/document_search';
 
 const base_url = 'https://file+.vscode-resource.vscode-cdn.net/work/paper/';
 
@@ -61,6 +61,75 @@ test('Markdown images resolve only within the selected document directory', () =
   assert.match(html, new RegExp(`<img src="${base_url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}images/figure.png"`));
   assert.match(html, /markdown-image-unavailable">Remote/);
   assert.doesNotMatch(html, /src="https:\/\/example.com/);
+});
+
+test('Markdown supports task lists, footnotes, autolinks and the ordinary GFM blocks', () => {
+  const html = render_markdown({ base_url, text: [
+    '> Quoted **text**', '', '- [x] Completed', '- [ ] Pending', '',
+    '1. First', '2. Second', '', '~~Removed~~ and https://example.com/path.', '',
+    'A footnote[^note].', '', '[^note]: Footnote with *emphasis*.', '', '---',
+  ].join('\n') });
+  assert.match(html, /<blockquote>/);
+  assert.match(html, /<ol>/);
+  assert.match(html, /<s>Removed<\/s>/);
+  assert.match(html, /type="checkbox"[^>]*checked="checked"[^>]*disabled="disabled"/);
+  assert.equal((html.match(/type="checkbox"/g) ?? []).length, 2);
+  assert.match(html, /href="https:\/\/example.com\/path"/);
+  assert.match(html, /class="footnote-ref"/);
+  assert.match(html, /Footnote with <em>emphasis<\/em>/);
+  assert.match(html, /<hr>/);
+});
+
+test('Markdown renders inline, same-line display, multiline and bracket math without duplicate search text', () => {
+  const html = render_markdown({ base_url, text: [
+    'Before $f=ma$ after.', '', '$$F=ma$$', '', '$$', '\\frac{a}{b}', '$$', '',
+    '\\(x+y\\)', '', '\\[z^2\\]', '', '```math', '\\sqrt{2}', '```',
+  ].join('\n') });
+  assert.equal((html.match(/role="math"/g) ?? []).length, 6);
+  assert.equal((html.match(/class="katex-display"/g) ?? []).length, 4);
+  assert.doesNotMatch(html, /<annotation|<math\b|katex-mathml|markdown_math_error/);
+  const text = normalize_search_text(html.replace(/<[^>]*>/g, ''));
+  assert.match(text, /Before f=ma after/);
+  assert.equal((text.match(/f=ma/g) ?? []).length, 1, 'Search indexes a formula once');
+  assert.equal((text.match(/F=ma/g) ?? []).length, 1);
+});
+
+test('Markdown leaves escaped dollars and ordinary code literal, including currency', () => {
+  const html = render_markdown({ base_url, text: [
+    'The price is $5 or $10. Escaped: \\$f=ma\\$.', '',
+    '`$f=ma$`', '', '```tex', '$$F=ma$$', '```', '', '    $x+y$',
+  ].join('\n') });
+  assert.doesNotMatch(html, /role="math"|class="katex/);
+  assert.match(html, /<code>\$f=ma\$<\/code>/);
+  assert.match(html, /<code class="language-tex">\$\$F=ma\$\$/);
+  assert.match(html, /The price is \$5 or \$10/);
+});
+
+test('Markdown math denies resource loading and HTML commands and contains invalid formulas', () => {
+  const html = render_markdown({ base_url, text: [
+    '$\\href{javascript:alert(1)}{click}$', '',
+    '$\\includegraphics{https://example.com/tracker.png}$', '',
+    '$\\htmlClass{injected}{x}$', '',
+    '$\\unknown{<img src=x onerror=alert(1)>}$', '',
+    '$\\def\\loop{\\loop}\\loop$', '',
+    'After error **still renders**. $z=1$',
+  ].join('\n') });
+  assert.doesNotMatch(html, /<(?:script|img|a)\b|class="injected"/);
+  assert.match(html, /markdown_math_error/);
+  assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/);
+  assert.match(html, /After error <strong>still renders<\/strong>/);
+  assert.match(html, /aria-label="z=1"/);
+});
+
+test('Markdown math has per-expression and per-document work limits', () => {
+  const oversized = render_markdown({ base_url, text: `$${'x+'.repeat(9_000)}y$\n\nEnd.` });
+  assert.match(oversized, /markdown_math_error/);
+  assert.doesNotMatch(oversized, /class="katex"/);
+  assert.match(oversized, /<p>End\.<\/p>/);
+  const many = render_markdown({ base_url, text: Array(514).fill('$x$').join('\n\n') });
+  assert.equal((many.match(/class="katex"/g) ?? []).length, 512);
+  assert.equal((many.match(/markdown_math_error/g) ?? []).length, 2);
+  assert.match(render_markdown({ base_url, text: '$x$' }), /class="katex"/, 'Each document gets a fresh work budget');
 });
 
 type watcher_api = typeof import('../src/markdown_watch');
@@ -140,72 +209,4 @@ test('Markdown watcher follows Vim atomic saves and recreation, and stops on dis
     assert.equal(sources.length, 3);
     assert.equal(fixture.disposed(), true);
   } finally { watch.dispose(); await rm(directory, { recursive: true, force: true }); }
-});
-
-test('Markdown search highlights across formatting boundaries and preserves another pane ownership', async () => {
-  type text_node = { textContent: string };
-  class range_fixture {
-    start?: { node: text_node; offset: number };
-    end?: { node: text_node; offset: number };
-    setStart(node: text_node, offset: number) { this.start = { node, offset }; }
-    setEnd(node: text_node, offset: number) { this.end = { node, offset }; }
-    getBoundingClientRect() { return { top: 30 }; }
-  }
-  class highlight_fixture {
-    priority = 0;
-    constructor(readonly ranges: range_fixture[]) {}
-  }
-  const nodes = ['Some  ', 'bold', '\ntext ', ' and more', '\ntext'].map(textContent => ({ textContent }));
-  const text = nodes.map(node => node.textContent).join('');
-  const content = { textContent: text };
-  const highlights = new Map<string, highlight_fixture>();
-  const document = {
-    createTreeWalker() {
-      let index = 0;
-      return { nextNode: () => nodes[index++] };
-    },
-    createRange: () => new range_fixture(),
-  };
-  const result = await build({ entryPoints: [path.join(__dirname, '../webview/markdown_view.ts')], bundle: true,
-    write: false, platform: 'node', format: 'cjs', loader: { '.css': 'empty' } });
-  const module = { exports: {} };
-  runInNewContext(result.outputFiles[0].text, {
-    module, exports: module.exports, document, NodeFilter: { SHOW_TEXT: 4 }, CSS: { highlights },
-    Highlight: class extends highlight_fixture { constructor(...ranges: range_fixture[]) { super(ranges); } },
-    TextEncoder, TextDecoder, URL,
-  });
-  const prototype = (module.exports as { markdown_view: { prototype: object } }).markdown_view.prototype;
-  const make_view = () => Object.assign(Object.create(prototype), {
-    content, pane: { hidden: false }, match_ranges: [],
-    viewport: { scrollTop: 0, clientHeight: 100, getBoundingClientRect: () => ({ top: 0 }) },
-  }) as { select_match(match?: document_match, matches?: readonly document_match[], reveal?: boolean): void;
-    pane: { hidden: boolean }; viewport: { scrollTop: number } };
-  const normalized = normalize_search_text(text);
-  const matches = [normalized.indexOf('bold text'), normalized.lastIndexOf('text')]
-    .map((start, index) => ({ page: 0, start, end: start + (index ? 4 : 9) }));
-  const first = make_view();
-  first.select_match(matches[0], matches);
-  const all = highlights.get('sidebar_markdown_find_all')!;
-  assert.equal(all.ranges.length, 2);
-  assert.equal(all.ranges[0].start!.node, nodes[0]);
-  assert.equal(all.ranges[0].start!.offset, nodes[0].textContent.length);
-  assert.equal(all.ranges[0].end!.node, nodes[2]);
-  assert.equal(all.ranges[0].end!.offset, 5);
-  assert.equal(all.ranges[1].start!.node, nodes[4]);
-  assert.equal(all.ranges[1].start!.offset, 1);
-  assert.equal(highlights.get('sidebar_markdown_find')!.priority, 1);
-  first.viewport.scrollTop = 400;
-  first.select_match(matches[0], matches, false);
-  assert.equal(first.viewport.scrollTop, 400, 'Automatic reindexing keeps the current reading position');
-  first.pane.hidden = true;
-  first.select_match(matches[0], matches, true);
-  assert.equal(first.viewport.scrollTop, 400, 'Hidden previews never navigate to a match');
-  const second = make_view();
-  second.select_match(matches[1], matches);
-  const active = highlights.get('sidebar_markdown_find');
-  first.select_match();
-  assert.equal(highlights.get('sidebar_markdown_find'), active);
-  assert.equal(highlights.get('sidebar_markdown_find_all')!.ranges.length, 2);
-  second.select_match();
-  assert.equal(highlights.size, 0);
 });

@@ -105,6 +105,13 @@ export class document_search {
     return true;
   }
 
+  select_result(index: number): void {
+    if (this.disposed || this.searching || !Number.isInteger(index) || !this.matches[index]) return;
+    this.index = index;
+    this.provider.select_match(this.matches[index], this.matches, true);
+    this.emit();
+  }
+
   private async scan(revision: number, previous: boolean, reveal: boolean, anchor?: document_match): Promise<void> {
     try {
       const worker = await this.worker_factory();

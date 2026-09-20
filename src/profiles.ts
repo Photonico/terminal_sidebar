@@ -1,8 +1,11 @@
+import { is_search_request } from './global_search_protocol';
 import type { client_message, sidebar_configuration, terminal_profile } from './types';
 import { is_tab_marker } from './tab_marker';
 import { is_export_payload } from './export_format';
 import { is_pdf_position } from './pdf_state';
 import { is_markdown_position, is_markdown_link } from './markdown_state';
+import { is_document_position } from './document_state';
+import { valid_preview_font } from './preview_font_state';
 
 export const default_configuration: sidebar_configuration = {
   left: [],
@@ -144,6 +147,7 @@ export function is_client_message(value: unknown): value is client_message {
     return false;
   }
   const message = value as Record<string, unknown>;
+  if (typeof message.type === 'string' && message.type.startsWith('search_')) return is_search_request(message, is_identifier);
   const valid_identifier = is_identifier(message.id);
   const valid_size = Number.isInteger(message.cols) && Number.isInteger(message.rows)
     && Number(message.cols) > 0 && Number(message.cols) <= 1000 && Number(message.rows) > 0 && Number(message.rows) <= 1000;
@@ -157,6 +161,7 @@ export function is_client_message(value: unknown): value is client_message {
     case 'open_other_sidebar':
     case 'refresh_shells':
     case 'add_tab':
+    case 'close_all_tabs':
     case 'open_pdf':
     case 'open_preview':
       return true;
@@ -167,16 +172,23 @@ export function is_client_message(value: unknown): value is client_message {
     case 'input':
       return valid_identifier && typeof message.data === 'string' && message.data.length <= 1024 * 1024;
     case 'close_tab':
+    case 'save_document':
     case 'request_rename':
     case 'paste':
     case 'focus':
     case 'select':
     case 'load_pdf':
     case 'load_markdown':
+    case 'load_document':
       return valid_identifier;
+    case 'set_preview_font':
+      return valid_identifier && valid_preview_font(message.font) && !!message.font.trim();
     case 'markdown_position':
       return valid_identifier && is_markdown_position(message.position);
+    case 'document_position':
+      return valid_identifier && is_document_position(message.position);
     case 'open_markdown_link':
+    case 'open_document_link':
       return valid_identifier && is_markdown_link(message.href);
     case 'pdf_reverse_sync':
       return valid_identifier && Number.isInteger(message.page) && Number(message.page) >= 1 && Number(message.page) <= 1_000_000

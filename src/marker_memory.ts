@@ -1,13 +1,16 @@
 import { is_identifier } from './profiles';
 import { copy_tab_marker, is_tab_marker, type tab_marker } from './tab_marker';
 import type { sidebar_side } from './types';
-import { randomUUID as random_uuid } from 'node:crypto';
+import { is_pdf_uri } from './pdf_state';
+import { is_markdown_uri } from './markdown_state';
+import { is_document_uri } from './document_state';
+import { randomUUID as random_uuid, createHash as create_hash } from 'node:crypto';
 import { closeSync as close_sync, openSync as open_sync, readSync as read_sync } from 'node:fs';
 import { link, mkdir, readdir, rename, unlink, writeFile as write_file } from 'node:fs/promises';
 import * as path from 'node:path';
 
-/** Only startup profiles have a stable identity across workspaces. */
-interface marker_target { kind?: string; profile_id?: string; marker?: tab_marker }
+/** Startup profile IDs and document URIs are stable across workspaces. */
+interface marker_target { kind?: string; profile_id?: string; uri?: string; marker?: tab_marker }
 export interface marker_storage {
   get(key: string): unknown;
 }
@@ -38,6 +41,11 @@ export class marker_memory {
   ) {}
 
   private filename(side: sidebar_side, tab: marker_target): string | undefined {
+    if ((tab.kind === 'pdf' && is_pdf_uri(tab.uri)) || (tab.kind === 'markdown' && is_markdown_uri(tab.uri))
+      || (tab.kind === 'document' && is_document_uri(tab.uri))) {
+      const identity = create_hash('sha256').update(tab.uri!).digest('hex');
+      return path.join(this.directory, `document_${identity}.json`);
+    }
     return profile_key(side, tab) ? path.join(this.directory, `${side}_${tab.profile_id}.json`) : undefined;
   }
 
@@ -97,7 +105,7 @@ export class marker_memory {
     }
   }
 
-  /** Read fresh storage on every lookup; temporary and document tabs stay workspace-local. */
+  /** Read fresh storage on every lookup; temporary tabs stay workspace-local. */
   marker_for(side: sidebar_side, tab: marker_target): tab_marker | undefined {
     const filename = this.filename(side, tab);
     const current = filename ? this.read(filename) : undefined;
@@ -121,7 +129,7 @@ export class marker_memory {
     if (existing === undefined) {
       const files = await readdir(this.directory);
       if (!files.includes(path.basename(filename))
-        && files.filter(name => /^(left|right)_[A-Za-z0-9_-]{1,64}\.json$/.test(name)).length >= maximum_entries) {
+        && files.filter(name => /^(?:(left|right)_[A-Za-z0-9_-]{1,64}|document_[a-f0-9]{64})\.json$/.test(name)).length >= maximum_entries) {
         throw new Error('Too many saved tab marker preferences. Existing preferences have been preserved.');
       }
     }

@@ -18,3 +18,8 @@
 !dist/node-pty/**
 !dist/pdfjs/**
 !dist/document_search_worker.js
+
+!dist/*.woff
+!dist/*.woff2
+!dist/*.ttf
+!dist/document_format_worker.js

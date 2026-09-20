@@ -1,13 +1,21 @@
 # Changelog
 
-## 0.10.0 — Pre-release
+## 0.10.0 — In development
 
 - Simplify the marker color heading and add active/inactive tab foreground colors in a new palette column.
-- Remember startup-profile markers across workspaces, including explicit removal.
-- Preview PDF, Markdown, and compiled LaTeX PDFs inside either side bar; remember reading positions and refresh after file saves. Scroll past PDF page boundaries to turn pages.
-- Search complete PDF and Markdown documents with highlighted matches, navigation, case, whole-word, and regular-expression options.
+- Remember startup-profile and document markers across workspaces, including explicit removal.
+- Preview PDF, Markdown, and compiled LaTeX PDFs inside either side bar; remember reading positions and refresh after file saves. Scroll continuously through PDFs with a document-wide scrollbar and on-demand rendering. Add contents navigation, single/two-page layouts, circular zoom controls, modifier-wheel zoom, and dark reading.
+- Preview static HTML with local assets and formatted CSS, JSON, and JSONC source; keep scripts and forms inactive, preserve source files, and reuse bounded reads and file watching.
+- Render Markdown math with KaTeX, task lists, and footnotes. Add a preview font selector with a Default option and a User setting that follows Settings Sync.
+- Search complete PDF, Markdown, HTML, and formatted-source documents with highlighted matches, navigation, case, whole-word, and regular-expression options.
+- Search all open tabs across both sidebars, with direct result navigation. Move Preview in Sidebar Terminal to the editor title toolbar.
 - Double-click PDF text to locate its LaTeX source in the main editor with SyncTeX.
 - Shorten the README and add Chinese and Japanese introductions.
+- Unify toolbar badge alignment, rounded controls, circular zoom buttons, and footer spacing. Keep supported formats consistent across editor menus, file selection, and document links.
+- Share scrolling, zoom, and heading-outline controls across text previews; remove redundant preview captions and add action tooltips.
+- Simplify parent toolbars and child New/Search/Close controls; add button context menus, document copying, and an About page.
+- Add an offline English/Chinese/Japanese Usage page, an anchored Markdown font menu with synced preferences, and a vertical document outline.
+- Float status badges at the lower left of both sidebars, with matching spacing and clearance for terminal input.
 
 ## 0.8.0 — Pre-release
 

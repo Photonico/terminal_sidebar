@@ -112,3 +112,16 @@ test('invalid PDF source associations are discarded without dropping the PDF or 
     assert.equal(tab.zoom, 1.5);
   }
 });
+
+test('PDF browser preferences survive restart and reject malformed state', () => {
+  const model = new sidebar_tabs([]);
+  const pdf = model.open_pdf('file:///work/reader.pdf', 'Reader');
+  assert.ok(model.set_pdf_position(pdf.id, { page: 4, zoom: 1.5, mode: 'spread', dark: true }));
+  const restored = new sidebar_tabs([], model.remember());
+  assert.deepEqual(restored.tabs, model.tabs);
+  assert.equal(restored.set_pdf_position(pdf.id, { page: 4, zoom: 1.5, mode: 'spread', dark: true }), false);
+  assert.equal(restored.set_pdf_position(pdf.id, { page: 4, zoom: 1.5, mode: 'single', dark: false }), true);
+  for (const bad of [{ mode: 'book' }, { dark: 'false' }, { mode: null }]) {
+    assert.equal(is_client_message({ type: 'pdf_position', id: pdf.id, position: { page: 1, zoom: 1, ...bad } }), false);
+  }
+});

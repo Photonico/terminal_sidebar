@@ -1,8 +1,12 @@
+import { document_highlights, document_search_text } from './document_highlights';
+import { reading_toolbar } from './reading_toolbar';
+import { preview_font_picker } from './preview_font_picker';
 import type { client_message, markdown_tab } from '../src/types';
 import { is_markdown_link, type markdown_source } from '../src/markdown_state';
 import { render_markdown } from './markdown_render';
-import { document_search, search_source_range, type document_match } from './document_search';
+import { document_search, type document_match } from './document_search';
 import './markdown_view.css';
+import './markdown_math.css';
 
 /** A read-only document pane; saving from Vim or another editor refreshes it. */
 export class markdown_view {
@@ -22,45 +26,40 @@ export class markdown_view {
   private sent_scroll: number;
   private scroll_timer?: ReturnType<typeof setTimeout>;
   private restore_frame?: number;
-  private highlight?: Highlight;
-  private other_highlights?: Highlight;
-  private cached_matches?: readonly document_match[];
-  private match_ranges: Range[] = [];
+  private readonly highlights: document_highlights;
+  private readonly toolbar: reading_toolbar;
+  private readonly font_picker: preview_font_picker;
 
   constructor(readonly tab: markdown_tab, private readonly send: (message: client_message) => void) {
     this.scroll = tab.scroll;
     this.sent_scroll = tab.scroll;
+    this.highlights = new document_highlights(this.content, range => {
+      const rectangle = range.getBoundingClientRect();
+      const viewport = this.viewport.getBoundingClientRect();
+      this.viewport.scrollTop += rectangle.top - viewport.top - this.viewport.clientHeight / 2;
+    });
     this.search = new document_search({
       page_count: () => 1,
-      read_page: async () => this.content.textContent ?? '',
+      read_page: async () => document_search_text(this.content),
       select_match: (match, matches, reveal) => this.select_match(match, matches, reveal),
     });
     this.pane.id = `terminal-${tab.id}`;
     this.pane.className = 'terminal-pane markdown-pane';
     this.pane.setAttribute('role', 'tabpanel');
     this.pane.setAttribute('aria-label', tab.name);
-    const toolbar = document.createElement('div');
-    toolbar.className = 'markdown-toolbar';
-    toolbar.setAttribute('role', 'toolbar');
-    toolbar.setAttribute('aria-label', 'Markdown preview');
-    const label = document.createElement('span');
-    label.textContent = 'Markdown preview';
-    const button = (title: string, icon: string, action: () => void) => {
-      const element = document.createElement('button');
-      element.className = 'icon-button';
-      element.type = 'button';
-      element.title = title;
-      element.setAttribute('aria-label', title);
-      const symbol = document.createElement('span');
-      symbol.className = `codicon codicon-${icon}`;
-      symbol.setAttribute('aria-hidden', 'true');
-      element.append(symbol);
-      element.addEventListener('click', action);
-      return element;
-    };
-    toolbar.append(label,
-      button('Open source file', 'go-to-file', () => this.send({ type: 'open_markdown_link', id: tab.id, href: tab.uri })),
-      button('Reload Markdown', 'refresh', () => this.refresh()));
+    this.font_picker = new preview_font_picker(font => this.send({ type: 'set_preview_font', id: tab.id, font }));
+    this.toolbar = new reading_toolbar('markdown', {
+      move: direction => this.viewport.scrollBy({ top: direction * this.viewport.clientHeight }),
+      height: () => this.viewport.clientHeight,
+      zoom: (value, previous) => {
+        this.content.style.zoom = String(value);
+        this.viewport.scrollTop *= value / previous;
+      },
+    }, [
+      { label: 'Change preview font', icon: 'text-size', run: anchor => this.font_picker.toggle(anchor) },
+      { label: 'Open source file', icon: 'go-to-file', run: () => this.send({ type: 'open_markdown_link', id: tab.id, href: tab.uri }) },
+      { label: 'Reload Markdown', icon: 'refresh', run: () => this.refresh() },
+    ]);
     this.notice.className = 'markdown-notice';
     this.notice.setAttribute('role', 'status');
     this.notice.textContent = 'Loading Markdown...';
@@ -70,6 +69,7 @@ export class markdown_view {
     this.content.className = 'markdown-content';
     this.viewport.append(this.content);
     this.viewport.addEventListener('keydown', event => this.keydown(event));
+    this.viewport.addEventListener('wheel', event => this.toolbar.wheel(event), { passive: false });
     this.viewport.addEventListener('scroll', () => {
       if (this.restore_frame !== undefined) return;
       clearTimeout(this.scroll_timer);
@@ -77,10 +77,14 @@ export class markdown_view {
       this.scroll_timer = setTimeout(() => this.remember(), 180);
     });
     this.content.addEventListener('click', event => this.open_link(event));
-    this.pane.append(toolbar, this.notice, this.viewport);
+    const body = document.createElement('div');
+    body.className = 'reading-body';
+    body.append(this.toolbar.outline, this.viewport);
+    this.pane.append(this.toolbar.root, this.notice, body);
   }
 
   set_visible(visible: boolean): void {
+    if (!visible) this.font_picker.close();
     if (!visible) this.remember();
     this.pane.hidden = !visible;
     if (!visible) return;
@@ -89,6 +93,7 @@ export class markdown_view {
   }
 
   focus(): void { this.viewport.focus(); }
+  set_font(font: string): void { this.font_picker.set_font(font); }
   refresh(): void { this.send({ type: 'load_markdown', id: this.tab.id }); }
 
   error(message: string): void {
@@ -107,6 +112,7 @@ export class markdown_view {
     try {
       this.content.innerHTML = render_markdown(this.source);
       this.rendered_source = this.source;
+      this.toolbar.set_content(this.content);
       this.search.reset();
       this.notice.hidden = true;
       if (this.restore_frame !== undefined) cancelAnimationFrame(this.restore_frame);
@@ -134,78 +140,22 @@ export class markdown_view {
     this.send({ type: 'open_markdown_link', id: this.tab.id, href });
   }
 
+  reveal_match(match: document_match): boolean {
+    if (!this.rendered_source || this.pane.hidden) return false;
+    this.select_match(match, [match], true);
+    return true;
+  }
+
   private select_match(match?: document_match, matches: readonly document_match[] = [], reveal = true): void {
-    if (this.highlight && CSS.highlights?.get('sidebar_markdown_find') === this.highlight) CSS.highlights.delete('sidebar_markdown_find');
-    if (this.other_highlights && CSS.highlights?.get('sidebar_markdown_find_all') === this.other_highlights) CSS.highlights.delete('sidebar_markdown_find_all');
-    this.highlight = undefined;
-    this.other_highlights = undefined;
-    if (!match || this.disposed) {
-      this.cached_matches = undefined;
-      this.match_ranges = [];
-      return;
-    }
     if (reveal && !this.pane.hidden && this.restore_frame !== undefined) {
       cancelAnimationFrame(this.restore_frame);
       this.restore_frame = undefined;
     }
-    if (this.cached_matches !== matches) {
-      this.cached_matches = matches;
-      this.match_ranges = this.ranges_for_matches(matches);
-    }
-    const range = this.match_ranges[matches.indexOf(match)];
-    if (!range) return;
-    if (typeof Highlight !== 'undefined' && CSS.highlights) {
-      this.other_highlights = new Highlight(...this.match_ranges);
-      this.highlight = new Highlight(range);
-      this.highlight.priority = 1;
-      CSS.highlights.set('sidebar_markdown_find_all', this.other_highlights);
-      CSS.highlights.set('sidebar_markdown_find', this.highlight);
-    }
-    if (reveal && !this.pane.hidden) {
-      const rectangle = range.getBoundingClientRect();
-      const viewport = this.viewport.getBoundingClientRect();
-      this.viewport.scrollTop += rectangle.top - viewport.top - this.viewport.clientHeight / 2;
-    }
-  }
-
-  /** Sorted non-overlapping results can share one forward pass through the text. */
-  private ranges_for_matches(matches: readonly document_match[]): Range[] {
-    const text = this.content.textContent ?? '';
-    const nodes: Array<{ node: Node; start: number; end: number }> = [];
-    const walker = document.createTreeWalker(this.content, NodeFilter.SHOW_TEXT);
-    let raw_offset = 0;
-    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-      const length = node.textContent?.length ?? 0;
-      if (length) nodes.push({ node, start: raw_offset, end: raw_offset + length });
-      raw_offset += length;
-    }
-    if (!nodes.length) return [];
-    const point = (offset: number) => {
-      let lower = 0;
-      let upper = nodes.length - 1;
-      while (lower < upper) {
-        const middle = Math.floor((lower + upper) / 2);
-        if (nodes[middle].end < offset) lower = middle + 1;
-        else upper = middle;
-      }
-      return { node: nodes[lower].node, offset: offset - nodes[lower].start };
-    };
-    let source_end = 0;
-    let normalized_end = 0;
-    return matches.map(match => {
-      const offsets = search_source_range(text.slice(source_end), match.start - normalized_end, match.end - normalized_end);
-      const start = point(source_end + offsets.start);
-      const end = point(source_end + offsets.end);
-      source_end += offsets.end;
-      normalized_end = match.end;
-      const range = document.createRange();
-      range.setStart(start.node, start.offset);
-      range.setEnd(end.node, end.offset);
-      return range;
-    });
+    this.highlights.select(this.disposed ? undefined : match, matches, reveal && !this.pane.hidden);
   }
 
   private keydown(event: KeyboardEvent): void {
+    if (this.toolbar.keydown(event)) return;
     if (event.ctrlKey || event.metaKey || event.altKey) return;
     const distance = event.key === 'j' ? 48 : event.key === 'k' ? -48 : 0;
     if (distance) this.viewport.scrollBy({ top: distance });
@@ -228,6 +178,8 @@ export class markdown_view {
     this.remember();
     this.disposed = true;
     this.search.dispose();
+    this.toolbar.dispose();
+    this.font_picker.dispose();
     this.select_match(undefined);
     clearTimeout(this.scroll_timer);
     if (this.restore_frame !== undefined) cancelAnimationFrame(this.restore_frame);

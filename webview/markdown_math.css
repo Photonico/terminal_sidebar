@@ -1,0 +1,10 @@
+@import 'katex/dist/katex.min.css';
+
+.markdown_math { color: inherit; }
+.markdown_math_display { margin: 1em 0; overflow-x: auto; overflow-y: hidden; overflow-wrap: normal; }
+.markdown_math_display .katex-display { margin: 0.25em 0; }
+.markdown_math_error { color: var(--vscode-errorForeground, var(--vscode-editor-foreground)); white-space: pre-wrap; }
+.markdown-content .task-list-container { list-style-type: none; padding-left: 1.2em; }
+.markdown-content .task-list-item-checkbox { width: 1em; height: 1em; margin: 0 0.5em 0 -1.2em; vertical-align: -0.1em; accent-color: var(--vscode-checkbox-foreground); }
+.markdown-content .footnotes { font-size: 0.9em; }
+.markdown-content .footnote-backref { padding-left: 0.25em; }

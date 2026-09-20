@@ -1,0 +1,5 @@
+.global_search_results { position: absolute; z-index: 39; top: 38px; right: 8px; width: 420px; max-width: calc(100% - 16px); max-height: 45%; min-height: 0; box-shadow: 0 2px 6px var(--vscode-widget-shadow, transparent); overflow: auto; padding: 6px; background: var(--vscode-sideBar-background); border-bottom: 1px solid var(--view-border); }
+.global_search_heading { padding: 4px; color: var(--vscode-descriptionForeground); font-size: 11px; }
+.global_search_hit { display: block; width: 100%; padding: 6px; text-align: left; white-space: pre-line; overflow-wrap: anywhere; color: var(--vscode-list-inactiveSelectionForeground, var(--view-foreground)); background: transparent; border: 0; border-radius: 2px; }
+.global_search_hit:hover { background: var(--vscode-list-hoverBackground); color: var(--vscode-list-hoverForeground, var(--view-foreground)); }
+.global_search_hit[aria-current="true"] { background: var(--vscode-list-inactiveSelectionBackground); }

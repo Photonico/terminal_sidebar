@@ -40,6 +40,7 @@ interface search_options {
   target(): search_target | undefined;
   focus(id: string): void;
   layout(): void;
+  closed?(): void;
 }
 
 export function is_find_shortcut(event: Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'altKey' | 'shiftKey' | 'isComposing'>, is_mac: boolean): boolean {
@@ -135,6 +136,12 @@ export class terminal_search {
     button.addEventListener('click', action);
     parent.append(button);
     return button;
+  }
+
+  set_scope(label: string): void {
+    this.root.setAttribute('aria-label', label);
+    this.input.setAttribute('aria-label', label);
+    this.input.placeholder = label === 'Find in active tab' ? 'Find' : 'Find in all tabs';
   }
 
   open(): void {
@@ -237,6 +244,7 @@ export class terminal_search {
     this.target?.search.clearDecorations();
     this.target = undefined;
     this.root.hidden = true;
+    this.options.closed?.();
     this.options.layout();
     if (restore && id) {
       this.options.focus(id);

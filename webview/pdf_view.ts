@@ -1,8 +1,10 @@
 import type { PDFDocumentLoadingTask, PDFDocumentProxy, PDFPageProxy, RenderTask, TextLayer } from 'pdfjs-dist';
 import type { client_message, pdf_tab } from '../src/types';
-import type { pdf_zoom } from '../src/pdf_state';
+import type { pdf_zoom, pdf_mode } from '../src/pdf_state';
 import { document_search, type document_match } from './document_search';
-import { layout_pages, page_at, visible_pages, type page_box, type page_size } from './pdf_layout';
+import { layout_document, adjacent_page, current_page, visible_pages, type document_layout, type page_size } from './pdf_layout';
+import { pdf_toolbar } from './pdf_toolbar';
+import { pdf_outline } from './pdf_outline';
 import './pdf_view.css';
 import './pdf_text_layer.css';
 
@@ -25,6 +27,17 @@ export function load_pdf_library(): Promise<pdf_library> {
     library = undefined;
     throw error;
   });
+}
+
+export function pdf_document_options(url: string) {
+  return {
+    url, cMapUrl: `${assets}/cmaps/`, cMapPacked: true,
+    standardFontDataUrl: `${assets}/standard_fonts/`, wasmUrl: `${assets}/wasm/`,
+    iccUrl: `${assets}/iccs/`,
+    useWorkerFetch: false,
+    disableRange: false, rangeChunkSize: 256 * 1024,
+    disableAutoFetch: true, disableStream: true, canvasMaxAreaInBytes: 64 * 1024 * 1024,
+  };
 }
 
 export function page_text(items: Array<{ str: string; hasEOL?: boolean } | { type: string }>): { text: string; offsets: number[] } {
@@ -56,16 +69,18 @@ export class pdf_view {
   section_label?: HTMLSpanElement;
   private readonly viewport = document.createElement('div');
   private readonly pages = document.createElement('div');
+  private canvas_pixel_budget = 4_000_000;
   private readonly rendered = new Map<number, rendered_page>();
   private sizes: page_size[] = [];
-  private boxes: page_box[] = [];
+  private geometry?: document_layout;
   private scroll_timer?: ReturnType<typeof setTimeout>;
   private readonly notice = document.createElement('div');
-  private readonly page_input = document.createElement('input');
-  private readonly count = document.createElement('span');
-  private readonly zoom_input = document.createElement('select');
-  private readonly previous: HTMLButtonElement;
-  private readonly next: HTMLButtonElement;
+  private readonly toolbar: pdf_toolbar;
+  private readonly outline: pdf_outline;
+  private outline_open = false;
+  private mode: pdf_mode;
+  private dark: boolean;
+  private zoom_timer?: ReturnType<typeof setTimeout>;
   private readonly observer: ResizeObserver;
   private pdf?: PDFDocumentProxy;
   private document_task?: PDFDocumentLoadingTask;
@@ -93,6 +108,8 @@ export class pdf_view {
   ) {
     this.page = tab.page;
     this.zoom = tab.zoom;
+    this.mode = tab.mode ?? 'continuous';
+    this.dark = tab.dark ?? false;
     this.search = new document_search({
       page_count: () => this.pdf?.numPages ?? 0,
       read_page: async index => {
@@ -110,69 +127,44 @@ export class pdf_view {
     this.pane.className = 'terminal-pane pdf-pane';
     this.pane.setAttribute('role', 'tabpanel');
     this.pane.setAttribute('aria-label', tab.name);
-    const toolbar = document.createElement('div');
-    toolbar.className = 'pdf-toolbar';
-    toolbar.setAttribute('role', 'toolbar');
-    toolbar.setAttribute('aria-label', 'PDF navigation');
-    const button = (label: string, icon: string, action: () => void) => {
-      const element = document.createElement('button');
-      element.className = 'icon-button';
-      element.type = 'button';
-      element.title = label;
-      element.setAttribute('aria-label', label);
-      const symbol = document.createElement('span');
-      symbol.className = `codicon codicon-${icon}`;
-      symbol.setAttribute('aria-hidden', 'true');
-      element.append(symbol);
-      element.addEventListener('click', action);
-      return element;
-    };
-    this.previous = button('Previous page (h)', 'chevron-left', () => this.navigate(this.page - 1));
-    this.next = button('Next page (l)', 'chevron-right', () => this.navigate(this.page + 1));
-    this.page_input.type = 'number';
-    this.page_input.min = '1';
-    this.page_input.step = '1';
-    this.page_input.value = String(this.page);
-    this.page_input.title = 'PDF page number, including front matter';
-    this.page_input.setAttribute('aria-label', 'PDF page');
-    this.page_input.addEventListener('change', () => this.navigate(Number(this.page_input.value)));
-    this.page_input.addEventListener('keydown', event => {
-      if (event.key !== 'Enter' || event.isComposing) return;
-      event.preventDefault();
-      event.stopPropagation();
-      this.navigate(Number(this.page_input.value));
-      this.focus();
+    this.outline = new pdf_outline(page => this.navigate(page));
+    this.toolbar = new pdf_toolbar({
+      outline: () => {
+        this.outline_open = !this.outline_open;
+        this.outline.set_open(this.outline_open);
+        this.update_controls();
+      },
+      move: direction => this.move(direction),
+      zoom: direction => this.change_zoom(direction),
+      page: page => { this.navigate(page); this.focus(); },
+      set_zoom: zoom => this.set_zoom(zoom),
+      reload: () => this.refresh(),
+      mode: mode => {
+        if (this.mode === mode) return;
+        this.mode = mode;
+        this.remember();
+        this.update_controls();
+        void this.render();
+      },
+      dark: enabled => {
+        this.dark = enabled;
+        this.remember();
+        this.update_controls();
+      },
     });
-    this.count.textContent = '/ ...';
-    this.zoom_input.setAttribute('aria-label', 'PDF zoom');
-    for (const [value, label] of [['page-width', 'Fit width'], ['page-fit', 'Fit page'], ['0.5', '50%'],
-      ['0.75', '75%'], ['1', '100%'], ['1.25', '125%'], ['1.5', '150%'], ['2', '200%'], ['3', '300%'], ['4', '400%']]) {
-      this.zoom_input.add(new Option(label, value));
-    }
-    this.zoom_input.value = String(this.zoom);
-    if (!this.zoom_input.value && typeof this.zoom === 'number') {
-      this.zoom_input.add(new Option(`${Math.round(this.zoom * 100)}%`, String(this.zoom)));
-      this.zoom_input.value = String(this.zoom);
-    }
-    this.zoom_input.addEventListener('change', () => {
-      this.zoom = this.zoom_input.value.startsWith('page-') ? this.zoom_input.value as pdf_zoom : Number(this.zoom_input.value);
-      this.remember();
-      void this.render();
-    });
-    toolbar.append(this.previous, this.page_input, this.count, this.next, this.zoom_input,
-      button('Reload PDF', 'refresh', () => this.refresh()));
     this.notice.className = 'pdf-notice';
     this.notice.setAttribute('role', 'status');
     this.notice.textContent = 'Loading PDF...';
     this.viewport.className = 'pdf-viewport';
     this.viewport.tabIndex = 0;
-    this.viewport.setAttribute('aria-label', 'PDF page. Use h and l to turn pages, j and k to scroll.');
+    this.viewport.setAttribute('aria-label', 'PDF pages. Use h and l to turn pages, j and k to scroll; Command or Control plus mouse wheel to zoom.');
     this.viewport.addEventListener('keydown', event => this.keydown(event));
+    this.viewport.addEventListener('wheel', event => this.wheel(event), { passive: false });
     this.pages.className = 'pdf-pages';
     this.viewport.append(this.pages);
     this.viewport.addEventListener('scroll', () => {
-      if (!this.pdf || this.pane.hidden || !this.boxes.length) return;
-      const page = page_at(this.boxes, this.viewport.scrollTop) + 1;
+      if (!this.pdf || this.pane.hidden || !this.geometry?.continuous) return;
+      const page = current_page(this.geometry.continuous, this.viewport.scrollTop, this.viewport.clientHeight) + 1;
       if (page !== this.page) {
         this.page = page;
         this.update_controls();
@@ -181,7 +173,10 @@ export class pdf_view {
       }
       void this.render_visible();
     });
-    this.pane.append(toolbar, this.notice, this.viewport);
+    const body = document.createElement('div');
+    body.className = 'pdf-body';
+    body.append(this.outline.root, this.viewport);
+    this.pane.append(this.toolbar.root, this.notice, body);
     this.observer = new ResizeObserver(() => {
       clearTimeout(this.resize_timer);
       this.resize_timer = setTimeout(() => {
@@ -194,6 +189,8 @@ export class pdf_view {
 
   set_visible(visible: boolean): void {
     this.pane.hidden = !visible;
+    this.toolbar.set_visible(visible);
+    this.outline.set_open(visible && this.outline_open);
     if (!visible) { this.cancel_render(); this.rendered_width = 0; return; }
     if (!this.requested) { this.requested = true; this.refresh(); }
     else if (this.pending_url && this.pending_url !== this.loaded_url && !this.loading) void this.load(this.pending_url);
@@ -223,12 +220,7 @@ export class pdf_view {
       const module = await this.renderer();
       if (this.disposed || revision !== this.load_revision) return;
       task = module.getDocument({
-        url, cMapUrl: `${assets}/cmaps/`, cMapPacked: true,
-        standardFontDataUrl: `${assets}/standard_fonts/`, wasmUrl: `${assets}/wasm/`,
-        iccUrl: `${assets}/iccs/`,
-        useWorkerFetch: false,
-        disableRange: false, rangeChunkSize: 256 * 1024,
-        disableAutoFetch: true, disableStream: true, canvasMaxAreaInBytes: 64 * 1024 * 1024,
+        ...pdf_document_options(url),
       });
       this.loading = task;
       const pdf = await task.promise;
@@ -237,7 +229,8 @@ export class pdf_view {
       const previous_task = this.document_task;
       this.pdf = pdf;
       this.sizes = [];
-      this.boxes = [];
+      this.geometry = undefined;
+      this.outline.set_document(pdf);
       this.document_task = task;
       this.loaded_url = url;
       this.loading = undefined;
@@ -273,23 +266,57 @@ export class pdf_view {
     this.remember();
     this.update_controls();
     if (!reveal_match) this.scroll_to_match = false;
-    const box = this.boxes[this.page - 1];
+    if (this.mode !== 'continuous') { void this.render(false); return; }
+    const box = this.geometry?.boxes.get(this.page - 1);
     if (box) this.viewport.scrollTop = box.top + (position === 'bottom' ? Math.max(0, box.height - this.viewport.clientHeight + 24) : 0);
     void this.render_visible();
     this.highlight_match();
   }
 
   private update_controls(): void {
-    this.page_input.value = String(this.page);
-    this.page_input.max = String(this.pdf?.numPages ?? 1);
-    this.page_input.disabled = !this.pdf;
-    this.previous.disabled = !this.pdf || this.page === 1;
-    this.next.disabled = !this.pdf || this.page >= this.pdf.numPages;
-    this.count.textContent = `/ ${this.pdf?.numPages ?? '...'}`;
+    this.pane.dataset.pdfMode = this.mode;
+    this.pane.dataset.pdfDark = String(this.dark);
+    this.toolbar.update({ page: this.page, pages: this.pdf?.numPages ?? 0, zoom: this.zoom,
+      mode: this.mode, dark: this.dark, outline_open: this.outline_open });
   }
 
   private remember(): void {
-    this.send({ type: 'pdf_position', id: this.tab.id, position: { page: this.page, zoom: this.zoom } });
+    this.send({ type: 'pdf_position', id: this.tab.id,
+      position: { page: this.page, zoom: this.zoom, mode: this.mode, dark: this.dark } });
+  }
+
+  private move(direction: -1 | 1): void {
+    if (!this.pdf) return;
+    if (this.mode === 'continuous') this.viewport.scrollBy({ top: direction * this.viewport.clientHeight });
+    else this.navigate(adjacent_page(this.page, this.pdf.numPages, this.mode, direction));
+  }
+
+  private change_zoom(direction: -1 | 0 | 1): void {
+    const current = typeof this.zoom === 'number' ? this.zoom : this.geometry?.boxes.get(this.page - 1)?.scale ?? 1;
+    this.set_zoom(direction === 0 ? 1 : Math.round(current * (direction > 0 ? 1.2 : 1 / 1.2) * 100) / 100);
+  }
+
+  private set_zoom(zoom: pdf_zoom, deferred = false): void {
+    if (typeof zoom === 'number') {
+      if (!Number.isFinite(zoom)) return;
+      zoom = Math.max(0.25, Math.min(4, zoom));
+    }
+    if (this.zoom === zoom) return;
+    this.zoom = zoom;
+    this.update_controls();
+    clearTimeout(this.zoom_timer);
+    const commit = () => { if (!this.disposed) { this.remember(); void this.render(); } };
+    if (deferred) this.zoom_timer = setTimeout(commit, 80);
+    else commit();
+  }
+
+  private wheel(event: WheelEvent): void {
+    if ((!event.metaKey && !event.ctrlKey) || event.altKey || !this.pdf || !Number.isFinite(event.deltaY)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const current = typeof this.zoom === 'number' ? this.zoom : this.geometry?.boxes.get(this.page - 1)?.scale ?? 1;
+    const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? this.viewport.clientHeight : 1);
+    this.set_zoom(Math.round(current * Math.exp(-Math.max(-500, Math.min(500, delta)) * 0.002) * 1000) / 1000, true);
   }
 
   private release_page(index: number): void {
@@ -309,6 +336,7 @@ export class pdf_view {
 
   /** Resolve page sizes without retaining decoded images or allocating offscreen canvases. */
   private async measure_pages(pdf: PDFDocumentProxy, revision: number): Promise<void> {
+    let changed = false;
     for (let index = 0; index < pdf.numPages; index++) {
       if (this.disposed || this.pdf !== pdf || revision !== this.load_revision) return;
       try {
@@ -316,11 +344,15 @@ export class pdf_view {
         if (this.disposed || this.pdf !== pdf || revision !== this.load_revision) return;
         const size = page.getViewport({ scale: 1 });
         const old = this.sizes[index];
-        if (old && (old.width !== size.width || old.height !== size.height)) {
+        if (!old || old.width !== size.width || old.height !== size.height) {
           this.sizes[index] = { width: size.width, height: size.height };
-          await this.render(true);
+          changed = true;
         }
         page.cleanup();
+        if (changed && (index % 32 === 31 || index === pdf.numPages - 1)) {
+          changed = false;
+          await this.render(true);
+        }
       } catch { /* Keep the estimated size; the page renderer offers Reload on failure. */ }
     }
   }
@@ -328,30 +360,38 @@ export class pdf_view {
   private async render(preserve_scroll = true): Promise<void> {
     if (!this.pdf || this.disposed || this.pane.hidden || this.viewport.clientWidth < 1) return;
     const pdf = this.pdf;
-    const old = this.boxes[this.page - 1];
+    const old = this.geometry?.boxes.get(this.page - 1);
     const fraction = preserve_scroll && old ? (this.viewport.scrollTop - old.top) / old.height : 0;
     this.cancel_render();
     const revision = this.render_revision;
-    if (!this.sizes.length) {
-      const page = await pdf.getPage(this.page);
+    if (this.sizes.length !== pdf.numPages || this.sizes.filter(Boolean).length !== pdf.numPages) {
+      let page: PDFPageProxy;
+      try { page = await pdf.getPage(this.page); }
+      catch {
+        if (!this.disposed && revision === this.render_revision) this.error('This page could not be loaded. Try another page or reload the PDF.');
+        return;
+      }
       if (revision !== this.render_revision || this.disposed) return;
       const size = page.getViewport({ scale: 1 });
-      this.sizes = Array.from({ length: pdf.numPages }, () => ({ width: size.width, height: size.height }));
+      this.sizes = Array.from({ length: pdf.numPages }, (_, index) => this.sizes[index] ?? ({ width: size.width, height: size.height }));
       page.cleanup();
     }
-    this.boxes = layout_pages(this.sizes, this.viewport.clientWidth, this.viewport.clientHeight, this.zoom);
-    const last = this.boxes.at(-1)!;
-    this.pages.style.height = `${last.top + last.height}px`;
-    this.pages.style.width = `${Math.max(this.viewport.clientWidth - 24, ...this.boxes.map(box => box.width))}px`;
-    const box = this.boxes[this.page - 1];
-    this.viewport.scrollTop = box.top + fraction * box.height;
+    this.geometry = layout_document(this.sizes, this.viewport.clientWidth, this.viewport.clientHeight,
+      this.zoom, this.mode, this.page);
+    this.pages.style.height = `${this.geometry.height}px`;
+    this.pages.style.width = `${this.geometry.width}px`;
+    const box = this.geometry.boxes.get(this.page - 1)!;
+    this.viewport.scrollTop = Math.max(0, box.top + fraction * box.height);
     this.rendered_width = this.viewport.clientWidth;
     await this.render_visible();
   }
 
   private async render_visible(): Promise<void> {
-    if (!this.pdf || this.disposed || this.pane.hidden || !this.boxes.length) return;
-    const visible = visible_pages(this.boxes, this.viewport.scrollTop, this.viewport.clientHeight);
+    if (!this.pdf || this.disposed || this.pane.hidden || !this.geometry) return;
+    const visible = this.geometry.continuous
+      ? visible_pages(this.geometry.continuous, this.viewport.scrollTop, this.viewport.clientHeight)
+      : [...this.geometry.boxes.keys()];
+    this.canvas_pixel_budget = Math.min(4_000_000, 16_000_000 / visible.length);
     for (const index of this.rendered.keys()) if (!visible.includes(index)) this.release_page(index);
     this.pane.dataset.pdfPage = String(this.page);
     this.pane.dataset.pdfPages = String(this.pdf.numPages);
@@ -361,10 +401,12 @@ export class pdf_view {
   private async render_page(index: number): Promise<void> {
     if (this.rendered.has(index) || !this.pdf) return;
     const pdf = this.pdf;
-    const box = this.boxes[index];
+    const box = this.geometry?.boxes.get(index);
+    if (!box) return;
     const rendered = document.createElement('div');
     rendered.className = 'pdf-page';
     rendered.style.top = `${box.top}px`;
+    rendered.style.left = `${box.left ?? 0}px`;
     rendered.style.width = `${box.width}px`;
     rendered.style.height = `${box.height}px`;
     rendered.style.setProperty('--total-scale-factor', String(box.scale));
@@ -379,9 +421,9 @@ export class pdf_view {
       page = await pdf.getPage(index + 1);
       if (!current()) return;
       const viewport = page.getViewport({ scale: box.scale });
-      // Six nearby pages at most, each with at most four million canvas pixels.
+      // Share the pixel budget across visible pages; short pages must never be omitted.
       const pixels = Math.min(window.devicePixelRatio || 1, 2, 16_384 / viewport.width,
-        16_384 / viewport.height, Math.sqrt(4_000_000 / (viewport.width * viewport.height)));
+        16_384 / viewport.height, Math.sqrt(this.canvas_pixel_budget / (viewport.width * viewport.height)));
       const canvas = entry.canvas = document.createElement('canvas');
       canvas.width = Math.max(1, Math.floor(viewport.width * pixels));
       canvas.height = Math.max(1, Math.floor(viewport.height * pixels));
@@ -422,6 +464,12 @@ export class pdf_view {
     }
   }
 
+  reveal_match(match: document_match): boolean {
+    if (!this.pdf || this.pane.hidden) return false;
+    this.select_match(match, [match], true);
+    return true;
+  }
+
   private select_match(match: document_match | undefined, matches: readonly document_match[], reveal: boolean): void {
     this.selected_match = match;
     this.matches = matches;
@@ -435,61 +483,68 @@ export class pdf_view {
     for (const match of this.viewport.querySelectorAll('.pdf_find_match')) match.remove();
     const selected = this.selected_match;
     for (const [page_index, entry] of this.rendered) {
-    const { layer, source: rendered_source, element: rendered } = entry;
-    if (!layer || !rendered_source) continue;
-    const matches = this.matches.filter(match => match.page === page_index);
-    if (!matches.length) continue;
-    const strings = layer.textContentItemsStr;
-    const normalized_offsets: number[] = [];
-    for (let index = 0; index < rendered_source.text.length;) {
-      normalized_offsets.push(index);
-      if (/\s/u.test(rendered_source.text[index++])) {
-        while (index < rendered_source.text.length && /\s/u.test(rendered_source.text[index])) index++;
-      }
-    }
-    normalized_offsets.push(rendered_source.text.length);
-    let first: HTMLElement | undefined;
-    const page_rectangle = rendered.getBoundingClientRect();
-    let first_span = 0;
-    for (const match of matches) {
-      const active = match === selected;
-      const source = { start: normalized_offsets[match.start], end: normalized_offsets[match.end] };
-      while (first_span + 1 < strings.length && rendered_source.offsets[first_span] + strings[first_span].length <= source.start) first_span++;
-      for (let index = first_span; index < strings.length; index++) {
-        const text = strings[index];
-        const span = layer.textDivs[index];
-        const offset = rendered_source.offsets[index];
-        if (offset >= source.end) break;
-        const start = Math.max(0, source.start - offset);
-        const end = Math.min(text.length, source.end - offset);
-        if (!span?.firstChild || start >= end) continue;
-        const range = document.createRange();
-        range.setStart(span.firstChild, start);
-        range.setEnd(span.firstChild, end);
-        for (const rectangle of range.getClientRects()) {
-          const highlight = document.createElement('span');
-          highlight.className = active ? 'pdf_find_match pdf_find_active' : 'pdf_find_match';
-          highlight.style.left = `${rectangle.left - page_rectangle.left}px`;
-          highlight.style.top = `${rectangle.top - page_rectangle.top}px`;
-          highlight.style.width = `${rectangle.width}px`;
-          highlight.style.height = `${rectangle.height}px`;
-          rendered.append(highlight);
-          if (active) first ??= highlight;
+      const { layer, source: rendered_source, element: rendered } = entry;
+      if (!layer || !rendered_source) continue;
+      const matches = this.matches.filter(match => match.page === page_index);
+      if (!matches.length) continue;
+      const strings = layer.textContentItemsStr;
+      const normalized_offsets: number[] = [];
+      for (let index = 0; index < rendered_source.text.length;) {
+        normalized_offsets.push(index);
+        if (/\s/u.test(rendered_source.text[index++])) {
+          while (index < rendered_source.text.length && /\s/u.test(rendered_source.text[index])) index++;
         }
       }
-    }
-    if (this.scroll_to_match && first) {
-      first.scrollIntoView({ block: 'center', inline: 'nearest' });
-      this.scroll_to_match = false;
-    }
+      normalized_offsets.push(rendered_source.text.length);
+      let first: HTMLElement | undefined;
+      const page_rectangle = rendered.getBoundingClientRect();
+      let first_span = 0;
+      for (const match of matches) {
+        const active = match === selected;
+        const source = { start: normalized_offsets[match.start], end: normalized_offsets[match.end] };
+        while (first_span + 1 < strings.length && rendered_source.offsets[first_span] + strings[first_span].length <= source.start) first_span++;
+        for (let index = first_span; index < strings.length; index++) {
+          const text = strings[index];
+          const span = layer.textDivs[index];
+          const offset = rendered_source.offsets[index];
+          if (offset >= source.end) break;
+          const start = Math.max(0, source.start - offset);
+          const end = Math.min(text.length, source.end - offset);
+          if (!span?.firstChild || start >= end) continue;
+          const range = document.createRange();
+          range.setStart(span.firstChild, start);
+          range.setEnd(span.firstChild, end);
+          for (const rectangle of range.getClientRects()) {
+            const highlight = document.createElement('span');
+            highlight.className = active ? 'pdf_find_match pdf_find_active' : 'pdf_find_match';
+            highlight.style.left = `${rectangle.left - page_rectangle.left}px`;
+            highlight.style.top = `${rectangle.top - page_rectangle.top}px`;
+            highlight.style.width = `${rectangle.width}px`;
+            highlight.style.height = `${rectangle.height}px`;
+            rendered.append(highlight);
+            if (active) first ??= highlight;
+          }
+        }
+      }
+      if (this.scroll_to_match && first) {
+        first.scrollIntoView({ block: 'center', inline: 'nearest' });
+        this.scroll_to_match = false;
+      }
     }
   }
 
   private keydown(event: KeyboardEvent): void {
-    if (event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return;
+    if (event.isComposing || event.altKey) return;
+    if (event.ctrlKey || event.metaKey) {
+      if (!['+', '=', '-', '0'].includes(event.key)) return;
+      this.change_zoom(event.key === '0' ? 0 : event.key === '-' ? -1 : 1);
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     switch (event.key) {
-      case 'h': case 'ArrowLeft': this.navigate(this.page - 1); break;
-      case 'l': case 'ArrowRight': this.navigate(this.page + 1); break;
+      case 'h': case 'ArrowLeft': this.navigate(adjacent_page(this.page, this.pdf?.numPages ?? 1, this.mode, -1)); break;
+      case 'l': case 'ArrowRight': this.navigate(adjacent_page(this.page, this.pdf?.numPages ?? 1, this.mode, 1)); break;
       case 'j': this.viewport.scrollBy({ top: 70 }); break;
       case 'k': this.viewport.scrollBy({ top: -70 }); break;
       case 'g': this.navigate(1); break;
@@ -507,6 +562,9 @@ export class pdf_view {
     ++this.load_revision;
     this.cancel_render();
     this.search.dispose();
+    this.toolbar.dispose();
+    this.outline.dispose();
+    clearTimeout(this.zoom_timer);
     this.observer.disconnect();
     clearTimeout(this.resize_timer);
     this.destroy_task(this.loading);

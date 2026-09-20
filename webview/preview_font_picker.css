@@ -1,0 +1,11 @@
+.preview_font_picker { position: fixed; z-index: 1000; box-sizing: border-box; width: 260px; max-width: calc(100vw - 8px); max-height: calc(100vh - 8px); overflow: auto; padding: 4px; border: 1px solid var(--vscode-menu-border, var(--view-border)); border-radius: var(--vscode-cornerRadius-medium, 6px); background: var(--vscode-menu-background, var(--vscode-editorWidget-background, var(--view-background))); color: var(--vscode-menu-foreground, var(--view-foreground)); box-shadow: 0 2px 8px var(--vscode-widget-shadow, transparent); }
+.preview_font_option { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; border-radius: var(--vscode-cornerRadius-small, 3px); padding: 5px 7px; background: transparent; color: inherit; text-align: left; font: inherit; cursor: pointer; }
+.preview_font_option[aria-checked="false"] > .codicon { visibility: hidden; }
+.preview_font_option:hover, .preview_font_option:focus-visible { background: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground, transparent)); color: var(--vscode-menu-selectionForeground, var(--view-foreground)); outline: 1px solid var(--vscode-menu-selectionBorder, transparent); outline-offset: -1px; }
+.preview_font_separator { height: 1px; margin: 4px 5px; background: var(--vscode-menu-separatorBackground, var(--view-border)); }
+.preview_font_custom { display: flex; flex-direction: column; gap: 6px; padding: 7px; border-top: 1px solid var(--vscode-menu-separatorBackground, var(--view-border)); }
+.preview_font_custom input { box-sizing: border-box; width: 100%; min-width: 0; max-width: none; padding: 4px 6px; border: 1px solid var(--vscode-input-border, transparent); border-radius: var(--tab-radius, 4px); background: var(--vscode-input-background); color: var(--vscode-input-foreground); font: inherit; }
+.preview_font_custom input:focus { border-color: var(--vscode-focusBorder); outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
+.preview_font_custom button { align-self: flex-end; border-radius: var(--tab-radius, 4px); padding: 4px 10px; }
+.preview_font_error { color: var(--vscode-errorForeground); font-size: 11px; }
+.preview_font_error:empty { display: none; }

@@ -1,7 +1,7 @@
 {
   "name": "terminal-sidebar",
   "displayName": "Terminal Sidebar",
-  "description": "Sidebar terminals with named tabs, startup commands, and PDF, Markdown, and LaTeX previews.",
+  "description": "Sidebar terminals with Markdown, PDF, LaTeX, HTML, and formatted-source previews.",
   "version": "0.10.0",
   "publisher": "ConAntares",
   "author": "Lu Niu (Photonico)",
@@ -23,7 +23,10 @@
     "sidebar",
     "shell",
     "cli",
-    "pty"
+    "pty",
+    "pdf",
+    "markdown",
+    "preview"
   ],
   "engines": {
     "vscode": "^1.106.0",
@@ -91,7 +94,7 @@
       },
       {
         "command": "terminalSidebar.openProfile",
-        "title": "Open Profile\u2026",
+        "title": "Open Profile…",
         "category": "Terminal Sidebar",
         "icon": "$(list-selection)"
       },
@@ -109,7 +112,7 @@
       },
       {
         "command": "terminalSidebar.left.selectProfile",
-        "title": "Open Profile\u2026",
+        "title": "Open Profile…",
         "category": "Terminal Sidebar",
         "icon": "$(list-selection)"
       },
@@ -153,7 +156,7 @@
       },
       {
         "command": "terminalSidebar.right.selectProfile",
-        "title": "Open Profile\u2026",
+        "title": "Open Profile…",
         "category": "Terminal Sidebar",
         "icon": "$(list-selection)"
       },
@@ -221,51 +224,63 @@
       },
       {
         "command": "terminalSidebar.openPreview",
-        "title": "Open Preview\u2026",
+        "title": "Preview in Sidebar Terminal",
         "category": "Terminal Sidebar",
         "icon": "$(open-preview)"
       },
       {
         "command": "terminalSidebar.openPdf",
-        "title": "Open PDF Preview\u2026",
+        "title": "Open PDF Preview…",
         "category": "Terminal Sidebar",
         "icon": "$(file-pdf)"
       },
       {
         "command": "terminalSidebar.openMarkdown",
-        "title": "Preview Markdown\u2026",
+        "title": "Preview Markdown…",
         "category": "Terminal Sidebar",
         "icon": "$(markdown)"
       },
       {
         "command": "terminalSidebar.openLatex",
-        "title": "Preview LaTeX PDF\u2026",
+        "title": "Preview LaTeX PDF…",
         "category": "Terminal Sidebar",
         "icon": "$(file-pdf)"
       },
       {
         "command": "terminalSidebar.left.openPreview",
-        "title": "Open Preview\u2026",
+        "title": "Open Preview…",
         "category": "Terminal Sidebar",
         "icon": "$(open-preview)"
       },
       {
         "command": "terminalSidebar.left.openPdf",
-        "title": "Open PDF Preview\u2026",
+        "title": "Open PDF Preview…",
         "category": "Terminal Sidebar",
         "icon": "$(open-preview)"
       },
       {
         "command": "terminalSidebar.right.openPreview",
-        "title": "Open Preview\u2026",
+        "title": "Open Preview…",
         "category": "Terminal Sidebar",
         "icon": "$(open-preview)"
       },
       {
         "command": "terminalSidebar.right.openPdf",
-        "title": "Open PDF Preview\u2026",
+        "title": "Open PDF Preview…",
         "category": "Terminal Sidebar",
         "icon": "$(open-preview)"
+      },
+      {
+        "command": "terminalSidebar.usage",
+        "title": "Usage",
+        "category": "Terminal Sidebar",
+        "icon": "$(question)"
+      },
+      {
+        "command": "terminalSidebar.about",
+        "title": "About",
+        "category": "Terminal Sidebar",
+        "icon": "$(info)"
       }
     ],
     "menus": {
@@ -281,11 +296,6 @@
           "group": "navigation@1"
         },
         {
-          "command": "terminalSidebar.left.save",
-          "when": "view == terminalSidebar.left",
-          "group": "navigation@2"
-        },
-        {
           "command": "terminalSidebar.left.undo",
           "when": "view == terminalSidebar.left && terminalSidebar.left.configuring",
           "group": "navigation@3"
@@ -294,11 +304,6 @@
           "command": "terminalSidebar.left.redo",
           "when": "view == terminalSidebar.left && terminalSidebar.left.configuring",
           "group": "navigation@4"
-        },
-        {
-          "command": "terminalSidebar.left.close",
-          "when": "view == terminalSidebar.left",
-          "group": "navigation@5"
         },
         {
           "command": "terminalSidebar.left.configure",
@@ -321,11 +326,6 @@
           "group": "navigation@1"
         },
         {
-          "command": "terminalSidebar.right.save",
-          "when": "view == terminalSidebar.terminals",
-          "group": "navigation@2"
-        },
-        {
           "command": "terminalSidebar.right.undo",
           "when": "view == terminalSidebar.terminals && terminalSidebar.right.configuring",
           "group": "navigation@3"
@@ -334,11 +334,6 @@
           "command": "terminalSidebar.right.redo",
           "when": "view == terminalSidebar.terminals && terminalSidebar.right.configuring",
           "group": "navigation@4"
-        },
-        {
-          "command": "terminalSidebar.right.close",
-          "when": "view == terminalSidebar.terminals",
-          "group": "navigation@5"
         },
         {
           "command": "terminalSidebar.right.configure",
@@ -351,24 +346,14 @@
           "group": "terminal@1"
         },
         {
-          "command": "terminalSidebar.left.add",
-          "when": "view == terminalSidebar.left && !terminalSidebar.left.configuring",
-          "group": "navigation@0"
+          "command": "terminalSidebar.usage",
+          "when": "view == terminalSidebar.left || view == terminalSidebar.terminals",
+          "group": "z_help@0"
         },
         {
-          "command": "terminalSidebar.right.add",
-          "when": "view == terminalSidebar.terminals && !terminalSidebar.right.configuring",
-          "group": "navigation@0"
-        },
-        {
-          "command": "terminalSidebar.left.openPreview",
-          "when": "view == terminalSidebar.left && !terminalSidebar.left.configuring",
-          "group": "navigation@1.5"
-        },
-        {
-          "command": "terminalSidebar.right.openPreview",
-          "when": "view == terminalSidebar.terminals && !terminalSidebar.right.configuring",
-          "group": "navigation@1.5"
+          "command": "terminalSidebar.about",
+          "when": "view == terminalSidebar.left || view == terminalSidebar.terminals",
+          "group": "z_help@1"
         }
       ],
       "commandPalette": [
@@ -456,15 +441,22 @@
       "explorer/context": [
         {
           "command": "terminalSidebar.openPreview",
-          "when": "resourceExtname =~ /\\.(pdf|md|markdown|tex)$/i",
+          "when": "resourceScheme =~ /^(file|vscode-remote)$/ && resourceExtname =~ /\\.(pdf|md|markdown|mdown|mkd|mkdn|mdwn|tex|html|htm|css|json|jsonc)$/i",
           "group": "navigation@8"
         }
       ],
       "editor/title/context": [
         {
           "command": "terminalSidebar.openPreview",
-          "when": "resourceExtname =~ /\\.(pdf|md|markdown|tex)$/i",
+          "when": "resourceScheme =~ /^(file|vscode-remote)$/ && resourceExtname =~ /\\.(pdf|md|markdown|mdown|mkd|mkdn|mdwn|tex|html|htm|css|json|jsonc)$/i",
           "group": "navigation@8"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "terminalSidebar.openPreview",
+          "when": "resourceScheme =~ /^(file|vscode-remote)$/ && resourceExtname =~ /\\.(pdf|md|markdown|mdown|mkd|mkdn|mdwn|tex|html|htm|css|json|jsonc)$/i",
+          "group": "navigation@9"
         }
       ]
     },
@@ -531,7 +523,7 @@
                 "propertyNames": {
                   "minLength": 1,
                   "maxLength": 256,
-                  "pattern": "^[^=\u0000-\u001f\u007f]+$",
+                  "pattern": "^[^=\u0000-\u001f]+$",
                   "not": {
                     "enum": [
                       "__proto__",
@@ -626,7 +618,7 @@
                     "propertyNames": {
                       "minLength": 1,
                       "maxLength": 256,
-                      "pattern": "^[^=\u0000-\u001f\u007f]+$",
+                      "pattern": "^[^=\u0000-\u001f]+$",
                       "not": {
                         "enum": [
                           "__proto__",
@@ -700,7 +692,7 @@
                     "propertyNames": {
                       "minLength": 1,
                       "maxLength": 256,
-                      "pattern": "^[^=\u0000-\u001f\u007f]+$",
+                      "pattern": "^[^=\u0000-\u001f]+$",
                       "not": {
                         "enum": [
                           "__proto__",
@@ -724,6 +716,13 @@
               "description": "Secondary Side Bar startup tabs."
             }
           }
+        },
+        "terminalSidebar.markdownFontFamily": {
+          "type": "string",
+          "scope": "application",
+          "default": "default",
+          "maxLength": 256,
+          "markdownDescription": "Font family for Markdown previews. `default` follows VS Code; `editor` follows the editor font. A font name or comma-separated fallback list is also accepted. Saved in User settings and included in Settings Sync."
         }
       }
     },
@@ -754,6 +753,9 @@
     "package": "node scripts/package.mjs --pre-release"
   },
   "dependencies": {
+    "@mdit/plugin-footnote": "1.1.1",
+    "@mdit/plugin-tasklist": "1.1.1",
+    "@mdit/plugin-tex": "1.1.1",
     "@vscode/codicons": "0.0.46-24",
     "@xterm/addon-fit": "0.11.0",
     "@xterm/addon-search": "0.16.0",
@@ -761,17 +763,25 @@
     "@xterm/addon-unicode11": "0.9.0",
     "@xterm/addon-web-links": "0.12.0",
     "@xterm/xterm": "6.0.0",
+    "css-tree": "3.2.1",
+    "dompurify": "3.4.15",
+    "jsonc-parser": "3.3.1",
+    "katex": "0.18.7",
     "markdown-it": "15.0.2",
     "node-pty": "1.1.0",
     "pdf-lib": "1.17.1",
-    "pdfjs-dist": "6.3.289"
+    "pdfjs-dist": "6.3.289",
+    "prettier": "3.9.8"
   },
   "devDependencies": {
+    "@types/css-tree": "3.2.0",
+    "@types/jsdom": "30.0.0",
     "@types/markdown-it": "14.2.0",
     "@types/node": "22.20.3",
     "@types/vscode": "1.106.0",
     "@vscode/vsce": "4.0.0",
     "esbuild": "0.28.2",
+    "jsdom": "30.1.0",
     "tsx": "4.20.6",
     "typescript": "5.9.3"
   }
