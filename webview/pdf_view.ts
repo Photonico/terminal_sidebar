@@ -2,7 +2,7 @@ import type { PDFDocumentLoadingTask, PDFDocumentProxy, PDFPageProxy, RenderTask
 import type { client_message, pdf_tab } from '../src/types';
 import type { pdf_zoom } from '../src/pdf_state';
 import { document_search, type document_match } from './document_search';
-import { pdf_page_wheel } from './pdf_paging';
+import { layout_pages, page_at, visible_pages, type page_box, type page_size } from './pdf_layout';
 import './pdf_view.css';
 import './pdf_text_layer.css';
 
@@ -10,7 +10,7 @@ type pdf_library = typeof import('pdfjs-dist');
 let library: Promise<pdf_library> | undefined;
 const assets = document.querySelector<HTMLMetaElement>('meta[name="pdf-assets"]')?.content ?? '';
 
-function load_library(): Promise<pdf_library> {
+export function load_pdf_library(): Promise<pdf_library> {
   return library ??= import(`${assets}/pdf.mjs`).then(async (module: pdf_library) => {
     // Webview workers cannot import scripts via VS Code's resource service worker.
     // Fetch the complete bundled module first, then start a self-contained blob worker.
@@ -27,7 +27,7 @@ function load_library(): Promise<pdf_library> {
   });
 }
 
-function page_text(items: Array<{ str: string; hasEOL?: boolean } | { type: string }>): { text: string; offsets: number[] } {
+export function page_text(items: Array<{ str: string; hasEOL?: boolean } | { type: string }>): { text: string; offsets: number[] } {
   let text = '';
   const offsets: number[] = [];
   for (const item of items) {
@@ -39,7 +39,15 @@ function page_text(items: Array<{ str: string; hasEOL?: boolean } | { type: stri
   return { text, offsets };
 }
 
-/** A single rendered page bounds canvas memory even for long, image-heavy theses. */
+interface rendered_page {
+  element: HTMLDivElement;
+  canvas?: HTMLCanvasElement;
+  task?: RenderTask;
+  layer?: TextLayer;
+  source?: ReturnType<typeof page_text>;
+}
+
+/** Page geometry spans the document; only nearby canvases and text layers stay alive. */
 export class pdf_view {
   readonly pane = document.createElement('div');
   readonly search: document_search;
@@ -47,6 +55,11 @@ export class pdf_view {
   section_button?: HTMLButtonElement;
   section_label?: HTMLSpanElement;
   private readonly viewport = document.createElement('div');
+  private readonly pages = document.createElement('div');
+  private readonly rendered = new Map<number, rendered_page>();
+  private sizes: page_size[] = [];
+  private boxes: page_box[] = [];
+  private scroll_timer?: ReturnType<typeof setTimeout>;
   private readonly notice = document.createElement('div');
   private readonly page_input = document.createElement('input');
   private readonly count = document.createElement('span');
@@ -57,10 +70,6 @@ export class pdf_view {
   private pdf?: PDFDocumentProxy;
   private document_task?: PDFDocumentLoadingTask;
   private loading?: PDFDocumentLoadingTask;
-  private render_task?: RenderTask;
-  private text_layer?: TextLayer;
-  private rendered_text?: TextLayer;
-  private rendered_source?: ReturnType<typeof page_text>;
   private selected_match?: document_match;
   private matches: readonly document_match[] = [];
   private scroll_to_match = false;
@@ -75,13 +84,12 @@ export class pdf_view {
   private rendered_width = 0;
   private page: number;
   private zoom: pdf_zoom;
-  private readonly paging = new pdf_page_wheel();
-  private edge_scroll?: 'top' | 'bottom';
+
 
   constructor(
     readonly tab: pdf_tab,
     private readonly send: (message: client_message) => void,
-    private readonly renderer: () => Promise<pdf_library> = load_library,
+    private readonly renderer: () => Promise<pdf_library> = load_pdf_library,
   ) {
     this.page = tab.page;
     this.zoom = tab.zoom;
@@ -160,15 +168,19 @@ export class pdf_view {
     this.viewport.tabIndex = 0;
     this.viewport.setAttribute('aria-label', 'PDF page. Use h and l to turn pages, j and k to scroll.');
     this.viewport.addEventListener('keydown', event => this.keydown(event));
-    this.viewport.addEventListener('wheel', event => {
-      if (!this.pdf || this.pane.hidden) return;
-      const action = this.paging.step(event, {
-        top: this.viewport.scrollTop, height: this.viewport.scrollHeight, visible: this.viewport.clientHeight,
-        previous: this.page > 1, next: this.page < this.pdf.numPages,
-      }, performance.now());
-      if (action.consume) { event.preventDefault(); event.stopPropagation(); }
-      if (action.page) this.navigate(this.page + action.page, action.page < 0 ? 'bottom' : 'top');
-    }, { passive: false });
+    this.pages.className = 'pdf-pages';
+    this.viewport.append(this.pages);
+    this.viewport.addEventListener('scroll', () => {
+      if (!this.pdf || this.pane.hidden || !this.boxes.length) return;
+      const page = page_at(this.boxes, this.viewport.scrollTop) + 1;
+      if (page !== this.page) {
+        this.page = page;
+        this.update_controls();
+        clearTimeout(this.scroll_timer);
+        this.scroll_timer = setTimeout(() => this.remember(), 150);
+      }
+      void this.render_visible();
+    });
     this.pane.append(toolbar, this.notice, this.viewport);
     this.observer = new ResizeObserver(() => {
       clearTimeout(this.resize_timer);
@@ -224,6 +236,8 @@ export class pdf_view {
       this.cancel_render();
       const previous_task = this.document_task;
       this.pdf = pdf;
+      this.sizes = [];
+      this.boxes = [];
       this.document_task = task;
       this.loaded_url = url;
       this.loading = undefined;
@@ -234,6 +248,7 @@ export class pdf_view {
       this.destroy_task(previous_task);
       this.search.reset();
       await this.render(true);
+      void this.measure_pages(pdf, revision);
     } catch (error) {
       if (!this.disposed && revision === this.load_revision) {
         console.error('Side Terminal PDF load failed', error);
@@ -257,10 +272,11 @@ export class pdf_view {
     if (Number.isFinite(page)) this.page = Math.max(1, Math.min(Math.trunc(page), this.pdf.numPages));
     this.remember();
     this.update_controls();
-    this.edge_scroll = position;
     if (!reveal_match) this.scroll_to_match = false;
-    this.viewport.scrollTop = 0;
-    void this.render();
+    const box = this.boxes[this.page - 1];
+    if (box) this.viewport.scrollTop = box.top + (position === 'bottom' ? Math.max(0, box.height - this.viewport.clientHeight + 24) : 0);
+    void this.render_visible();
+    this.highlight_match();
   }
 
   private update_controls(): void {
@@ -276,101 +292,133 @@ export class pdf_view {
     this.send({ type: 'pdf_position', id: this.tab.id, position: { page: this.page, zoom: this.zoom } });
   }
 
-  private cancel_render(): void {
-    ++this.render_revision;
-    this.render_task?.cancel();
-    this.text_layer?.cancel();
-    this.render_task = undefined;
-    this.text_layer = undefined;
+  private release_page(index: number): void {
+    const rendered = this.rendered.get(index);
+    if (!rendered) return;
+    this.rendered.delete(index);
+    rendered.task?.cancel();
+    rendered.layer?.cancel();
+    if (rendered.canvas) { rendered.canvas.width = 0; rendered.canvas.height = 0; }
+    rendered.element.remove();
   }
 
-  private async render(preserve_scroll = false): Promise<void> {
+  private cancel_render(): void {
+    ++this.render_revision;
+    for (const index of this.rendered.keys()) this.release_page(index);
+  }
+
+  /** Resolve page sizes without retaining decoded images or allocating offscreen canvases. */
+  private async measure_pages(pdf: PDFDocumentProxy, revision: number): Promise<void> {
+    for (let index = 0; index < pdf.numPages; index++) {
+      if (this.disposed || this.pdf !== pdf || revision !== this.load_revision) return;
+      try {
+        const page = await pdf.getPage(index + 1);
+        if (this.disposed || this.pdf !== pdf || revision !== this.load_revision) return;
+        const size = page.getViewport({ scale: 1 });
+        const old = this.sizes[index];
+        if (old && (old.width !== size.width || old.height !== size.height)) {
+          this.sizes[index] = { width: size.width, height: size.height };
+          await this.render(true);
+        }
+        page.cleanup();
+      } catch { /* Keep the estimated size; the page renderer offers Reload on failure. */ }
+    }
+  }
+
+  private async render(preserve_scroll = true): Promise<void> {
     if (!this.pdf || this.disposed || this.pane.hidden || this.viewport.clientWidth < 1) return;
+    const pdf = this.pdf;
+    const old = this.boxes[this.page - 1];
+    const fraction = preserve_scroll && old ? (this.viewport.scrollTop - old.top) / old.height : 0;
     this.cancel_render();
     const revision = this.render_revision;
-    const scroll = this.viewport.scrollTop;
+    if (!this.sizes.length) {
+      const page = await pdf.getPage(this.page);
+      if (revision !== this.render_revision || this.disposed) return;
+      const size = page.getViewport({ scale: 1 });
+      this.sizes = Array.from({ length: pdf.numPages }, () => ({ width: size.width, height: size.height }));
+      page.cleanup();
+    }
+    this.boxes = layout_pages(this.sizes, this.viewport.clientWidth, this.viewport.clientHeight, this.zoom);
+    const last = this.boxes.at(-1)!;
+    this.pages.style.height = `${last.top + last.height}px`;
+    this.pages.style.width = `${Math.max(this.viewport.clientWidth - 24, ...this.boxes.map(box => box.width))}px`;
+    const box = this.boxes[this.page - 1];
+    this.viewport.scrollTop = box.top + fraction * box.height;
+    this.rendered_width = this.viewport.clientWidth;
+    await this.render_visible();
+  }
+
+  private async render_visible(): Promise<void> {
+    if (!this.pdf || this.disposed || this.pane.hidden || !this.boxes.length) return;
+    const visible = visible_pages(this.boxes, this.viewport.scrollTop, this.viewport.clientHeight);
+    for (const index of this.rendered.keys()) if (!visible.includes(index)) this.release_page(index);
+    this.pane.dataset.pdfPage = String(this.page);
+    this.pane.dataset.pdfPages = String(this.pdf.numPages);
+    await Promise.all(visible.map(index => this.render_page(index)));
+  }
+
+  private async render_page(index: number): Promise<void> {
+    if (this.rendered.has(index) || !this.pdf) return;
     const pdf = this.pdf;
-    const page_number = this.page;
-    const edge_scroll = this.edge_scroll;
+    const box = this.boxes[index];
+    const rendered = document.createElement('div');
+    rendered.className = 'pdf-page';
+    rendered.style.top = `${box.top}px`;
+    rendered.style.width = `${box.width}px`;
+    rendered.style.height = `${box.height}px`;
+    rendered.style.setProperty('--total-scale-factor', String(box.scale));
+    rendered.style.setProperty('--scale-round-x', '1px');
+    rendered.style.setProperty('--scale-round-y', '1px');
+    const entry: rendered_page = { element: rendered };
+    this.rendered.set(index, entry);
+    this.pages.append(rendered);
+    const current = () => !this.disposed && this.rendered.get(index) === entry && this.pdf === pdf;
     let page: PDFPageProxy | undefined;
-    let canvas: HTMLCanvasElement | undefined;
-    let attached = false;
     try {
-      page = await pdf.getPage(page_number);
-      if (this.disposed || revision !== this.render_revision) return;
-      const base = page.getViewport({ scale: 1 });
-      const width = this.viewport.clientWidth;
-      const scale = typeof this.zoom === 'number' ? this.zoom : this.zoom === 'page-width'
-        ? (width - 24) / base.width
-        : Math.min((width - 24) / base.width, (this.viewport.clientHeight - 24) / base.height);
-      const viewport = page.getViewport({ scale: Math.max(0.1, scale) });
-      // Avoid unbounded allocations on HiDPI displays and large-format PDF pages.
-      const pixels = Math.min(window.devicePixelRatio || 1, 2,
-        16_384 / viewport.width, 16_384 / viewport.height,
-        Math.sqrt(16_000_000 / (viewport.width * viewport.height)));
-      canvas = document.createElement('canvas');
+      page = await pdf.getPage(index + 1);
+      if (!current()) return;
+      const viewport = page.getViewport({ scale: box.scale });
+      // Six nearby pages at most, each with at most four million canvas pixels.
+      const pixels = Math.min(window.devicePixelRatio || 1, 2, 16_384 / viewport.width,
+        16_384 / viewport.height, Math.sqrt(4_000_000 / (viewport.width * viewport.height)));
+      const canvas = entry.canvas = document.createElement('canvas');
       canvas.width = Math.max(1, Math.floor(viewport.width * pixels));
       canvas.height = Math.max(1, Math.floor(viewport.height * pixels));
       canvas.style.width = `${viewport.width}px`;
       canvas.style.height = `${viewport.height}px`;
-      const rendered = document.createElement('div');
-      rendered.className = 'pdf-page';
-      rendered.style.width = `${viewport.width}px`;
-      rendered.style.height = `${viewport.height}px`;
-      rendered.style.setProperty('--total-scale-factor', String(viewport.scale));
-      rendered.style.setProperty('--scale-round-x', '1px');
-      rendered.style.setProperty('--scale-round-y', '1px');
       rendered.append(canvas);
-      this.render_task = page.render({ canvas, viewport, transform: [pixels, 0, 0, pixels, 0, 0] });
-      await this.render_task.promise;
-      if (this.disposed || revision !== this.render_revision) return;
+      entry.task = page.render({ canvas, viewport, transform: [pixels, 0, 0, pixels, 0, 0] });
+      await entry.task.promise;
+      if (!current()) return;
       const module = await this.renderer();
-      if (this.disposed || revision !== this.render_revision) return;
+      if (!current()) return;
       const text = document.createElement('div');
       text.className = 'textLayer';
       rendered.append(text);
       const content = await page.getTextContent();
-      if (this.disposed || revision !== this.render_revision) return;
-      this.text_layer = new module.TextLayer({ textContentSource: content, container: text, viewport });
-      const text_layer = this.text_layer;
-      // Canvas remains useful when an unusual PDF has a malformed text layer.
-      await this.text_layer.render().catch(() => undefined);
-      if (this.disposed || revision !== this.render_revision) return;
-      this.clear_canvas();
-      this.viewport.replaceChildren(rendered);
-      this.rendered_text = text_layer;
-      this.rendered_source = page_text(content.items);
+      if (!current()) return;
+      entry.layer = new module.TextLayer({ textContentSource: content, container: text, viewport });
+      await entry.layer.render().catch(() => undefined);
+      if (!current()) return;
+      entry.source = page_text(content.items);
+      const view = [...page.view];
       rendered.addEventListener('dblclick', event => {
         if (!(event.target instanceof Element) || !event.target.closest('.textLayer span')) return;
         const rectangle = rendered.getBoundingClientRect();
         const [x, y] = viewport.convertToPdfPoint(event.clientX - rectangle.left, event.clientY - rectangle.top);
-        this.send({ type: 'pdf_reverse_sync', id: this.tab.id, page: page_number,
-          x: Math.max(0, x - page!.view[0]), y: Math.max(0, page!.view[3] - y) });
+        this.send({ type: 'pdf_reverse_sync', id: this.tab.id, page: index + 1,
+          x: Math.max(0, x - view[0]), y: Math.max(0, view[3] - y) });
       });
-      attached = true;
-      this.viewport.scrollTop = edge_scroll === 'bottom' ? this.viewport.scrollHeight
-        : preserve_scroll ? scroll : this.viewport.scrollTop;
-      this.edge_scroll = undefined;
-      this.rendered_width = width;
       this.notice.hidden = true;
-      this.pane.dataset.pdfPage = String(page_number);
-      this.pane.dataset.pdfPages = String(pdf.numPages);
       this.highlight_match();
     } catch (error) {
-      if (!this.disposed && revision === this.render_revision && (error as Error).name !== 'RenderingCancelledException') {
+      if (current() && (error as Error).name !== 'RenderingCancelledException') {
         this.error('This page could not be rendered. Try another page or reload the PDF.');
       }
     } finally {
-      // Free offscreen canvas allocations from cancelled work immediately.
-      if (canvas && !attached) { canvas.width = 0; canvas.height = 0; }
+      if (!current() && entry.canvas) { entry.canvas.width = 0; entry.canvas.height = 0; }
       page?.cleanup();
-    }
-  }
-
-  private clear_canvas(): void {
-    for (const canvas of this.viewport.querySelectorAll('canvas')) {
-      canvas.width = 0;
-      canvas.height = 0;
     }
   }
 
@@ -386,12 +434,11 @@ export class pdf_view {
   private highlight_match(): void {
     for (const match of this.viewport.querySelectorAll('.pdf_find_match')) match.remove();
     const selected = this.selected_match;
-    const layer = this.rendered_text;
-    const rendered_source = this.rendered_source;
-    const rendered = this.viewport.querySelector<HTMLElement>('.pdf-page');
-    if (!layer || !rendered || !rendered_source) return;
-    const matches = this.matches.filter(match => match.page + 1 === Number(this.pane.dataset.pdfPage));
-    if (!matches.length) return;
+    for (const [page_index, entry] of this.rendered) {
+    const { layer, source: rendered_source, element: rendered } = entry;
+    if (!layer || !rendered_source) continue;
+    const matches = this.matches.filter(match => match.page === page_index);
+    if (!matches.length) continue;
     const strings = layer.textContentItemsStr;
     const normalized_offsets: number[] = [];
     for (let index = 0; index < rendered_source.text.length;) {
@@ -435,6 +482,7 @@ export class pdf_view {
       first.scrollIntoView({ block: 'center', inline: 'nearest' });
       this.scroll_to_match = false;
     }
+    }
   }
 
   private keydown(event: KeyboardEvent): void {
@@ -463,7 +511,7 @@ export class pdf_view {
     clearTimeout(this.resize_timer);
     this.destroy_task(this.loading);
     this.destroy_task(this.document_task);
-    this.clear_canvas();
+    clearTimeout(this.scroll_timer);
     this.pane.remove();
   }
 }
