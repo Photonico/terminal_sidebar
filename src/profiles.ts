@@ -149,6 +149,7 @@ export function is_client_message(value: unknown): value is client_message {
     && Number(message.cols) > 0 && Number(message.cols) <= 1000 && Number(message.rows) > 0 && Number(message.rows) <= 1000;
   switch (message.type) {
     case 'ready':
+      return message.renderer_id === undefined || is_identifier(message.renderer_id);
     case 'settings':
     case 'trust':
     case 'select_profile':

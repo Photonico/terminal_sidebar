@@ -108,7 +108,7 @@ export type host_message =
   | { type: 'paste'; id: string; data: string };
 
 export type client_message =
-  | { type: 'ready' }
+  | { type: 'ready'; renderer_id?: string }
   | { type: 'activate'; id: string; cols: number; rows: number }
   | { type: 'input'; id: string; data: string }
   | { type: 'resize'; id: string; cols: number; rows: number }

@@ -128,6 +128,13 @@ export class pdf_view {
     this.page_input.title = 'PDF page number, including front matter';
     this.page_input.setAttribute('aria-label', 'PDF page');
     this.page_input.addEventListener('change', () => this.navigate(Number(this.page_input.value)));
+    this.page_input.addEventListener('keydown', event => {
+      if (event.key !== 'Enter' || event.isComposing) return;
+      event.preventDefault();
+      event.stopPropagation();
+      this.navigate(Number(this.page_input.value));
+      this.focus();
+    });
     this.count.textContent = '/ ...';
     this.zoom_input.setAttribute('aria-label', 'PDF zoom');
     for (const [value, label] of [['page-width', 'Fit width'], ['page-fit', 'Fit page'], ['0.5', '50%'],

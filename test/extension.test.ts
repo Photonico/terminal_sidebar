@@ -130,6 +130,10 @@ class fake_terminal_process implements pty_process {
 
 class fake_view {
   visible = true;
+  renderer_id = 'renderer_0';
+  options_updates = 0;
+  reload_on_options = true;
+  private renderer_number = 0;
   title?: string;
   readonly messages: host_message[] = [];
   readonly incoming = new event_source<unknown>();
@@ -151,11 +155,25 @@ class fake_view {
 
   constructor(private readonly flush_file_io: () => Promise<void> = async () => {}, ready_on_html = false) {
     let html = '';
+    let options: { localResourceRoots?: fake_uri[] } = {};
+    Object.defineProperty(this.webview, 'options', {
+      get: () => options,
+      set: (value: { localResourceRoots?: fake_uri[] }) => {
+        options = value;
+        this.options_updates++;
+        if (html) {
+          this.renderer_id = `renderer_${++this.renderer_number}`;
+          if (this.reload_on_options) queueMicrotask(() => {
+            this.incoming.fire({ type: 'ready', renderer_id: this.renderer_id });
+          });
+        }
+      },
+    });
     Object.defineProperty(this.webview, 'html', {
       get: () => html,
       set: (value: string) => {
         html = value;
-        if (ready_on_html) this.incoming.fire({ type: 'ready' });
+        if (ready_on_html) this.incoming.fire({ type: 'ready', renderer_id: this.renderer_id });
       },
     });
   }
@@ -440,7 +458,7 @@ async function harness(options: harness_options = {}) {
       const view = new fake_view(flush_file_io, options.ready_on_html);
       await provider.resolveWebviewView(view as unknown as vscode.WebviewView, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
       if (options.ready_on_html) { await next_turn(); await flush_file_io(); }
-      else await view.send({ type: 'ready' });
+      else await view.send({ type: 'ready', renderer_id: view.renderer_id });
       return view;
     },
     async command(id: string, ...arguments_list: unknown[]) {
@@ -1075,6 +1093,30 @@ test('recreated views replay pending output once and retain their existing proce
   assert.deepEqual(recreated.output().map(message => message.data), ['BEFORE_DISPOSALAFTER_DISPOSAL', 'NEW_OUTPUT']);
 });
 
+test('ready retries resend state without replaying terminal output or starting duplicate processes', async test_case => {
+  const runtime = await harness();
+  test_case.after(() => runtime.dispose());
+  const view = await runtime.view('right');
+  await view.send({ type: 'ready', renderer_id: 'renderer_one' });
+  runtime.processes[0].data.fire('FIRST_OUTPUT');
+  await delay(20);
+  const state_count = view.messages.filter(message => message.type === 'state').length;
+  await view.send({ type: 'ready', renderer_id: 'renderer_one' });
+  await view.send({ type: 'ready', renderer_id: 'renderer_one' });
+  assert.equal(view.messages.filter(message => message.type === 'state').length, state_count + 2);
+  assert.deepEqual(view.output().map(message => message.data), ['FIRST_OUTPUT']);
+  assert.equal(runtime.processes.length, 2);
+
+  runtime.processes[0].data.fire('PENDING_OUTPUT');
+  await view.send({ type: 'ready', renderer_id: 'renderer_two' });
+  await delay(20);
+  assert.deepEqual(view.output().map(message => message.data), ['FIRST_OUTPUT', 'FIRST_OUTPUTPENDING_OUTPUT'],
+    'a newly created renderer receives pending output only through its one history replay');
+  await view.send({ type: 'ready', renderer_id: 'renderer_two' });
+  assert.equal(view.output().length, 2);
+  assert.equal(runtime.processes.length, 2);
+});
+
 test('both gears route to the left editor and opening configuration alone starts no terminal', async test_case => {
   const runtime = await harness();
   test_case.after(() => runtime.dispose());
@@ -1343,8 +1385,11 @@ test('mixed document tabs restore without PTYs and keep reading positions and pr
   assert.equal(right.state().tabs.filter(is_markdown_tab).length, 1);
   assert.equal(runtime.processes.length, 2, 'only the two startup terminal profiles spawn shells');
   assert.deepEqual(Array.from(right.webview.options.localResourceRoots ?? [], value => value.toString()), [
-    'vscode-extension://terminal-sidebar/extension/dist', fake_uri.file(files.directory).toString(), fake_uri.file(files.directory).toString(),
+    fake_uri.file(files.directory).toString(), 'vscode-extension://terminal-sidebar/extension/dist',
   ]);
+  assert.equal(right.options_updates, 1, 'all restored roots are present before HTML and never reload its first renderer');
+  await right.send({ type: 'ready', renderer_id: right.renderer_id });
+  assert.equal(right.options_updates, 1, 'equivalent roots do not recreate the iframe');
   await right.send({ type: 'pdf_position', id: 'pdf', position: { page: 8, zoom: 'page-fit' } });
   await right.send({ type: 'markdown_position', id: 'markdown', position: { scroll: 240 } });
   const next_window = await harness({ memory: runtime.memory });
@@ -1360,6 +1405,47 @@ test('mixed document tabs restore without PTYs and keep reading positions and pr
   }
   assert.equal(runtime.processes.length, 2);
   assert.ok(runtime.processes.every(process => !process.writes.includes('must not reach a PTY')));
+});
+
+test('dynamic preview roots retire the old renderer and wait for the replacement handshake', async test_case => {
+  const files = preview_fixture(test_case);
+  const runtime = await harness();
+  test_case.after(() => runtime.dispose());
+  const view = await runtime.view('right');
+  const original_renderer = view.renderer_id;
+  view.reload_on_options = false;
+  runtime.processes[0].data.fire('ORIGINAL');
+  await delay(20);
+  const states_before_open = view.messages.filter(message => message.type === 'state').length;
+  await runtime.command('terminalSidebar.openPdf', fake_uri.file(files.pdf));
+  assert.equal(view.options_updates, 2);
+  assert.equal(view.messages.filter(message => message.type === 'state').length, states_before_open,
+    'state is withheld while resource options replace the iframe');
+  runtime.processes[0].data.fire('DURING_RELOAD');
+  await view.send({ type: 'ready', renderer_id: original_renderer });
+  assert.equal(view.messages.filter(message => message.type === 'state').length, states_before_open,
+    'a late retry from the retired renderer cannot reclaim the view');
+  await view.send({ type: 'ready', renderer_id: view.renderer_id });
+  assert.equal(view.state().tabs.filter(is_pdf_tab).length, 1);
+  assert.deepEqual(view.output().map(message => message.data), ['ORIGINAL', 'ORIGINALDURING_RELOAD']);
+  const new_state_count = view.messages.filter(message => message.type === 'state').length;
+  await view.send({ type: 'ready', renderer_id: original_renderer });
+  assert.equal(view.messages.filter(message => message.type === 'state').length, new_state_count);
+  assert.equal(view.output().length, 2);
+  assert.equal(runtime.processes.length, 2);
+
+  await runtime.command('terminalSidebar.openMarkdown', fake_uri.file(files.markdown));
+  assert.equal(view.options_updates, 2, 'another document in the same directory needs no iframe replacement');
+  await view.send({ type: 'close_tab', id: view.state().tabs.find(is_pdf_tab)!.id });
+  assert.equal(view.options_updates, 2, 'the remaining document retains the shared directory grant');
+  const previous_renderer = view.renderer_id;
+  await view.send({ type: 'close_tab', id: view.state().tabs.find(is_markdown_tab)!.id });
+  assert.equal(view.options_updates, 3, 'the last document revokes its directory grant');
+  await view.send({ type: 'ready', renderer_id: previous_renderer });
+  await view.send({ type: 'ready', renderer_id: view.renderer_id });
+  assert.ok(view.state().tabs.every(is_terminal_tab));
+  assert.equal(view.webview.options.localResourceRoots?.length, 1);
+  assert.equal(runtime.processes.length, 2);
 });
 
 test('PDF and Markdown watchers refresh complete files and close without affecting terminal processes', async test_case => {

@@ -258,3 +258,27 @@ test('reverse wheel page navigation lands at the bottom of the previous rendered
   assert.equal(viewport.scrollTop, viewport.scrollHeight, 'browser clamps this request to the page bottom');
   h.view.dispose();
 });
+
+test('Enter commits the PDF page input, renders that page and remembers its position', async () => {
+  const h = await harness();
+  const loaded = h.view.load('page-input');
+  await next_turn();
+  h.tasks[0].resolve(h.document);
+  await loaded;
+  const input = h.elements.find(element => element.tag === 'input')!;
+  input.value = '8';
+  let prevented = false;
+  let stopped = false;
+  input.dispatch('keydown', {
+    key: 'Enter', isComposing: false,
+    preventDefault() { prevented = true; }, stopPropagation() { stopped = true; },
+  });
+  await next_turn();
+  assert.equal(prevented, true);
+  assert.equal(stopped, true);
+  assert.equal(h.view.pane.dataset.pdfPage, '8');
+  const message = h.messages.at(-1) as { type: string; position: { page: number } };
+  assert.equal(message.type, 'pdf_position');
+  assert.equal(message.position.page, 8);
+  h.view.dispose();
+});

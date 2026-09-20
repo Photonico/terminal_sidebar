@@ -48,6 +48,9 @@ function read_scrollbar_size(value: unknown, default_size: number): number {
 class sidebar_view implements vscode.WebviewViewProvider, vscode.Disposable {
   view?: vscode.WebviewView;
   ready = false;
+  renderer_id?: string;
+  readonly retired_renderers = new Set<string>();
+  private resource_root_keys?: string[];
   configuring = false;
   configure_pending = false;
   startup_complete = false;
@@ -79,10 +82,10 @@ class sidebar_view implements vscode.WebviewViewProvider, vscode.Disposable {
     }
     this.view = view;
     this.ready = false;
-    view.webview.options = {
-      enableScripts: true,
-      localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'dist')],
-    };
+    this.renderer_id = undefined;
+    this.retired_renderers.clear();
+    this.resource_root_keys = undefined;
+    this.update_resource_roots();
     this.subscriptions.push(
       view.webview.onDidReceiveMessage((message: unknown) => {
         if (is_client_message(message)) {
@@ -101,6 +104,7 @@ class sidebar_view implements vscode.WebviewViewProvider, vscode.Disposable {
         if (this.view === view) {
           this.view = undefined;
           this.ready = false;
+          this.renderer_id = undefined;
           this.owner.set_draft_state(this, false, false, false);
         }
       }),
@@ -108,6 +112,25 @@ class sidebar_view implements vscode.WebviewViewProvider, vscode.Disposable {
     // Cached webview scripts can send ready immediately during window restoration.
     // Subscribe before assigning HTML so that first handshake cannot be lost.
     view.webview.html = this.owner.html(view.webview);
+  }
+
+  retire_renderer(): void {
+    if (this.renderer_id) this.retired_renderers.add(this.renderer_id);
+    this.ready = false;
+    this.renderer_id = undefined;
+  }
+
+  /** Changing resource roots recreates the iframe in VS Code. Wait for its own handshake. */
+  update_resource_roots(): boolean {
+    if (!this.view) return false;
+    const roots = this.owner.resource_roots(this);
+    const keys = roots.map(uri => uri.toString());
+    if (this.resource_root_keys?.length === keys.length
+      && keys.every((key, index) => key === this.resource_root_keys?.[index])) return false;
+    this.resource_root_keys = keys;
+    this.retire_renderer();
+    this.view.webview.options = { enableScripts: true, localResourceRoots: roots };
+    return true;
   }
 
   async open(configure = false): Promise<void> {
@@ -280,15 +303,9 @@ class terminal_sidebar implements vscode.Disposable {
         continue;
       }
       const layout = this.ensure_layout(view);
+      if (view.update_resource_roots()) continue;
       if (view.view) {
         view.view.title = 'Side Terminals';
-        view.view.webview.options = {
-          enableScripts: true,
-          localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'dist'),
-            // VS Code accepts descendants of resource roots, not a root file itself.
-            ...layout.tabs.filter(is_pdf_tab).map(tab => vscode.Uri.joinPath(vscode.Uri.parse(tab.uri), '..')),
-            ...layout.tabs.filter(is_markdown_tab).map(tab => vscode.Uri.joinPath(vscode.Uri.parse(tab.uri), '..'))],
-        };
       }
       view.post({
         type: 'state', side: view.side, configuration: this.configuration,
@@ -297,6 +314,18 @@ class terminal_sidebar implements vscode.Disposable {
         active_id: layout.active_id, expanded_ids: layout.expanded_ids, shells: this.shells,
       });
     }
+  }
+
+  resource_roots(view: sidebar_view): vscode.Uri[] {
+    const roots = [vscode.Uri.joinPath(this.context.extensionUri, 'dist')];
+    for (const tab of this.ensure_layout(view).tabs) {
+      if (is_pdf_tab(tab) || is_markdown_tab(tab)) {
+        // VS Code accepts descendants of roots, not a root file itself.
+        roots.push(vscode.Uri.joinPath(vscode.Uri.parse(tab.uri), '..'));
+      }
+    }
+    return [...new Map(roots.map(uri => [uri.toString(), uri])).entries()]
+      .sort(([left], [right]) => left.localeCompare(right)).map(([, uri]) => uri);
   }
 
   /** Start each open tab once, on first use of its sidebar, after Workspace Trust. */
@@ -604,19 +633,29 @@ class terminal_sidebar implements vscode.Disposable {
 
   async receive(view: sidebar_view, message: client_message): Promise<void> {
     if (message.type === 'ready') {
-      // Flush before replay: a freshly created renderer receives each buffered chunk once.
-      this.flush_output();
+      if (message.renderer_id && view.retired_renderers.has(message.renderer_id)) return;
+      const new_renderer = !view.ready || (message.renderer_id !== undefined
+        && message.renderer_id !== view.renderer_id);
+      if (new_renderer) {
+        // Pending output is already in history. Deliver it only through this replay.
+        view.retire_renderer();
+        this.flush_output();
+      }
       view.ready = true;
+      view.renderer_id = message.renderer_id;
       this.ensure_layout(view);
-      if (view.configure_pending || view.configuring) {
+      if (view.configure_pending || (new_renderer && view.configuring)) {
         view.configure_pending = false;
         view.post({ type: 'configure' });
       }
       this.send_state(view);
-      for (const [id, data] of view.history) {
-        view.post({ type: 'output', id, data });
+      if (!view.ready) return;
+      if (new_renderer) {
+        for (const [id, data] of view.history) {
+          view.post({ type: 'output', id, data });
+        }
+        this.start_side(view);
       }
-      this.start_side(view);
       return;
     }
     if (message.type === 'draft_state') {

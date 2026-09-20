@@ -15,6 +15,7 @@ import { terminal_text, terminal_html, terminal_markdown } from './export';
 import { terminal_pdf } from './pdf_export';
 import { pdf_view } from './pdf_view';
 import { markdown_view } from './markdown_view';
+import { startup_handshake } from './startup_handshake';
 import { is_terminal_tab, is_pdf_tab, is_markdown_tab, type sidebar_tab } from '../src/types';
 import { is_export_payload } from '../src/export_format';
 import type {
@@ -58,6 +59,9 @@ const icons = {
 function send(message: client_message): void {
   vscode.postMessage(message);
 }
+
+const renderer_id = crypto.randomUUID();
+const handshake = new startup_handshake(() => send({ type: 'ready', renderer_id }));
 
 function icon(name: keyof typeof icons): string {
   return `<svg viewBox="0 0 16 16" aria-hidden="true">${icons[name]}</svg>`;
@@ -1462,6 +1466,7 @@ window.addEventListener('message', (event: MessageEvent<host_message>) => {
   }
   switch (message.type) {
     case 'state': {
+      handshake.acknowledge();
       const previous_active_id = active_id;
       received_state = true;
       side = message.side;
@@ -1577,17 +1582,20 @@ theme_observer.observe(document.body, { attributes: true, attributeFilter: ['cla
 theme_observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style'] });
 document.fonts?.ready.then(schedule_fit).catch(() => undefined);
 document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) handshake.request();
   for (const tab of open_tabs) set_pane_visible(tab.id);
   if (active_id) update_unread(active_id);
   schedule_fit();
 });
 window.addEventListener('focus', () => {
+  handshake.request();
   if (active_id) update_unread(active_id);
   if (focused_terminal && is_visible_tab(focused_terminal)) {
     clear_unread(focused_terminal);
   }
 });
 window.addEventListener('beforeunload', () => {
+  handshake.dispose();
   for (const controller of reorder_controllers) {
     controller.cancel();
   }
@@ -1604,4 +1612,4 @@ window.addEventListener('beforeunload', () => {
   }
 });
 render_content();
-send({ type: 'ready' });
+handshake.request();

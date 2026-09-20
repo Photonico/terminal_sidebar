@@ -4,6 +4,14 @@ import { parse_profiles, parse_configuration, read_configuration, is_client_mess
 
 const profile = { id: 'a', name: 'Terminal', command: '', shell: '' };
 
+test('ready accepts a bounded renderer identity and legacy handshakes', () => {
+  assert.ok(is_client_message({ type: 'ready' }));
+  assert.ok(is_client_message({ type: 'ready', renderer_id: '497b9970-a3af-4d99-9952-56616444c287' }));
+  for (const renderer_id of ['', 1, null, {}, 'x'.repeat(65), 'invalid identity']) {
+    assert.equal(is_client_message({ type: 'ready', renderer_id }), false);
+  }
+});
+
 test('profile IDs retain startup identity when names and order change', () => {
   const profiles = parse_profiles([{ id: 'b', name: ' CLI B ' }, { id: 'a', name: 'CLI A', command: 'nvim', shell: ' zsh ' }]);
   assert.deepEqual(profiles, [{ id: 'b', name: 'CLI B', command: '', shell: '' }, { id: 'a', name: 'CLI A', command: 'nvim', shell: 'zsh' }]);
