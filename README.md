@@ -6,7 +6,7 @@
 
 Independent terminals and document previews in VS Code. The **Primary Side Bar** uses collapsible sections; the **Secondary Side Bar** uses a compact tab strip. Keep Vim, Neovim, or another command-line tool beside its output and preview.
 
-**0.10.0 is in development.** Requires VS Code **1.106+** and a desktop or remote Node.js extension host.
+Requires VS Code **1.106+** on desktop or a remote extension host. No separate Node.js installation is needed to use the extension.
 
 ## Get started
 

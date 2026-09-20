@@ -1536,8 +1536,8 @@ test('mixed document tabs restore without PTYs and keep reading positions and pr
   assert.equal(right.state().tabs.filter(is_pdf_tab).length, 1);
   assert.equal(right.state().tabs.filter(is_markdown_tab).length, 1);
   assert.equal(runtime.processes.length, 2, 'only the two startup terminal profiles spawn shells');
-  assert.deepEqual(Array.from(right.webview.options.localResourceRoots ?? [], value => value.toString()), [
-    fake_uri.file(files.directory).toString(), 'vscode-extension://terminal-sidebar/extension/dist',
+  assert.deepEqual(Array.from(right.webview.options.localResourceRoots ?? [], value => value.scheme === 'file' ? value.fsPath : value.toString()), [
+    files.directory, 'vscode-extension://terminal-sidebar/extension/dist',
   ]);
   assert.equal(right.options_updates, 1, 'all restored roots are present before HTML and never reload its first renderer');
   await right.send({ type: 'ready', renderer_id: right.renderer_id });
@@ -1613,7 +1613,8 @@ test('PDF and Markdown watchers refresh complete files and close without affecti
   const source = view.messages.find(message => message.type === 'markdown_source');
   assert.ok(source?.type === 'markdown_source');
   assert.equal(source.source.text, '# Notes\n\nUpdated with Vim.\n');
-  assert.equal(source.source.base_url, `${fake_uri.file(files.directory).toString()}/`);
+  assert.equal(path.resolve(fileURLToPath(source.source.base_url)), files.directory);
+  assert.ok(source.source.base_url.endsWith('/'), 'relative resources resolve inside the source directory');
   writeFileSync(files.markdown, '# Saved again\n');
   runtime.watchers[1].created.fire(fake_uri.file(files.markdown));
   await wait_for(() => view.messages.some(message => message.type === 'markdown_source' && message.source.text === '# Saved again\n'), 'replace-on-save refreshes Markdown');

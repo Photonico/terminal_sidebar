@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.10.0 — In development
+## 0.10.0 — Pre-release
 
 - Simplify the marker color heading and add active/inactive tab foreground colors in a new palette column.
 - Remember startup-profile and document markers across workspaces, including explicit removal.
