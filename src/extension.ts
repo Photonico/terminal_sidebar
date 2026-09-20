@@ -9,6 +9,13 @@ import { shell_integration } from './shell_integration';
 import { discover_shells } from './discovery';
 import { session_manager, type session_launch } from './sessions';
 import { sidebar_tabs } from './tabs';
+import { pdf_watch } from './pdf_watch';
+import { is_pdf_uri } from './pdf_state';
+import { is_pdf_tab, is_markdown_tab, is_terminal_tab } from './types';
+import { markdown_watch } from './markdown_watch';
+import { is_markdown_uri, is_markdown_link } from './markdown_state';
+import { marker_memory } from './marker_memory';
+import { resolve_latex_pdf, reverse_sync } from './latex_preview';
 import { export_filename, terminal_file, web_link } from './terminal_actions';
 import { export_extensions, maximum_pdf_bytes } from './export_format';
 import type {
@@ -49,6 +56,8 @@ class sidebar_view implements vscode.WebviewViewProvider, vscode.Disposable {
   readonly history = new Map<string, string>();
   readonly pending_output = new Map<string, string>();
   readonly sessions: session_manager;
+  readonly pdfs = new Map<string, pdf_watch>();
+  readonly markdowns = new Map<string, markdown_watch>();
   private readonly subscriptions: vscode.Disposable[] = [];
 
   constructor(
@@ -74,7 +83,6 @@ class sidebar_view implements vscode.WebviewViewProvider, vscode.Disposable {
       enableScripts: true,
       localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'dist')],
     };
-    view.webview.html = this.owner.html(view.webview);
     this.subscriptions.push(
       view.webview.onDidReceiveMessage((message: unknown) => {
         if (is_client_message(message)) {
@@ -97,6 +105,9 @@ class sidebar_view implements vscode.WebviewViewProvider, vscode.Disposable {
         }
       }),
     );
+    // Cached webview scripts can send ready immediately during window restoration.
+    // Subscribe before assigning HTML so that first handshake cannot be lost.
+    view.webview.html = this.owner.html(view.webview);
   }
 
   async open(configure = false): Promise<void> {
@@ -132,6 +143,10 @@ class sidebar_view implements vscode.WebviewViewProvider, vscode.Disposable {
       subscription.dispose();
     }
     this.sessions.dispose();
+    for (const pdf of this.pdfs.values()) pdf.dispose();
+    this.pdfs.clear();
+    for (const markdown of this.markdowns.values()) markdown.dispose();
+    this.markdowns.clear();
     this.history.clear();
     this.pending_output.clear();
     this.dimensions.clear();
@@ -151,8 +166,13 @@ class terminal_sidebar implements vscode.Disposable {
   private shell_detection?: Promise<void>;
   private output_timer?: ReturnType<typeof setTimeout>;
   private disposed = false;
+  private readonly shared_markers: marker_memory;
 
   constructor(private readonly context: vscode.ExtensionContext) {
+    this.shared_markers = new marker_memory(
+      path.join(context.globalStorageUri.fsPath, 'profile_markers'), context.globalState,
+      message => this.views[this.focused_side].error(message),
+    );
     this.views = {
       left: new sidebar_view('left', this, context),
       right: new sidebar_view('right', this, context),
@@ -206,6 +226,12 @@ class terminal_sidebar implements vscode.Disposable {
     if (!view.tab_layout) {
       const remembered = this.context.workspaceState.get<unknown>(`terminalSidebar.tabs.${view.side}`);
       view.tab_layout = new sidebar_tabs(this.configuration[view.side], remembered);
+      for (const tab of view.tab_layout.tabs) {
+        view.tab_layout.set_marker(tab.id, this.shared_markers.marker_for(view.side, tab));
+      }
+      void this.shared_markers.migrate(view.side, view.tab_layout.tabs).catch(() => {
+        view.error('Tab marker preferences could not be shared across workspaces. Existing workspace markers are preserved.');
+      });
     }
     return view.tab_layout;
   }
@@ -256,6 +282,13 @@ class terminal_sidebar implements vscode.Disposable {
       const layout = this.ensure_layout(view);
       if (view.view) {
         view.view.title = 'Side Terminals';
+        view.view.webview.options = {
+          enableScripts: true,
+          localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'dist'),
+            // VS Code accepts descendants of resource roots, not a root file itself.
+            ...layout.tabs.filter(is_pdf_tab).map(tab => vscode.Uri.joinPath(vscode.Uri.parse(tab.uri), '..')),
+            ...layout.tabs.filter(is_markdown_tab).map(tab => vscode.Uri.joinPath(vscode.Uri.parse(tab.uri), '..'))],
+        };
       }
       view.post({
         type: 'state', side: view.side, configuration: this.configuration,
@@ -276,6 +309,7 @@ class terminal_sidebar implements vscode.Disposable {
     view.startup_complete = true;
     this.send_state(view);
     for (const tab of layout.tabs) {
+      if (!is_terminal_tab(tab)) continue;
       const dimensions = view.dimensions.get(tab.id) ?? { cols: 80, rows: 24 };
       view.sessions.start(tab, dimensions.cols, dimensions.rows);
     }
@@ -363,6 +397,165 @@ class terminal_sidebar implements vscode.Disposable {
     await this.open('left', true);
   }
 
+  /** File previews share tab layout, but never become process launch profiles. */
+  async open_preview(candidate?: unknown, side: sidebar_side = 'right', kind?: 'markdown' | 'latex'): Promise<void> {
+    const view = this.views[side];
+    if (!vscode.workspace.isTrusted) {
+      view.error('Trust this workspace before opening a document preview.');
+      return;
+    }
+    let uri = candidate instanceof vscode.Uri ? candidate : undefined;
+    const accepts = (value: vscode.Uri): boolean => kind === 'markdown' ? is_markdown_uri(value.toString())
+      : kind === 'latex' ? /\.tex$/i.test(value.path) : /\.(?:pdf|md|markdown|tex)$/i.test(value.path);
+    if (!uri && kind && vscode.window.activeTextEditor && accepts(vscode.window.activeTextEditor.document.uri)) {
+      uri = vscode.window.activeTextEditor.document.uri;
+    }
+    if (!uri) {
+      uri = (await vscode.window.showOpenDialog({
+        title: 'Open preview in Side Terminals', canSelectMany: false,
+        filters: kind === 'markdown' ? { Markdown: ['md', 'markdown'] }
+          : kind === 'latex' ? { LaTeX: ['tex'] } : { Documents: ['pdf', 'md', 'markdown', 'tex'] },
+        defaultUri: vscode.workspace.workspaceFolders?.[0]?.uri,
+      }))?.[0];
+    }
+    if (!uri) return;
+    if (!['file', 'vscode-remote'].includes(uri.scheme) || !accepts(uri)) {
+      view.error('Choose a PDF, Markdown or LaTeX file on the local or connected remote filesystem.');
+      return;
+    }
+    try {
+      if (/\.tex$/i.test(uri.path)) {
+        const settings = vscode.workspace.getConfiguration('latex-workshop', uri);
+        const result = await resolve_latex_pdf(uri.toString(), {
+          out_dir: settings.get<string>('latex.outDir', '%DIR%'),
+          jobname: settings.get<string>('latex.jobname', ''),
+          workspace_directory: vscode.workspace.getWorkspaceFolder(uri)?.uri.fsPath,
+        });
+        let pdf: string | undefined = result.pdf_uris[0];
+        if (result.pdf_uris.length > 1) {
+          const selected = await vscode.window.showQuickPick(result.pdf_uris.map(value => ({
+            label: path.basename(vscode.Uri.parse(value).fsPath), description: vscode.Uri.parse(value).fsPath, uri: value,
+          })), { title: 'Choose the compiled PDF' });
+          pdf = selected?.uri;
+        }
+        if (pdf) await this.open_pdf(vscode.Uri.parse(pdf), side, result.root_uri);
+        else if (result.pdf_uris.length === 0) {
+          const choice = await vscode.window.showInformationMessage(
+            'No compiled PDF found. Build with LaTeX Workshop or latexmk, then open the preview again.', 'Choose PDF…');
+          if (choice === 'Choose PDF…') await this.open_pdf(undefined, side, result.root_uri);
+        }
+        return;
+      }
+      if (is_pdf_uri(uri.toString())) { await this.open_pdf(uri, side); return; }
+      if (!is_markdown_uri(uri.toString())) return;
+      this.ensure_layout(view).open_markdown(uri.toString(), path.basename(uri.fsPath).slice(0, 80));
+      await view.open();
+      this.send_state(view);
+      await this.remember_layout(view);
+    } catch (error) {
+      view.error(error instanceof Error ? error.message : 'The document preview could not be opened.');
+    }
+  }
+
+  private load_markdown(view: sidebar_view, id: string): void {
+    const tab = this.ensure_layout(view).tabs.find(tab => tab.id === id);
+    if (!tab || !is_markdown_tab(tab) || !vscode.workspace.isTrusted) return;
+    let watcher = view.markdowns.get(id);
+    if (!watcher) {
+      const uri = vscode.Uri.parse(tab.uri);
+      watcher = new markdown_watch(uri, text => {
+        const webview = view.view?.webview;
+        if (!webview || !view.tab_layout?.tabs.some(tab => tab.id === id)) return;
+        const parent = vscode.Uri.joinPath(uri, '..');
+        const base_url = `${webview.asWebviewUri(parent).toString().replace(/\/$/, '')}/`;
+        view.post({ type: 'markdown_source', id, source: { text, base_url } });
+      }, message => view.post({ type: 'markdown_error', id, message }));
+      view.markdowns.set(id, watcher);
+    }
+    watcher.refresh();
+  }
+
+  private async open_markdown_link(view: sidebar_view, source: string, href: string): Promise<void> {
+    if (!is_markdown_link(href)) return;
+    const external = web_link(href);
+    if (external) { await vscode.env.openExternal(vscode.Uri.parse(external)); return; }
+    if (/^mailto:/i.test(href)) { await vscode.env.openExternal(vscode.Uri.parse(href)); return; }
+    const base = new URL(source);
+    const target = new URL(href, base);
+    if (target.protocol !== base.protocol || target.host !== base.host || target.search) return;
+    target.hash = '';
+    const uri = vscode.Uri.parse(target.href);
+    if (target.href !== base.href && /\.(?:pdf|md|markdown|tex)$/i.test(uri.path)) await this.open_preview(uri, view.side);
+    else await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(uri), { viewColumn: vscode.ViewColumn.One, preview: true });
+  }
+
+  private async reverse_pdf_sync(view: sidebar_view, uri: string, position: Extract<client_message, { type: 'pdf_reverse_sync' }>): Promise<void> {
+    const tab = view.tab_layout?.tabs.find(tab => tab.id === position.id);
+    if (!tab || !is_pdf_tab(tab) || tab.uri !== uri) return;
+    const key = `${view.side}:synctex`;
+    if (this.pending_terminal_actions.has(key)) return;
+    this.pending_terminal_actions.add(key);
+    try {
+      const settings = vscode.workspace.getConfiguration('latex-workshop', vscode.Uri.parse(uri));
+      const location = await reverse_sync(uri, position.page, position.x, position.y, {
+        synctex_path: settings.get<string>('synctex.path', 'synctex'),
+        root_uri: tab.source_uri,
+      });
+      if (this.disposed || !view.tab_layout?.tabs.some(tab => tab.id === position.id)) return;
+      const document = await vscode.workspace.openTextDocument(vscode.Uri.parse(location.uri));
+      const line = Math.min(location.line - 1, Math.max(0, document.lineCount - 1));
+      const column = Math.min(location.column - 1, document.lineAt(line).text.length);
+      await vscode.window.showTextDocument(document, { viewColumn: vscode.ViewColumn.One,
+        selection: new vscode.Range(line, column, line, column), preview: true });
+    } catch (error) {
+      view.error(error instanceof Error ? error.message : 'SyncTeX could not locate the source. Build with -synctex=1 and try again.');
+    } finally {
+      this.pending_terminal_actions.delete(key);
+    }
+  }
+
+  async open_pdf(candidate?: unknown, side: sidebar_side = 'right', source_uri?: string): Promise<void> {
+    if (!vscode.workspace.isTrusted) {
+      this.views[side].error('Trust this workspace before opening a PDF preview.');
+      return;
+    }
+    let uri = candidate instanceof vscode.Uri ? candidate : undefined;
+    if (!uri) {
+      const workspace = vscode.workspace.workspaceFolders?.[0]?.uri;
+      uri = (await vscode.window.showOpenDialog({
+        title: 'Open PDF in Side Terminal', canSelectMany: false, filters: { PDF: ['pdf'] },
+        defaultUri: workspace ? vscode.Uri.joinPath(workspace, '.output') : undefined,
+      }))?.[0];
+    }
+    if (!uri) return;
+    if (!is_pdf_uri(uri.toString())) {
+      this.views[side].error('Choose a PDF on the local or connected remote filesystem.');
+      return;
+    }
+    const view = this.views[side];
+    this.ensure_layout(view).open_pdf(uri.toString(), path.basename(uri.fsPath).slice(0, 80), source_uri);
+    await view.open();
+    this.send_state(view);
+    await this.remember_layout(view);
+  }
+
+  private load_pdf(view: sidebar_view, id: string): void {
+    const tab = this.ensure_layout(view).tabs.find(tab => tab.id === id);
+    if (!tab || !is_pdf_tab(tab) || !vscode.workspace.isTrusted) return;
+    let watcher = view.pdfs.get(id);
+    if (!watcher) {
+      const uri = vscode.Uri.parse(tab.uri);
+      watcher = new pdf_watch(uri, () => {
+        const webview = view.view?.webview;
+        if (!webview || !view.tab_layout?.tabs.some(tab => tab.id === id)) return;
+        const url = webview.asWebviewUri(uri).with({ query: `revision=${Date.now()}` }).toString();
+        view.post({ type: 'pdf_source', id, url });
+      }, message => view.post({ type: 'pdf_error', id, message }));
+      view.pdfs.set(id, watcher);
+    }
+    watcher.refresh();
+  }
+
   async restart_active(side: sidebar_side = this.focused_side): Promise<void> {
     const view = this.views[side];
     const active_id = this.ensure_layout(view).active_id;
@@ -396,6 +589,7 @@ class terminal_sidebar implements vscode.Disposable {
     }
     const layout = this.ensure_layout(view);
     const tab = layout.open_profile(profile);
+    layout.set_marker(tab.id, this.shared_markers.marker_for(side, tab));
     layout.select_tab(tab.id);
     layout.set_expanded(tab.id, true);
     this.focused_side = side;
@@ -450,6 +644,14 @@ class terminal_sidebar implements vscode.Disposable {
       await this.open_profile(undefined, view.side);
       return;
     }
+    if (message.type === 'open_preview') {
+      await this.open_preview(undefined, view.side);
+      return;
+    }
+    if (message.type === 'open_pdf') {
+      await this.open_pdf(undefined, view.side);
+      return;
+    }
     if (message.type === 'configure') {
       await this.configure();
       return;
@@ -491,6 +693,11 @@ class terminal_sidebar implements vscode.Disposable {
         }
         return;
       case 'set_tab_marker':
+        try { await this.shared_markers.set(view.side, tab, message.marker); }
+        catch {
+          view.error('The tab marker could not be saved. Check access to VS Code extension storage and try again.');
+          return;
+        }
         if (layout.set_marker(tab.id, message.marker)) {
           this.send_state(view);
           await this.remember_layout(view);
@@ -512,7 +719,34 @@ class terminal_sidebar implements vscode.Disposable {
         this.send_state(view);
         await this.remember_layout(view);
         return;
+      case 'load_markdown':
+        this.load_markdown(view, tab.id);
+        return;
+      case 'markdown_position':
+        if (layout.set_markdown_position(tab.id, message.position)) await this.remember_layout(view);
+        return;
+      case 'open_markdown_link':
+        if (is_markdown_tab(tab) && vscode.workspace.isTrusted) await this.open_markdown_link(view, tab.uri, message.href);
+        return;
+      case 'pdf_reverse_sync':
+        if (is_pdf_tab(tab) && vscode.workspace.isTrusted) await this.reverse_pdf_sync(view, tab.uri, message);
+        return;
+      case 'focus':
+        if (view.view?.visible && !view.configuring
+          && (view.side === 'left' ? layout.expanded_ids.includes(tab.id) : layout.active_id === tab.id)) {
+          this.focused_side = view.side;
+          layout.select_tab(tab.id);
+          await this.remember_layout(view);
+        }
+        return;
+      case 'load_pdf':
+        this.load_pdf(view, tab.id);
+        return;
+      case 'pdf_position':
+        if (layout.set_pdf_position(tab.id, message.position)) await this.remember_layout(view);
+        return;
       case 'export': {
+        if (!is_terminal_tab(tab)) return;
         const format = message.format ?? 'text';
         const bytes = Buffer.from(message.text, format === 'pdf' ? 'base64' : 'utf8');
         if (format === 'pdf' && (bytes.length > maximum_pdf_bytes || bytes.subarray(0, 5).toString('ascii') !== '%PDF-')) return;
@@ -537,6 +771,7 @@ class terminal_sidebar implements vscode.Disposable {
         return;
       }
     }
+    if (!is_terminal_tab(tab)) return;
     if (!vscode.workspace.isTrusted) {
       view.error('Trust this workspace before starting or using a terminal.');
       return;
@@ -568,13 +803,6 @@ class terminal_sidebar implements vscode.Disposable {
         }
         break;
       }
-      case 'focus':
-        if (surface_visible) {
-          this.focused_side = view.side;
-          layout.select_tab(tab.id);
-          await this.remember_layout(view);
-        }
-        break;
       case 'activate':
       case 'resize':
         if (surface_visible) {
@@ -626,6 +854,10 @@ class terminal_sidebar implements vscode.Disposable {
       if (this.disposed || !view.tab_layout?.tabs.some(tab => tab.id === id)) return;
       view.tab_layout.close_tab(id);
       view.sessions.remove(id);
+      view.pdfs.get(id)?.dispose();
+      view.pdfs.delete(id);
+      view.markdowns.get(id)?.dispose();
+      view.markdowns.delete(id);
       view.history.delete(id);
       view.pending_output.delete(id);
       view.dimensions.delete(id);
@@ -692,6 +924,8 @@ class terminal_sidebar implements vscode.Disposable {
       if (!tab || !vscode.workspace.isTrusted) {
         return;
       }
+      if (is_pdf_tab(tab)) { this.load_pdf(view, id); return; }
+      if (is_markdown_tab(tab)) { this.load_markdown(view, id); return; }
       view.sessions.remove(id);
       view.history.delete(id);
       view.pending_output.delete(id);
@@ -806,7 +1040,8 @@ class terminal_sidebar implements vscode.Disposable {
     const nonce = random_bytes(18).toString('base64');
     const stylesheet = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview.css'));
     const script = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview.js'));
-    return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-${nonce}'; style-src ${webview.cspSource} 'unsafe-inline'; font-src ${webview.cspSource}; img-src ${webview.cspSource} data:; connect-src 'none';"><link rel="stylesheet" href="${stylesheet}"><title>Terminal Sidebar</title></head><body><div id="app"></div><script nonce="${nonce}" src="${script}"></script></body></html>`;
+    const pdf_assets = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'pdfjs')).toString();
+    return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="pdf-assets" content="${pdf_assets}"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-${nonce}' ${webview.cspSource} 'wasm-unsafe-eval'; worker-src ${webview.cspSource} blob:; style-src ${webview.cspSource} 'unsafe-inline'; font-src ${webview.cspSource} blob: data:; img-src ${webview.cspSource} data: blob:; connect-src ${webview.cspSource};"><link rel="stylesheet" href="${stylesheet}"><title>Terminal Sidebar</title></head><body><div id="app"></div><script nonce="${nonce}" src="${script}"></script></body></html>`;
   }
 
   dispose(): void {
@@ -832,6 +1067,8 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.commands.registerCommand(`terminalSidebar.${side}.configure`, () => provider.configure()),
       vscode.commands.registerCommand(`terminalSidebar.${side}.restart`, () => provider.restart_active(side)),
       vscode.commands.registerCommand(`terminalSidebar.${side}.selectProfile`, () => provider.open_profile(undefined, side)),
+      vscode.commands.registerCommand(`terminalSidebar.${side}.openPdf`, () => provider.open_pdf(undefined, side)),
+      vscode.commands.registerCommand(`terminalSidebar.${side}.openPreview`, () => provider.open_preview(undefined, side)),
     );
     for (const action of ['save', 'undo', 'redo', 'close', 'add', 'find'] as const) {
       context.subscriptions.push(vscode.commands.registerCommand(
@@ -840,6 +1077,10 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   }
   context.subscriptions.push(
+    vscode.commands.registerCommand('terminalSidebar.openPreview', (uri?: vscode.Uri) => provider.open_preview(uri)),
+    vscode.commands.registerCommand('terminalSidebar.openMarkdown', (uri?: vscode.Uri) => provider.open_preview(uri, 'right', 'markdown')),
+    vscode.commands.registerCommand('terminalSidebar.openLatex', (uri?: vscode.Uri) => provider.open_preview(uri, 'right', 'latex')),
+    vscode.commands.registerCommand('terminalSidebar.openPdf', (uri?: vscode.Uri) => provider.open_pdf(uri)),
     vscode.commands.registerCommand('terminalSidebar.open', () => provider.open()),
     vscode.commands.registerCommand('terminalSidebar.openLeft', () => provider.open('left')),
     vscode.commands.registerCommand('terminalSidebar.openProfile', (argument?: unknown, target?: unknown) => {

@@ -2,20 +2,36 @@ import assert from 'node:assert/strict';
 import { createRequire as create_require } from 'node:module';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { pathToFileURL } from 'node:url';
-import { test } from 'node:test';
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { stat } from 'node:fs/promises';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { after, test } from 'node:test';
 import { setImmediate as next_turn, setTimeout as delay } from 'node:timers/promises';
 import { runInNewContext as run_in_new_context } from 'node:vm';
 import { build } from 'esbuild';
 import type * as vscode from 'vscode';
-import type { client_message, host_message, sidebar_configuration, sidebar_side, terminal_profile } from '../src/types';
+import { is_terminal_tab, is_pdf_tab, is_markdown_tab } from '../src/types';
+import type { client_message, host_message, sidebar_configuration, sidebar_side, terminal_profile, sidebar_tab } from '../src/types';
+import type { latex_pdf_candidates, synctex_location } from '../src/latex_preview';
 import type { pty_process, pty_spawn_options } from '../src/sessions';
 
 const repository_root = path.resolve(__dirname, '..');
 const require_builtin = create_require(path.join(repository_root, 'package.json'));
 const view_ids = { left: 'terminalSidebar.left', right: 'terminalSidebar.terminals' } as const;
 type disposable = { dispose(): void };
+const global_storage_directories = new WeakMap<Map<string, unknown>, string>();
+const storage_cleanup: string[] = [];
+after(() => { for (const directory of storage_cleanup) rmSync(directory, { recursive: true, force: true }); });
+
+function global_directory(memory: Map<string, unknown>): string {
+  let directory = global_storage_directories.get(memory);
+  if (!directory) {
+    directory = mkdtempSync(path.join(os.tmpdir(), 'terminal_sidebar_host_storage_'));
+    storage_cleanup.push(directory);
+    global_storage_directories.set(memory, directory);
+  }
+  return directory;
+}
 
 // Execute the real controller, tab model and process manager together. Replace only
 // the VS Code host, shell lookup and native process boundary. No CLI runs here.
@@ -29,12 +45,14 @@ const bundled_host = build({
   plugins: [{
     name: 'host-test-operating-system-boundaries',
     setup(builder) {
-      builder.onResolve({ filter: /^\.\/(discovery|shell)$/ }, arguments_object => ({
+      builder.onResolve({ filter: /^\.\/(discovery|shell|latex_preview)$/ }, arguments_object => ({
         path: arguments_object.path,
         namespace: 'host-test',
       }));
       builder.onLoad({ filter: /.*/, namespace: 'host-test' }, arguments_object => ({
-        contents: arguments_object.path === './discovery'
+        contents: arguments_object.path === './latex_preview'
+          ? 'exports.reverse_sync = (...args) => globalThis.test_reverse_sync(...args); exports.resolve_latex_pdf = (...args) => globalThis.test_latex_pdf(...args);'
+          : arguments_object.path === './discovery'
           ? 'exports.discover_shells = async () => [];'
           : 'exports.resolve_shell = (_selection, options) => ({ file: "test-shell", args: [], env: options.env });',
       }));
@@ -52,6 +70,48 @@ class event_source<value_type> {
   fire(value: value_type): void {
     for (const listener of [...this.listeners]) listener(value);
   }
+}
+
+class fake_uri {
+  private constructor(private readonly value: URL) {}
+  static parse(value: string): fake_uri { return new fake_uri(new URL(value)); }
+  static file(filename: string): fake_uri { return new fake_uri(pathToFileURL(filename)); }
+  static joinPath(base: fake_uri, ...parts: string[]): fake_uri {
+    return base.with({ path: path.posix.join(base.path, ...parts) });
+  }
+  get scheme(): string { return this.value.protocol.slice(0, -1); }
+  get authority(): string { return this.value.host; }
+  get path(): string { return decodeURIComponent(this.value.pathname); }
+  get fsPath(): string { return this.scheme === 'file' ? fileURLToPath(this.value) : this.path; }
+  get query(): string { return this.value.search.slice(1); }
+  with(change: { path?: string; query?: string; fragment?: string }): fake_uri {
+    const value = new URL(this.value);
+    if (change.path !== undefined) value.pathname = change.path;
+    if (change.query !== undefined) value.search = change.query;
+    if (change.fragment !== undefined) value.hash = change.fragment;
+    return new fake_uri(value);
+  }
+  toString(): string { return this.value.toString(); }
+}
+
+class fake_watcher {
+  readonly changed = new event_source<fake_uri>();
+  readonly created = new event_source<fake_uri>();
+  readonly deleted = new event_source<fake_uri>();
+  readonly onDidChange = this.changed.subscribe;
+  readonly onDidCreate = this.created.subscribe;
+  readonly onDidDelete = this.deleted.subscribe;
+  disposed = false;
+  constructor(readonly pattern: { baseUri: fake_uri; pattern: string }) {}
+  dispose(): void {
+    this.disposed = true;
+    for (const source of [this.changed, this.created, this.deleted]) source.listeners.clear();
+  }
+}
+
+function terminal(tab: sidebar_tab | undefined) {
+  assert.ok(tab && is_terminal_tab(tab), 'expected a terminal tab');
+  return tab;
 }
 
 class fake_terminal_process implements pty_process {
@@ -78,7 +138,7 @@ class fake_view {
   readonly onDidChangeVisibility = this.visibility.subscribe;
   readonly onDidDispose = this.disposal.subscribe;
   readonly webview = {
-    options: {},
+    options: {} as { localResourceRoots?: fake_uri[] },
     html: '',
     cspSource: 'vscode-webview://host-test',
     asWebviewUri: (uri: unknown) => uri,
@@ -89,10 +149,22 @@ class fake_view {
     },
   };
 
+  constructor(private readonly flush_file_io: () => Promise<void> = async () => {}, ready_on_html = false) {
+    let html = '';
+    Object.defineProperty(this.webview, 'html', {
+      get: () => html,
+      set: (value: string) => {
+        html = value;
+        if (ready_on_html) this.incoming.fire({ type: 'ready' });
+      },
+    });
+  }
+
   async send(message: client_message): Promise<void> {
     this.incoming.fire(message);
     // The public event returns void. Flush its handler without advancing output timers.
     await next_turn();
+    await this.flush_file_io();
   }
 
   hide(): void {
@@ -136,11 +208,17 @@ interface harness_options {
   configuration?: sidebar_configuration;
   legacy_profiles?: terminal_profile[];
   memory?: Map<string, unknown>;
+  global_memory?: Map<string, unknown>;
+  global_storage_directory?: string;
+  ready_on_html?: boolean;
   trusted?: boolean;
   settings?: Record<string, unknown>;
   input?: (options: vscode.InputBoxOptions) => string | undefined | Promise<string | undefined>;
   warning?: (message: string, first: string) => string | undefined | Promise<string | undefined>;
   save_destination?: string;
+  open_destination?: string;
+  reverse_sync?: (...args: unknown[]) => Promise<synctex_location>;
+  latex_pdf?: (...args: unknown[]) => Promise<latex_pdf_candidates>;
   workspace_uri?: { scheme: string; fsPath: string; with(change: { path: string }): unknown };
 }
 
@@ -159,6 +237,7 @@ async function harness(options: harness_options = {}) {
   const configuration_changed = new event_source<{ affectsConfiguration(section: string): boolean }>();
   const trust_granted = new event_source<void>();
   const memory = new Map<string, unknown>(structuredClone(options.memory ?? new Map()));
+  const global_memory = options.global_memory ?? new Map<string, unknown>();
   const settings = new Map(Object.entries(options.settings ?? {}));
   const errors: string[] = [];
   const input_boxes: vscode.InputBoxOptions[] = [];
@@ -168,23 +247,42 @@ async function harness(options: harness_options = {}) {
   const editable_copies: Array<{ content: string; language: string }> = [];
   const saved_files: Array<{ path: string; text: string; bytes: Buffer }> = [];
   const save_dialogs: vscode.SaveDialogOptions[] = [];
+  const open_dialogs: vscode.OpenDialogOptions[] = [];
+  const shown_documents: Array<{ document: { uri?: fake_uri }; options: vscode.TextDocumentShowOptions | undefined }> = [];
+  const watchers: fake_watcher[] = [];
+  const sync_calls: unknown[][] = [];
+  const file_operations = new Set<Promise<unknown>>();
+  const flush_file_io = async () => {
+    while (file_operations.size) {
+      await Promise.allSettled([...file_operations]);
+      await next_turn();
+    }
+  };
   const api = {
     ConfigurationTarget: { Global: 1 },
-    Uri: {
-      joinPath: (base: string, ...parts: string[]) => [base, ...parts].join('/'),
-      file: (fsPath: string) => ({ fsPath, path: decodeURIComponent(pathToFileURL(fsPath).pathname), scheme: 'file' }),
-      parse: (value: string) => ({ toString: () => value }),
-    },
+    Uri: fake_uri,
+    ViewColumn: { One: 1 },
+    FileType: { File: 1, Directory: 2 },
+    RelativePattern: class { constructor(readonly baseUri: fake_uri, readonly pattern: string) {} },
     env: { openExternal: async (uri: { toString(): string }) => { links.push(uri.toString()); return true; } },
     Range: class { constructor(readonly startLine: number, readonly startCharacter: number, readonly endLine: number, readonly endCharacter: number) {} },
     workspace: {
       isTrusted: options.trusted ?? true,
       workspaceFolders: options.workspace_uri ? [{ uri: options.workspace_uri }] : [],
-      fs: { writeFile: async (uri: { fsPath: string }, data: Uint8Array) => { saved_files.push({ path: uri.fsPath, text: Buffer.from(data).toString('utf8'), bytes: Buffer.from(data) }); } },
+      fs: {
+        writeFile: async (uri: { fsPath: string }, data: Uint8Array) => { saved_files.push({ path: uri.fsPath, text: Buffer.from(data).toString('utf8'), bytes: Buffer.from(data) }); },
+        stat: async (uri: { fsPath: string }) => { const item = await stat(uri.fsPath); return { type: item.isFile() ? 1 : 2, ctime: item.ctimeMs, mtime: item.mtimeMs, size: item.size }; },
+      },
+      getWorkspaceFolder: () => options.workspace_uri ? { uri: options.workspace_uri } : undefined,
+      createFileSystemWatcher: (pattern: { baseUri: fake_uri; pattern: string }) => {
+        const watcher = new fake_watcher(pattern);
+        watchers.push(watcher);
+        return watcher;
+      },
       openTextDocument: async (uri: { fsPath: string } | { content: string; language: string }) => {
         if ('content' in uri) editable_copies.push(structuredClone(uri));
         else opened_files.push(uri.fsPath);
-        return { lineCount: 10, lineAt: () => ({ text: 'example source line' }) };
+        return { uri: 'fsPath' in uri ? uri : undefined, lineCount: 10, lineAt: () => ({ text: 'example source line' }) };
       },
       onDidChangeConfiguration: configuration_changed.subscribe,
       onDidGrantWorkspaceTrust: trust_granted.subscribe,
@@ -230,9 +328,16 @@ async function harness(options: harness_options = {}) {
         return options.warning ? options.warning(message, first) : first;
       },
       showInformationMessage: async () => undefined,
-      showTextDocument: async () => undefined,
+      showTextDocument: async (document: { uri?: fake_uri }, show_options?: vscode.TextDocumentShowOptions) => {
+        shown_documents.push({ document, options: show_options });
+        return { document };
+      },
+      showOpenDialog: async (open_options: vscode.OpenDialogOptions) => {
+        open_dialogs.push(open_options);
+        return options.open_destination ? [fake_uri.file(options.open_destination)] : undefined;
+      },
       showSaveDialog: async (save_options: vscode.SaveDialogOptions) => {
-        save_dialogs.push(structuredClone(save_options));
+        save_dialogs.push({ ...save_options, filters: structuredClone(save_options.filters) });
         return options.save_destination ? { fsPath: options.save_destination, scheme: 'file' } : undefined;
       },
       showQuickPick: async () => undefined,
@@ -244,10 +349,16 @@ async function harness(options: harness_options = {}) {
   };
   const context = {
     subscriptions,
-    extensionUri: 'vscode-extension://terminal-sidebar',
+    extensionUri: fake_uri.parse('vscode-extension://terminal-sidebar/extension'),
+    globalStorageUri: fake_uri.file(options.global_storage_directory ?? global_directory(global_memory)),
     workspaceState: {
       get: (key: string) => structuredClone(memory.get(key)),
       update: async (key: string, value: unknown) => { memory.set(key, structuredClone(value)); },
+    },
+    globalState: {
+      get: (key: string) => structuredClone(global_memory.get(key)),
+      update: async (key: string, value: unknown) => { global_memory.set(key, structuredClone(value)); },
+      keys: () => [...global_memory.keys()],
     },
   };
   const host_module = { exports: {} as { activate(context: vscode.ExtensionContext): void } };
@@ -257,11 +368,35 @@ async function harness(options: harness_options = {}) {
     Buffer,
     URL,
     TextEncoder,
+    TextDecoder,
+    test_reverse_sync: async (...args: unknown[]) => {
+      sync_calls.push(args);
+      if (!options.reverse_sync) throw new Error('No SyncTeX fixture configured.');
+      return options.reverse_sync(...args);
+    },
+    test_latex_pdf: async (...args: unknown[]) => options.latex_pdf
+      ? options.latex_pdf(...args) : { root_uri: String(args[0]), pdf_uris: [] },
     process,
     setTimeout,
     clearTimeout,
     require: (id: string) => {
       if (id === 'vscode') return api;
+      if (id === 'node:fs/promises') {
+        return new Proxy(require_builtin(id), {
+          get(target, property) {
+            const member = target[property];
+            if (typeof member !== 'function') return member;
+            return (...args: unknown[]) => {
+              const result = member(...args);
+              if (result && typeof result.then === 'function') {
+                file_operations.add(result);
+                void result.finally(() => file_operations.delete(result)).catch(() => {});
+              }
+              return result;
+            };
+          },
+        });
+      }
       if (id === 'node-pty') {
         return { spawn: (_file: string, _arguments: string[], spawn_options: pty_spawn_options) => {
           spawns.push(structuredClone(spawn_options));
@@ -279,7 +414,9 @@ async function harness(options: harness_options = {}) {
 
   return {
     api, commands, providers, executions, processes, spawns, updates, memory, errors, input_boxes,
-    warnings, links, opened_files, editable_copies, saved_files, save_dialogs,
+    warnings, links, opened_files, editable_copies, saved_files, save_dialogs, global_memory,
+    global_storage_directory: context.globalStorageUri.fsPath,
+    open_dialogs, shown_documents, watchers, sync_calls,
     configuration: () => structuredClone(configuration_value),
     change_setting: (name: string, value: unknown) => {
       if (value === undefined) settings.delete(name);
@@ -300,9 +437,10 @@ async function harness(options: harness_options = {}) {
     async view(side: sidebar_side) {
       const provider = providers.get(view_ids[side]);
       assert.ok(provider, `${side} provider registered`);
-      const view = new fake_view();
+      const view = new fake_view(flush_file_io, options.ready_on_html);
       await provider.resolveWebviewView(view as unknown as vscode.WebviewView, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
-      await view.send({ type: 'ready' });
+      if (options.ready_on_html) { await next_turn(); await flush_file_io(); }
+      else await view.send({ type: 'ready' });
       return view;
     },
     async command(id: string, ...arguments_list: unknown[]) {
@@ -340,6 +478,18 @@ test('sidebars own separate processes even with the same profile and runtime IDs
   await delay(20);
   assert.deepEqual(left.output().map(message => message.data), ['LEFT_OUTPUT']);
   assert.deepEqual(right.output().map(message => message.data), ['RIGHT_OUTPUT']);
+});
+
+test('ready sent synchronously while HTML is assigned is received on initial and recreated webviews', async test_case => {
+  const runtime = await harness({ ready_on_html: true });
+  test_case.after(() => runtime.dispose());
+  const first = await runtime.view('right');
+  assert.equal(first.state().tabs.length, 2, 'the first ready handshake starts the view without a retry');
+  assert.equal(runtime.processes.length, 2);
+  first.dispose();
+  const reopened = await runtime.view('right');
+  assert.equal(reopened.state().tabs.length, 2, 'a recreated view also receives its synchronous ready');
+  assert.equal(runtime.processes.length, 2, 'view recreation retains the running terminals');
 });
 
 test('opening the other sidebar reveals its view without duplicating terminals or reopening closed tabs', async test_case => {
@@ -427,7 +577,7 @@ test('adding, renaming and closing runtime tabs never rewrites startup settings'
   assert.ok(!right.state().tabs.some(tab => tab.id === startup_tab.id));
   assert.deepEqual(right.state().configuration, initial_configuration);
   await right.send({ type: 'add_tab' });
-  const temporary_tab = right.state().tabs.at(-1)!;
+  const temporary_tab = terminal(right.state().tabs.at(-1));
   assert.equal(temporary_tab.name, 'Term 0');
   assert.equal(temporary_tab.command, '');
   assert.deepEqual(runtime.processes.at(-1)?.writes, [], 'temporary tabs are ordinary shells');
@@ -487,7 +637,7 @@ test('directory notifications persist per terminal while hidden and restore with
   const next_window = await harness({ memory: runtime.memory });
   test_case.after(() => next_window.dispose());
   const restored = await next_window.view('right');
-  assert.equal(restored.state().tabs.find(tab => tab.id === target.id)?.cwd, directory);
+  assert.equal(terminal(restored.state().tabs.find(tab => tab.id === target.id)).cwd, directory);
   assert.equal(next_window.spawns[1].cwd, directory);
   assert.notEqual(next_window.spawns[0].cwd, directory, 'the other terminal retains its own directory');
   assert.deepEqual(runtime.updates, [], 'cwd never enters synced startup settings');
@@ -715,14 +865,14 @@ test('pending rename cannot target a replacement tab or open duplicate native pr
   test_case.after(() => runtime.dispose());
   const left = await runtime.view('left');
   const right = await runtime.view('right');
-  const target = right.state().tabs[0];
+  const target = terminal(right.state().tabs[0]);
   await right.send({ type: 'request_rename', id: target.id });
   await right.send({ type: 'request_rename', id: target.id });
   await left.send({ type: 'request_rename', id: left.state().tabs[0].id });
   assert.equal(runtime.input_boxes.length, 1, 'both views share one native rename prompt');
   await right.send({ type: 'close_tab', id: target.id });
   await runtime.command('terminalSidebar.openProfile', target.profile_id);
-  const replacement = right.state().tabs.find(tab => tab.profile_id === target.profile_id)!;
+  const replacement = right.state().tabs.filter(is_terminal_tab).find(tab => tab.profile_id === target.profile_id)!;
   assert.notEqual(replacement.id, target.id);
   const previous = right.state();
   const previous_memory = structuredClone(runtime.memory);
@@ -960,12 +1110,12 @@ test('named startup commands select or reopen only their target side without cha
   const left = await runtime.view('left');
   const right = await runtime.view('right');
   await runtime.command('terminalSidebar.openProfile', 'Right Two');
-  assert.equal(right.state().tabs.find(tab => tab.id === right.state().active_id)?.profile_id, 'two');
-  assert.equal(left.state().tabs.find(tab => tab.id === left.state().active_id)?.profile_id, 'one');
+  assert.equal(terminal(right.state().tabs.find(tab => tab.id === right.state().active_id)).profile_id, 'two');
+  assert.equal(terminal(left.state().tabs.find(tab => tab.id === left.state().active_id)).profile_id, 'one');
   const closed_identifier = left.state().tabs[0].id;
   await left.send({ type: 'close_tab', id: closed_identifier });
   await runtime.command('terminalSidebar.openProfile', { id: 'one', side: 'left' });
-  assert.equal(left.state().tabs.find(tab => tab.id === left.state().active_id)?.profile_id, 'one');
+  assert.equal(terminal(left.state().tabs.find(tab => tab.id === left.state().active_id)).profile_id, 'one');
   assert.equal(runtime.processes.length, 5);
   assert.deepEqual(runtime.processes.at(-1)?.writes, ['echo LEFT_START\r']);
   assert.deepEqual(runtime.updates, []);
@@ -1078,4 +1228,269 @@ test('malformed scrollbar preferences fall back and numeric dimensions follow ed
   runtime.change_setting('editor.scrollbar.horizontalScrollbarSize', Number.POSITIVE_INFINITY);
   assert.equal(right.state().appearance.editor_scrollbar_vertical_size, 10);
   assert.equal(right.state().appearance.editor_scrollbar_horizontal_size, 12);
+});
+
+test('startup marker choices cross workspace boundaries and removals override stale workspace copies', async test_case => {
+  const original = await harness();
+  test_case.after(() => original.dispose());
+  const first = await original.view('left');
+  const marker = { icon: 'bookmark', color: 'ansiBlue' } as const;
+  await first.send({ type: 'set_tab_marker', id: first.state().tabs[0].id, marker });
+  const old_workspace = structuredClone(original.memory);
+  const second_repo = await harness({ global_memory: original.global_memory });
+  test_case.after(() => second_repo.dispose());
+  const shared = await second_repo.view('left');
+  assert.deepEqual(shared.state().tabs[0].marker, marker);
+  assert.equal((await second_repo.view('right')).state().tabs[0].marker, undefined, 'same profile ID on another side stays independent');
+  assert.deepEqual(second_repo.updates, []);
+  await shared.send({ type: 'set_tab_marker', id: shared.state().tabs[0].id });
+  const reopened = await harness({ memory: old_workspace, global_memory: second_repo.global_memory });
+  test_case.after(() => reopened.dispose());
+  assert.equal((await reopened.view('left')).state().tabs[0].marker, undefined, 'explicit removal cannot be overwritten by old workspace data');
+  assert.doesNotMatch(JSON.stringify([...second_repo.global_memory.values()]), /LEFT_START|RIGHT_START|command|cwd/);
+});
+
+test('existing workspace markers migrate once while temporary markers remain local', async test_case => {
+  const configuration = { left: [{ id: 'profile', name: 'Shell', command: '', shell: '' }], right: [] };
+  const memory = new Map<string, unknown>([['terminalSidebar.tabs.left', {
+    version: 1, tabs: [
+      { id: 'startup', profile_id: 'profile', name: 'Shell', marker: { icon: 'flag', color: 'ansiGreen' } },
+      { id: 'temporary', name: 'Term 0', marker: { icon: 'tag', color: 'ansiRed' } },
+    ], active_id: 'startup', expanded_ids: ['startup'], next_number: 1,
+  }]]);
+  const original = await harness({ configuration, memory });
+  test_case.after(() => original.dispose());
+  const view = await original.view('left');
+  assert.deepEqual(view.state().tabs[1].marker, { icon: 'tag', color: 'ansiRed' });
+  const next_repo = await harness({ configuration, global_memory: original.global_memory });
+  test_case.after(() => next_repo.dispose());
+  const next = await next_repo.view('left');
+  assert.deepEqual(next.state().tabs[0].marker, { icon: 'flag', color: 'ansiGreen' });
+  await next.send({ type: 'add_tab' });
+  assert.equal(next.state().tabs[1].marker, undefined);
+});
+
+test('already-open repository windows update separate profile keys without losing or reviving other markers', async test_case => {
+  const global_memory = new Map<string, unknown>();
+  const first = await harness({ global_memory });
+  const second = await harness({ global_memory });
+  test_case.after(() => first.dispose());
+  test_case.after(() => second.dispose());
+  const first_view = await first.view('left');
+  const second_view = await second.view('left');
+  await first_view.send({ type: 'set_tab_marker', id: first_view.state().tabs[0].id, marker: { icon: 'bookmark', color: 'ansiBlue' } });
+  await second_view.send({ type: 'set_tab_marker', id: second_view.state().tabs[1].id, marker: { icon: 'flag', color: 'ansiGreen' } });
+  const third = await harness({ global_memory });
+  test_case.after(() => third.dispose());
+  assert.deepEqual((await third.view('left')).state().tabs.map(tab => tab.marker), [
+    { icon: 'bookmark', color: 'ansiBlue' }, { icon: 'flag', color: 'ansiGreen' },
+  ]);
+  await first_view.send({ type: 'set_tab_marker', id: first_view.state().tabs[0].id });
+  await second_view.send({ type: 'set_tab_marker', id: second_view.state().tabs[1].id, marker: { icon: 'ask', color: 'ansiRed' } });
+  const next = await harness({ global_memory });
+  test_case.after(() => next.dispose());
+  assert.deepEqual((await next.view('left')).state().tabs.map(tab => tab.marker), [undefined, { icon: 'ask', color: 'ansiRed' }]);
+  assert.equal(global_memory.size, 0, 'new writes do not use whole-extension Memento snapshots');
+  assert.equal(readdirSync(path.join(first.global_storage_directory, 'profile_markers')).length, 2);
+});
+
+test('marker storage failures preserve the current tab and report a handled error', async test_case => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'terminal_sidebar_blocked_storage_'));
+  test_case.after(() => rmSync(directory, { recursive: true, force: true }));
+  const blocked = path.join(directory, 'not_a_directory');
+  writeFileSync(blocked, 'storage fixture');
+  const runtime = await harness({ global_storage_directory: blocked });
+  test_case.after(() => runtime.dispose());
+  const view = await runtime.view('left');
+  const previous = view.state().tabs;
+  const processes = [...runtime.processes];
+  await view.send({ type: 'set_tab_marker', id: previous[0].id, marker: { icon: 'flag', color: 'ansiGreen' } });
+  assert.deepEqual(view.state().tabs, previous);
+  assert.deepEqual(runtime.processes, processes);
+  assert.ok(view.messages.some(message => message.type === 'error' && message.message.includes('could not be saved')));
+});
+
+function preview_fixture(test_case: { after(callback: () => void): void }) {
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'terminal_sidebar_host_preview_'));
+  test_case.after(() => rmSync(directory, { recursive: true, force: true }));
+  const pdf = path.join(directory, 'thesis.pdf');
+  const markdown = path.join(directory, 'notes.md');
+  const tex = path.join(directory, 'thesis.tex');
+  writeFileSync(pdf, '%PDF-1.4\n%%EOF');
+  writeFileSync(markdown, '# Notes\n\nUpdated with Vim.\n');
+  writeFileSync(tex, '\\documentclass{article}\n');
+  const memory = new Map<string, unknown>([['terminalSidebar.tabs.right', {
+    version: 1, tabs: [
+      { id: 'pdf', name: 'Thesis', pdf: { uri: fake_uri.file(pdf).toString(), page: 2, zoom: 1.5 } },
+      { id: 'markdown', name: 'Notes', markdown: { uri: fake_uri.file(markdown).toString(), scroll: 40 } },
+    ], active_id: 'pdf', expanded_ids: ['pdf', 'markdown'], next_number: 0,
+  }]]);
+  return { directory, pdf, markdown, tex, memory };
+}
+
+async function wait_for(predicate: () => boolean, description: string): Promise<void> {
+  const deadline = Date.now() + 3500;
+  while (!predicate() && Date.now() < deadline) await delay(20);
+  assert.ok(predicate(), description);
+}
+
+test('mixed document tabs restore without PTYs and keep reading positions and preview resources separate', async test_case => {
+  const files = preview_fixture(test_case);
+  const runtime = await harness({ memory: files.memory });
+  test_case.after(() => runtime.dispose());
+  const right = await runtime.view('right');
+  assert.equal(right.state().tabs.filter(is_pdf_tab).length, 1);
+  assert.equal(right.state().tabs.filter(is_markdown_tab).length, 1);
+  assert.equal(runtime.processes.length, 2, 'only the two startup terminal profiles spawn shells');
+  assert.deepEqual(Array.from(right.webview.options.localResourceRoots ?? [], value => value.toString()), [
+    'vscode-extension://terminal-sidebar/extension/dist', fake_uri.file(files.directory).toString(), fake_uri.file(files.directory).toString(),
+  ]);
+  await right.send({ type: 'pdf_position', id: 'pdf', position: { page: 8, zoom: 'page-fit' } });
+  await right.send({ type: 'markdown_position', id: 'markdown', position: { scroll: 240 } });
+  const next_window = await harness({ memory: runtime.memory });
+  test_case.after(() => next_window.dispose());
+  const next = await next_window.view('right');
+  assert.equal(next.state().tabs.filter(is_pdf_tab)[0].page, 8);
+  assert.equal(next.state().tabs.filter(is_pdf_tab)[0].zoom, 'page-fit');
+  assert.equal(next.state().tabs.filter(is_markdown_tab)[0].scroll, 240);
+  for (const id of ['pdf', 'markdown']) {
+    await right.send({ type: 'activate', id, cols: 80, rows: 24 });
+    await right.send({ type: 'input', id, data: 'must not reach a PTY' });
+    await right.send({ type: 'restart', id, cols: 80, rows: 24 });
+  }
+  assert.equal(runtime.processes.length, 2);
+  assert.ok(runtime.processes.every(process => !process.writes.includes('must not reach a PTY')));
+});
+
+test('PDF and Markdown watchers refresh complete files and close without affecting terminal processes', async test_case => {
+  const files = preview_fixture(test_case);
+  const runtime = await harness({ memory: files.memory });
+  test_case.after(() => runtime.dispose());
+  const view = await runtime.view('right');
+  await view.send({ type: 'load_pdf', id: 'pdf' });
+  await view.send({ type: 'load_markdown', id: 'markdown' });
+  assert.equal(runtime.watchers.length, 2);
+  await wait_for(() => view.messages.some(message => message.type === 'pdf_source')
+    && view.messages.some(message => message.type === 'markdown_source'), 'both previews receive file contents');
+  const source = view.messages.find(message => message.type === 'markdown_source');
+  assert.ok(source?.type === 'markdown_source');
+  assert.equal(source.source.text, '# Notes\n\nUpdated with Vim.\n');
+  assert.equal(source.source.base_url, `${fake_uri.file(files.directory).toString()}/`);
+  writeFileSync(files.markdown, '# Saved again\n');
+  runtime.watchers[1].created.fire(fake_uri.file(files.markdown));
+  await wait_for(() => view.messages.some(message => message.type === 'markdown_source' && message.source.text === '# Saved again\n'), 'replace-on-save refreshes Markdown');
+  const old_processes = [...runtime.processes];
+  await view.send({ type: 'close_tab', id: 'pdf' });
+  await view.send({ type: 'close_tab', id: 'markdown' });
+  assert.ok(runtime.watchers.every(watcher => watcher.disposed));
+  assert.deepEqual(runtime.processes, old_processes);
+  assert.ok(runtime.processes.every(process => process.killed === 0));
+  assert.deepEqual(runtime.warnings, []);
+  assert.equal(view.webview.options.localResourceRoots?.length, 1, 'closed files lose their resource grants');
+});
+
+test('preview requests require the matching live document tab and workspace trust', async test_case => {
+  const files = preview_fixture(test_case);
+  const runtime = await harness({ memory: files.memory, trusted: false, open_destination: files.pdf });
+  test_case.after(() => runtime.dispose());
+  const view = await runtime.view('right');
+  await runtime.command('terminalSidebar.openPdf', fake_uri.file(files.pdf));
+  await runtime.command('terminalSidebar.openMarkdown', fake_uri.file(files.markdown));
+  for (const id of ['pdf', 'markdown', 'missing']) {
+    await view.send({ type: 'load_pdf', id });
+    await view.send({ type: 'load_markdown', id });
+    await view.send({ type: 'pdf_reverse_sync', id, page: 1, x: 10, y: 20 });
+  }
+  assert.equal(runtime.watchers.length, 0);
+  assert.equal(runtime.sync_calls.length, 0);
+  assert.equal(runtime.open_dialogs.length, 0);
+  assert.equal(runtime.processes.length, 0);
+  assert.ok(!view.messages.some(message => message.type === 'pdf_source' || message.type === 'markdown_source'));
+  await runtime.grant_trust();
+  for (const request of [
+    { type: 'load_pdf', id: 'markdown' }, { type: 'load_markdown', id: 'pdf' },
+    { type: 'load_pdf', id: 'missing' }, { type: 'pdf_reverse_sync', id: 'pdf', page: 0, x: 10, y: 20 },
+  ]) await view.send(request as client_message);
+  assert.equal(runtime.watchers.length, 0);
+  assert.equal(runtime.sync_calls.length, 0);
+});
+
+test('open commands accept URI instances and PDF source navigation opens the main editor at the returned position', async test_case => {
+  const files = preview_fixture(test_case);
+  const runtime = await harness({ configuration: { left: [], right: [] },
+    reverse_sync: async () => ({ uri: fake_uri.file(files.tex).toString(), line: 4, column: 6 }) });
+  test_case.after(() => runtime.dispose());
+  const view = await runtime.view('right');
+  await runtime.command('terminalSidebar.openPdf', fake_uri.file(files.pdf));
+  await runtime.command('terminalSidebar.openMarkdown', fake_uri.file(files.markdown));
+  assert.equal(runtime.open_dialogs.length, 0, 'an explicit file bypasses the picker');
+  const pdf = view.state().tabs.find(is_pdf_tab)!;
+  await view.send({ type: 'pdf_reverse_sync', id: pdf.id, page: 2, x: 12.5, y: 50 });
+  assert.equal(runtime.sync_calls.length, 1);
+  assert.deepEqual(runtime.sync_calls[0].slice(0, 4), [fake_uri.file(files.pdf).toString(), 2, 12.5, 50]);
+  assert.deepEqual(runtime.opened_files, [files.tex]);
+  assert.equal(runtime.shown_documents[0].options?.viewColumn, 1);
+  assert.deepEqual(runtime.shown_documents[0].options?.selection, new runtime.api.Range(3, 5, 3, 5));
+  assert.equal(runtime.processes.length, 0);
+});
+
+test('the Markdown source button opens its source in the main editor instead of reselecting the preview', async test_case => {
+  const files = preview_fixture(test_case);
+  const runtime = await harness({ memory: files.memory });
+  test_case.after(() => runtime.dispose());
+  const view = await runtime.view('right');
+  const before = view.state().tabs;
+  await view.send({ type: 'open_markdown_link', id: 'markdown', href: fake_uri.file(files.markdown).toString() });
+  assert.deepEqual(runtime.opened_files, [files.markdown]);
+  assert.equal(runtime.shown_documents[0].options?.viewColumn, 1);
+  assert.deepEqual(view.state().tabs, before);
+});
+
+test('LaTeX preview preserves its root association across direct PDF reopening and window restore', async test_case => {
+  const files = preview_fixture(test_case);
+  const output_directory = path.join(files.directory, 'build', 'pdf');
+  mkdirSync(output_directory, { recursive: true });
+  const pdf = path.join(output_directory, 'thesis.pdf');
+  writeFileSync(pdf, '%PDF-1.4\n%%EOF');
+  const root_uri = fake_uri.file(files.tex).toString();
+  const pdf_uri = fake_uri.file(pdf).toString();
+  const runtime = await harness({ configuration: { left: [], right: [] },
+    latex_pdf: async () => ({ root_uri, pdf_uris: [pdf_uri] }) });
+  test_case.after(() => runtime.dispose());
+  const view = await runtime.view('right');
+  await runtime.command('terminalSidebar.openLatex', fake_uri.file(files.tex));
+  const tab = view.state().tabs.find(is_pdf_tab)!;
+  assert.equal(tab.uri, pdf_uri);
+  assert.equal(tab.source_uri, root_uri);
+  await runtime.command('terminalSidebar.openPdf', fake_uri.file(pdf));
+  assert.equal(view.state().tabs.find(is_pdf_tab)?.source_uri, root_uri);
+  const restored = await harness({ configuration: { left: [], right: [] }, memory: runtime.memory,
+    reverse_sync: async (...args) => {
+      assert.deepEqual(structuredClone(args[4]), { synctex_path: 'synctex', root_uri });
+      return { uri: root_uri, line: 2, column: 1 };
+    } });
+  test_case.after(() => restored.dispose());
+  const next = await restored.view('right');
+  assert.equal(next.state().tabs.find(is_pdf_tab)?.source_uri, root_uri);
+  await next.send({ type: 'pdf_reverse_sync', id: tab.id, page: 1, x: 0, y: 0 });
+  assert.deepEqual(restored.opened_files, [files.tex]);
+  assert.equal(restored.shown_documents[0].options?.viewColumn, 1);
+  assert.equal(restored.processes.length, 0);
+});
+
+test('pending reverse SyncTeX requests are deduplicated and cannot reopen a closed tab source', async test_case => {
+  const files = preview_fixture(test_case);
+  let complete!: (value: synctex_location) => void;
+  const runtime = await harness({ memory: files.memory,
+    reverse_sync: () => new Promise(resolve => { complete = resolve; }) });
+  test_case.after(() => runtime.dispose());
+  const view = await runtime.view('right');
+  await view.send({ type: 'pdf_reverse_sync', id: 'pdf', page: 1, x: 20, y: 30 });
+  await view.send({ type: 'pdf_reverse_sync', id: 'pdf', page: 1, x: 20, y: 30 });
+  assert.equal(runtime.sync_calls.length, 1);
+  await view.send({ type: 'close_tab', id: 'pdf' });
+  complete({ uri: fake_uri.file(files.tex).toString(), line: 1, column: 1 });
+  await next_turn();
+  assert.deepEqual(runtime.opened_files, []);
+  assert.deepEqual(runtime.shown_documents, []);
 });

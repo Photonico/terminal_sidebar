@@ -1,7 +1,9 @@
 import { is_identifier, is_tab_name, parse_profiles } from './profiles';
 import { is_local_cwd } from './shell_state';
 import { copy_tab_marker, is_tab_marker, type tab_marker } from './tab_marker';
-import type { terminal_profile, terminal_tab } from './types';
+import { is_pdf_tab, is_markdown_tab, is_terminal_tab, type terminal_profile, type terminal_tab, type sidebar_tab, type pdf_tab, type markdown_tab } from './types';
+import { is_markdown_uri, is_markdown_position, type markdown_position } from './markdown_state';
+import { is_pdf_uri, is_pdf_source_uri, is_pdf_position, type pdf_position } from './pdf_state';
 
 export interface remembered_tab {
   id: string;
@@ -10,6 +12,8 @@ export interface remembered_tab {
   renamed?: true;
   cwd?: string;
   marker?: tab_marker;
+  pdf?: { uri: string; source_uri?: string } & pdf_position;
+  markdown?: { uri: string } & markdown_position;
 }
 
 /** Workspace-local layout, decoration, and last known cwd. Shells, commands, input, and output never belong here. */
@@ -24,11 +28,11 @@ export interface tab_memory {
 const maximum_tabs = 64;
 const maximum_temporary_tabs = 32;
 
-function copy_tab(tab: terminal_tab): terminal_tab {
+function copy_tab<tab_type extends sidebar_tab>(tab: tab_type): tab_type {
   return {
     ...tab,
-    ...(tab.args === undefined ? {} : { args: [...tab.args] }),
-    ...(tab.env === undefined ? {} : { env: { ...tab.env } }),
+    ...(is_terminal_tab(tab) && tab.args !== undefined ? { args: [...tab.args] } : {}),
+    ...(is_terminal_tab(tab) && tab.env !== undefined ? { env: { ...tab.env } } : {}),
     ...(tab.marker === undefined ? {} : { marker: copy_tab_marker(tab.marker) }),
   };
 }
@@ -49,15 +53,27 @@ function read_memory(value: unknown): tab_memory {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
       continue;
     }
-    const { id, name, profile_id, renamed, cwd, marker } = entry as Record<string, unknown>;
+    const { id, name, profile_id, renamed, cwd, marker, pdf, markdown } = entry as Record<string, unknown>;
     if (!is_identifier(id) || identifiers.has(id) || !is_tab_name(name)) {
       continue;
     }
     if (profile_id !== undefined && !is_identifier(profile_id)) {
       continue;
     }
-    identifiers.add(id);
     const descriptor: remembered_tab = { id, name: name.trim() };
+    if (pdf !== undefined) {
+      const uri = pdf && typeof pdf === 'object' && 'uri' in pdf ? pdf.uri : undefined;
+      if (profile_id !== undefined || markdown !== undefined || !is_pdf_position(pdf) || !is_pdf_uri(uri)) continue;
+      descriptor.pdf = { uri, page: pdf.page, zoom: pdf.zoom };
+      const source_uri = 'source_uri' in pdf ? pdf.source_uri : undefined;
+      if (is_pdf_source_uri(source_uri, uri)) descriptor.pdf.source_uri = source_uri;
+    }
+    if (markdown !== undefined) {
+      const uri = markdown && typeof markdown === 'object' && 'uri' in markdown ? markdown.uri : undefined;
+      if (profile_id !== undefined || !is_markdown_position(markdown) || !is_markdown_uri(uri)) continue;
+      descriptor.markdown = { uri, scroll: markdown.scroll };
+    }
+    identifiers.add(id);
     if (profile_id !== undefined) {
       descriptor.profile_id = profile_id;
     }
@@ -86,7 +102,7 @@ function read_memory(value: unknown): tab_memory {
  * The host owns processes. This class only changes the layout and returns safe snapshots.
  */
 export class sidebar_tabs {
-  private current_tabs: terminal_tab[] = [];
+  private current_tabs: sidebar_tab[] = [];
   private selected_id: string | undefined;
   private expanded = new Set<string>();
   private renamed_profiles = new Set<string>();
@@ -99,10 +115,24 @@ export class sidebar_tabs {
     const restored_profiles = new Set<string>();
     const memory = read_memory(remembered);
     let temporary_count = 0;
+    let preview_count = 0;
 
     // Restore the previous order; removed startup settings cannot recover an old command.
     for (const descriptor of memory.tabs) {
-      if (descriptor.profile_id !== undefined) {
+      // Reserve room for every current startup profile, including newly added ones.
+      if (descriptor.profile_id === undefined && temporary_count + preview_count >= maximum_tabs - profiles.length) continue;
+      if (descriptor.pdf) {
+        if (preview_count >= 8 || this.current_tabs.some(tab => is_pdf_tab(tab) && tab.uri === descriptor.pdf!.uri)) continue;
+        this.current_tabs.push({ id: descriptor.id, name: descriptor.name, kind: 'pdf', ...descriptor.pdf,
+          ...(descriptor.marker === undefined ? {} : { marker: copy_tab_marker(descriptor.marker) }) });
+        preview_count++;
+      } else if (descriptor.markdown) {
+        const state = descriptor.markdown;
+        if (preview_count >= 8 || this.current_tabs.some(tab => is_markdown_tab(tab) && tab.uri === state.uri)) continue;
+        this.current_tabs.push({ id: descriptor.id, name: descriptor.name, kind: 'markdown', ...state,
+          ...(descriptor.marker === undefined ? {} : { marker: copy_tab_marker(descriptor.marker) }) });
+        preview_count++;
+      } else if (descriptor.profile_id !== undefined) {
         const profile = profiles_by_id.get(descriptor.profile_id);
         if (!profile || restored_profiles.has(profile.id)) {
           continue;
@@ -139,7 +169,7 @@ export class sidebar_tabs {
       ? memory.active_id : this.current_tabs[0]?.id;
   }
 
-  get tabs(): terminal_tab[] {
+  get tabs(): sidebar_tab[] {
     return this.current_tabs.map(copy_tab);
   }
 
@@ -154,7 +184,7 @@ export class sidebar_tabs {
   /** Number ordinary tabs upward, restarting from zero after all are closed and skipping occupied names. */
   add_tab(): terminal_tab {
     this.assert_capacity();
-    if (this.current_tabs.filter(tab => tab.profile_id === undefined).length >= maximum_temporary_tabs) {
+    if (this.current_tabs.filter(tab => is_terminal_tab(tab) && tab.profile_id === undefined).length >= maximum_temporary_tabs) {
       throw new Error('Each sidebar supports at most 32 temporary terminal tabs. Close one before adding another.');
     }
     const names = new Set(this.current_tabs.map(tab => tab.name));
@@ -172,11 +202,58 @@ export class sidebar_tabs {
   /** Reopen a startup profile on demand, or select its existing runtime tab without restarting it. */
   open_profile(value: terminal_profile): terminal_tab {
     const profile = parse_profiles([value])[0];
-    const existing = this.current_tabs.find(tab => tab.profile_id === profile.id);
+    const existing = this.current_tabs.find((tab): tab is terminal_tab => is_terminal_tab(tab) && tab.profile_id === profile.id);
     const tab = existing ?? this.append_profile(profile);
     this.selected_id = tab.id;
     this.expanded.add(tab.id);
     return copy_tab(tab);
+  }
+
+  open_pdf(uri: string, name: string, source_uri?: string): pdf_tab {
+    if (!is_pdf_uri(uri) || !is_tab_name(name)) throw new Error('Choose a local PDF file.');
+    let tab = this.current_tabs.find((item): item is pdf_tab => is_pdf_tab(item) && item.uri === uri);
+    if (!tab) {
+      this.assert_capacity();
+      if (this.current_tabs.filter(tab => !is_terminal_tab(tab)).length >= 8) throw new Error('Close a preview tab before opening another (maximum 8 per sidebar).');
+      tab = { kind: 'pdf', id: this.create_identifier(), name: name.trim(), uri, page: 1, zoom: 'page-width' };
+      this.current_tabs.push(tab);
+    }
+    if (is_pdf_source_uri(source_uri, uri)) tab.source_uri = source_uri;
+    this.selected_id = tab.id;
+    this.expanded.add(tab.id);
+    return copy_tab(tab);
+  }
+
+  open_markdown(uri: string, name: string): markdown_tab {
+    if (!is_markdown_uri(uri) || !is_tab_name(name)) throw new Error('Choose a local Markdown file.');
+    let tab = this.current_tabs.find((item): item is markdown_tab => is_markdown_tab(item) && item.uri === uri);
+    if (!tab) {
+      this.assert_capacity();
+      if (this.current_tabs.filter(item => !is_terminal_tab(item)).length >= 8) {
+        throw new Error('Close a preview tab before opening another (maximum 8 per sidebar).');
+      }
+      tab = { kind: 'markdown', id: this.create_identifier(), name: name.trim(), uri, scroll: 0 };
+      this.current_tabs.push(tab);
+    }
+    this.selected_id = tab.id;
+    this.expanded.add(tab.id);
+    return copy_tab(tab);
+  }
+
+  set_markdown_position(id: string, position: markdown_position): boolean {
+    const tab = this.current_tabs.find(tab => tab.id === id);
+    if (!tab || !is_markdown_tab(tab) || !is_markdown_position(position) || tab.scroll === position.scroll) return false;
+    tab.scroll = position.scroll;
+    return true;
+  }
+
+  set_pdf_position(id: string, position: pdf_position): boolean {
+    const tab = this.current_tabs.find(tab => tab.id === id);
+    if (!tab || !is_pdf_tab(tab) || !is_pdf_position(position)
+      || (tab.page === position.page && tab.zoom === position.zoom)) return false;
+    tab.page = position.page;
+    tab.zoom = position.zoom;
+    return true;
   }
 
   /** Select the right neighbour after closing, or the left neighbour when closing the last tab. */
@@ -186,7 +263,7 @@ export class sidebar_tabs {
       return false;
     }
     this.current_tabs.splice(index, 1);
-    if (!this.current_tabs.some(tab => tab.profile_id === undefined)) {
+    if (!this.current_tabs.some(tab => is_terminal_tab(tab) && tab.profile_id === undefined)) {
       this.next_number = 0;
     }
     this.expanded.delete(identifier);
@@ -208,7 +285,7 @@ export class sidebar_tabs {
       return false;
     }
     tab.name = trimmed_name;
-    if (tab.profile_id !== undefined) {
+    if (is_terminal_tab(tab) && tab.profile_id !== undefined) {
       this.renamed_profiles.add(identifier);
     }
     return true;
@@ -255,7 +332,7 @@ export class sidebar_tabs {
   /** Remember a local directory separately from the synced startup profile. */
   set_cwd(identifier: string, cwd: string): boolean {
     const tab = this.current_tabs.find(entry => entry.id === identifier);
-    if (!tab || !is_local_cwd(cwd) || tab.cwd === cwd) return false;
+    if (!tab || !is_terminal_tab(tab) || !is_local_cwd(cwd) || tab.cwd === cwd) return false;
     tab.cwd = cwd;
     return true;
   }
@@ -275,13 +352,16 @@ export class sidebar_tabs {
     const descriptors: remembered_tab[] = [];
     for (const tab of this.current_tabs) {
       const descriptor: remembered_tab = { id: tab.id, name: tab.name };
-      if (tab.profile_id !== undefined) {
+      if (is_terminal_tab(tab) && tab.profile_id !== undefined) {
         descriptor.profile_id = tab.profile_id;
       }
       if (this.renamed_profiles.has(tab.id)) {
         descriptor.renamed = true;
       }
-      if (tab.cwd !== undefined) descriptor.cwd = tab.cwd;
+      if (is_terminal_tab(tab) && tab.cwd !== undefined) descriptor.cwd = tab.cwd;
+      if (is_pdf_tab(tab)) descriptor.pdf = { uri: tab.uri, page: tab.page, zoom: tab.zoom,
+        ...(tab.source_uri === undefined ? {} : { source_uri: tab.source_uri }) };
+      if (is_markdown_tab(tab)) descriptor.markdown = { uri: tab.uri, scroll: tab.scroll };
       if (tab.marker !== undefined) descriptor.marker = copy_tab_marker(tab.marker);
       descriptors.push(descriptor);
     }

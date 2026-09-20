@@ -1,4 +1,4 @@
-import type { SearchAddon, ISearchOptions } from '@xterm/addon-search';
+import type { ISearchOptions } from '@xterm/addon-search';
 import type { IDisposable } from '@xterm/xterm';
 
 /*! Codicons find control icons, unmodified paths, Copyright Microsoft Corporation.
@@ -14,9 +14,24 @@ const find_icons = {
   close: "<path d=\"M13.85 13.1502C14.05 13.3502 14.05 13.6602 13.85 13.8602C13.75 13.9602 13.62 14.0102 13.5 14.0102C13.38 14.0102 13.24 13.9602 13.15 13.8602L8 8.71023L2.85 13.8602C2.75 13.9602 2.62 14.0102 2.5 14.0102C2.38 14.0102 2.24 13.9602 2.15 13.8602C1.95 13.6602 1.95 13.3502 2.15 13.1502L7.3 8.00023L2.15 2.85023C1.95 2.65023 1.95 2.34023 2.15 2.14023C2.35 1.94023 2.66 1.94023 2.86 2.14023L8.01 7.29023L13.16 2.14023C13.36 1.94023 13.67 1.94023 13.87 2.14023C14.07 2.34023 14.07 2.65023 13.87 2.85023L8.72 8.00023L13.87 13.1502H13.85Z\"/>",
 };
 
+export interface search_results {
+  resultIndex: number;
+  resultCount: number;
+  message?: string;
+}
+
+/** Terminal buffers and document previews share the same find controls. */
+export interface searchable_content {
+  findNext(query: string, options?: ISearchOptions): boolean;
+  findPrevious(query: string, options?: ISearchOptions): boolean;
+  clearDecorations(): void;
+  clearActiveDecoration(): void;
+  onDidChangeResults(listener: (result: search_results) => void): IDisposable;
+}
+
 export interface search_target {
   id: string;
-  search: SearchAddon;
+  search: searchable_content;
 }
 
 interface search_options {
@@ -46,7 +61,7 @@ export class terminal_search {
   constructor(private readonly options: search_options) {
     this.root.className = 'terminal_find';
     this.root.hidden = true;
-    this.root.setAttribute('aria-label', 'Find in terminal');
+    this.root.setAttribute('aria-label', 'Find in active tab');
     this.root.setAttribute('role', 'search');
     const row = document.createElement('div');
     row.className = 'terminal_find_row';
@@ -60,7 +75,7 @@ export class terminal_search {
     this.input.type = 'text';
     this.input.className = 'terminal_find_input';
     this.input.placeholder = 'Find';
-    this.input.setAttribute('aria-label', 'Find in terminal');
+    this.input.setAttribute('aria-label', 'Find in active tab');
     this.input.setAttribute('aria-describedby', 'terminal_find_status');
     this.input.autocomplete = 'off';
     this.input.spellcheck = false;
@@ -151,9 +166,9 @@ export class terminal_search {
     }
     this.results_listener = target.search.onDidChangeResults(result => {
       const has_results = !!this.input.value && result.resultCount > 0;
-      this.set_status(!this.input.value ? '' : !has_results ? 'No results'
-        : result.resultIndex < 0 ? `${result.resultCount}+ results` : `${result.resultIndex + 1} of ${result.resultCount}`, has_results);
-      this.root.classList.toggle('terminal_find_no_results', !!this.input.value && !has_results);
+      this.set_status(result.message ?? (!this.input.value ? '' : !has_results ? 'No results'
+        : result.resultIndex < 0 ? `${result.resultCount}+ results` : `${result.resultIndex + 1} of ${result.resultCount}`), has_results);
+      this.root.classList.toggle('terminal_find_no_results', !!this.input.value && !has_results && !result.message);
     });
     this.find(false, true);
   }

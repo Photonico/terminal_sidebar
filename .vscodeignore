@@ -1,6 +1,9 @@
 **
 !package.json
 !README.md
+!docs/guide.md
+!docs/readme_zh.md
+!docs/readme_ja.md
 !LICENSE
 !CHANGELOG.md
 !assets/logo.png
@@ -13,3 +16,5 @@
 !dist/codicons.NOTICE
 !dist/*.LICENSE
 !dist/node-pty/**
+!dist/pdfjs/**
+!dist/document_search_worker.js

@@ -1,6 +1,8 @@
 import type { client_message, sidebar_configuration, terminal_profile } from './types';
 import { is_tab_marker } from './tab_marker';
 import { is_export_payload } from './export_format';
+import { is_pdf_position } from './pdf_state';
+import { is_markdown_position, is_markdown_link } from './markdown_state';
 
 export const default_configuration: sidebar_configuration = {
   left: [],
@@ -154,6 +156,8 @@ export function is_client_message(value: unknown): value is client_message {
     case 'open_other_sidebar':
     case 'refresh_shells':
     case 'add_tab':
+    case 'open_pdf':
+    case 'open_preview':
       return true;
     case 'activate':
     case 'restart':
@@ -166,7 +170,18 @@ export function is_client_message(value: unknown): value is client_message {
     case 'paste':
     case 'focus':
     case 'select':
+    case 'load_pdf':
+    case 'load_markdown':
       return valid_identifier;
+    case 'markdown_position':
+      return valid_identifier && is_markdown_position(message.position);
+    case 'open_markdown_link':
+      return valid_identifier && is_markdown_link(message.href);
+    case 'pdf_reverse_sync':
+      return valid_identifier && Number.isInteger(message.page) && Number(message.page) >= 1 && Number(message.page) <= 1_000_000
+        && [message.x, message.y].every(value => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100_000);
+    case 'pdf_position':
+      return valid_identifier && is_pdf_position(message.position);
     case 'rename_tab':
       return valid_identifier && is_tab_name(message.name);
     case 'set_tab_marker':

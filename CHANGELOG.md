@@ -1,8 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.10.0 — Pre-release
 
 - Simplify the marker color heading and add active/inactive tab foreground colors in a new palette column.
+- Remember startup-profile markers across workspaces, including explicit removal.
+- Preview PDF, Markdown, and compiled LaTeX PDFs inside either side bar; remember reading positions and refresh after file saves. Scroll past PDF page boundaries to turn pages.
+- Search complete PDF and Markdown documents with highlighted matches, navigation, case, whole-word, and regular-expression options.
+- Double-click PDF text to locate its LaTeX source in the main editor with SyncTeX.
+- Shorten the README and add Chinese and Japanese introductions.
 
 ## 0.8.0 — Pre-release
 

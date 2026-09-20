@@ -1,0 +1,12 @@
+.pdf-pane { display: flex; flex-direction: column; min-height: 0; }
+.pdf-toolbar { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; padding: 4px 6px; border-bottom: 1px solid var(--view-border); background: var(--vscode-sideBar-background); }
+.pdf-toolbar input { width: 54px; min-width: 36px; padding: 2px 4px; }
+.pdf-toolbar select { width: auto; min-width: 88px; max-width: 115px; padding: 2px 4px; margin-left: auto; }
+.pdf-toolbar > span { white-space: nowrap; font-size: 11px; }
+.pdf-toolbar .icon-button { border-radius: 50%; }
+.pdf-notice { padding: 5px 8px; color: var(--vscode-descriptionForeground); font-size: 11px; }
+.pdf-viewport { flex: 1 1 0; min-height: 0; overflow: auto; padding: 12px; background: var(--vscode-editor-background); outline-offset: -1px; }
+.pdf-page { position: relative; margin: 0 auto; background: white; box-shadow: 0 1px 5px var(--vscode-widget-shadow, transparent); color-scheme: light; }
+.pdf-page canvas { display: block; }
+.pdf_find_match { position: absolute; pointer-events: none; z-index: 2; background: var(--vscode-editor-findMatchHighlightBackground, transparent); outline: 1px solid var(--vscode-editor-findMatchHighlightBorder, transparent); mix-blend-mode: multiply; }
+.pdf_find_active { background: var(--vscode-editor-findMatchBackground, transparent); outline-color: var(--vscode-editor-findMatchBorder, var(--vscode-focusBorder)); }

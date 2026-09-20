@@ -6,6 +6,25 @@ import './generate_codicons.mjs';
 
 await mkdir('dist', { recursive: true });
 
+// Keep PDF parsing in its own worker and load fonts/decoders only when needed.
+// The legacy build includes compatibility shims for the minimum supported VS Code.
+await remove_directory('dist/pdfjs', { recursive: true, force: true });
+await mkdir('dist/pdfjs', { recursive: true });
+for (const name of ['pdf.mjs', 'pdf.worker.mjs']) {
+  await copy_file(`node_modules/pdfjs-dist/legacy/build/${name}`, `dist/pdfjs/${name}`);
+}
+for (const name of ['cmaps', 'standard_fonts', 'wasm', 'iccs']) {
+  await copy_directory(`node_modules/pdfjs-dist/${name}`, `dist/pdfjs/${name}`, { recursive: true });
+}
+await copy_file('node_modules/pdfjs-dist/LICENSE', 'dist/pdfjs/LICENSE');
+await copy_file('assets/pdfjs_core_js.LICENSE', 'dist/pdfjs/core_js.LICENSE');
+await write_file('dist/pdfjs/NOTICE', `PDF.js by Mozilla Foundation and contributors
+Source: https://github.com/mozilla/pdf.js
+The compatibility build embeds core-js 3.50.0 under the MIT license (core_js.LICENSE).
+Core-js source: https://github.com/zloirock/core-js/tree/v3.50.0
+The renderer, worker, decoder, font and CMap assets are copied without modification.
+`);
+
 // Ship this platform's native runtime. An installed VSIX must work without the source checkout.
 await remove_directory('dist/node-pty', { recursive: true, force: true });
 await mkdir('dist/node-pty', { recursive: true });
@@ -36,6 +55,14 @@ if (exists_sync(`node_modules/node-pty/${native_directory}`)) {
 // Property names below belong to esbuild. Keep those API names unchanged.
 const shared_options = { bundle: true, sourcemap: false, logLevel: 'info', legalComments: 'eof' };
 const build_targets = [
+  {
+    ...shared_options,
+    entryPoints: ['webview/document_search_worker.ts'],
+    outfile: 'dist/document_search_worker.js',
+    platform: 'browser',
+    format: 'iife',
+    target: 'chrome130',
+  },
   {
     ...shared_options,
     entryPoints: ['src/extension.ts'],
@@ -86,6 +113,13 @@ for (const [name, source] of [
   ['pdf_lib_standard_fonts', 'node_modules/@pdf-lib/standard-fonts/LICENSE.md'],
   ['pdf_lib_upng', 'node_modules/@pdf-lib/upng/LICENSE'],
   ['pako', 'node_modules/pako/LICENSE'],
+  ['markdown_it', 'node_modules/markdown-it/LICENSE'],
+  ['mdurl', 'node_modules/mdurl/LICENSE'],
+  ['linkify_it', 'node_modules/linkify-it/LICENSE'],
+  ['uc_micro', 'node_modules/uc.micro/LICENSE.txt'],
+  ['entities', 'node_modules/entities/LICENSE'],
+  ['argparse', 'node_modules/argparse/LICENSE'],
+  ['punycode', 'node_modules/punycode.js/LICENSE-MIT.txt'],
   ['tslib', 'node_modules/tslib/LICENSE.txt'],
   ['node-pty', 'node_modules/node-pty/LICENSE'],
 ]) {
