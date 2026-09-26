@@ -830,6 +830,9 @@ class terminal_sidebar implements vscode.Disposable {
       case 'pdf_reverse_sync':
         if (is_pdf_tab(tab) && vscode.workspace.isTrusted) await this.reverse_pdf_sync(view, tab.uri, message);
         return;
+      case 'open_pdf_link':
+        if (is_pdf_tab(tab) && vscode.workspace.isTrusted) await this.open_markdown_link(view, tab.uri, message.href);
+        return;
       case 'focus':
         if (view.view?.visible && !view.configuring
           && (view.side === 'left' ? layout.expanded_ids.includes(tab.id) : layout.active_id === tab.id)) {

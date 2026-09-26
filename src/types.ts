@@ -147,6 +147,7 @@ export type client_message = search_request
   | { type: 'document_position'; id: string; position: document_position }
   | { type: 'open_document_link'; id: string; href: string }
   | { type: 'load_pdf'; id: string }
+  | { type: 'open_pdf_link'; id: string; href: string }
   | { type: 'pdf_reverse_sync'; id: string; page: number; x: number; y: number }
   | { type: 'pdf_position'; id: string; position: pdf_position }
   | { type: 'request_rename'; id: string }

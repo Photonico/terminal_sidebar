@@ -6,6 +6,8 @@ import { layout_document, adjacent_page, current_page, visible_pages, type docum
 import { pdf_toolbar } from './pdf_toolbar';
 import { pdf_outline } from './pdf_outline';
 import { preview_overlay } from './preview_controls';
+import { render_pdf_links, type pdf_link_actions } from './pdf_links';
+import { resolve_destination } from './pdf_destination';
 import './pdf_view.css';
 import './pdf_text_layer.css';
 
@@ -79,6 +81,21 @@ export class pdf_view {
   private readonly toolbar: pdf_toolbar;
   private readonly outline: pdf_outline;
   private readonly overlay: preview_overlay;
+  private follow_request = 0;
+  private readonly link_actions: pdf_link_actions = {
+    destination: destination => { void this.follow(destination); },
+    describe: async destination => {
+      const target = this.pdf ? await resolve_destination(this.pdf, destination) : undefined;
+      return target ? `Go to page ${target.page}` : undefined;
+    },
+    named: action => {
+      const pages = this.pdf?.numPages ?? 0;
+      if (!pages) return;
+      if (action === 'FirstPage' || action === 'LastPage') this.navigate(action === 'FirstPage' ? 1 : pages);
+      else this.navigate(adjacent_page(this.page, pages, this.mode, action === 'NextPage' ? 1 : -1));
+    },
+    open: href => this.send({ type: 'open_pdf_link', id: this.tab.id, href }),
+  };
   private outline_open = false;
   private mode: pdf_mode;
   private dark: boolean;
@@ -293,6 +310,27 @@ export class pdf_view {
     this.highlight_match();
   }
 
+  /** Internal links keep the reader's zoom and bring the destination point just below the toolbar. */
+  private async follow(destination: string | unknown[]): Promise<void> {
+    const pdf = this.pdf;
+    if (!pdf) return;
+    const request = ++this.follow_request;
+    const current = () => !this.disposed && this.pdf === pdf && request === this.follow_request;
+    try {
+      const target = await resolve_destination(pdf, destination);
+      if (!current() || !target) return;
+      this.navigate(target.page);
+      if (target.top === undefined && target.left === undefined) return;
+      const page = await pdf.getPage(target.page);
+      const box = this.geometry?.boxes.get(target.page - 1);
+      if (!current() || this.page !== target.page || !box) return;
+      const [x, y] = page.getViewport({ scale: box.scale }).convertToViewportPoint(target.left ?? 0, target.top ?? 0) as number[];
+      if (target.top !== undefined && Number.isFinite(y)) this.viewport.scrollTop = box.top + Math.max(0, y);
+      if (target.left !== undefined && Number.isFinite(x)) this.viewport.scrollLeft = Math.max(0, (box.left ?? 0) + x);
+      void this.render_visible();
+    } catch { /* A broken destination leaves the reader where it is. */ }
+  }
+
   private update_controls(): void {
     this.pane.dataset.pdfMode = this.mode;
     this.pane.dataset.pdfDark = String(this.dark);
@@ -463,6 +501,9 @@ export class pdf_view {
       entry.layer = new module.TextLayer({ textContentSource: content, container: text, viewport });
       await entry.layer.render().catch(() => undefined);
       if (!current()) return;
+      const links = await render_pdf_links(page, viewport, this.link_actions);
+      if (!current()) return;
+      if (links) rendered.append(links);
       entry.source = page_text(content.items);
       const view = [...page.view];
       rendered.addEventListener('dblclick', event => {

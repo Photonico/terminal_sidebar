@@ -189,6 +189,7 @@ export function is_client_message(value: unknown): value is client_message {
       return valid_identifier && is_document_position(message.position);
     case 'open_markdown_link':
     case 'open_document_link':
+    case 'open_pdf_link':
       return valid_identifier && is_markdown_link(message.href);
     case 'pdf_reverse_sync':
       return valid_identifier && Number.isInteger(message.page) && Number(message.page) >= 1 && Number(message.page) <= 1_000_000
