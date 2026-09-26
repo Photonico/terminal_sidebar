@@ -50,6 +50,12 @@ test('PDF toolbar emits navigation and zoom actions, preserving custom zoom valu
     { action: 'zoom', value: 1 }, { action: 'zoom', value: 0 }, { action: 'zoom', value: -1 }, { action: 'reload' },
   ]);
   const zoom = h.control('Zoom');
+  const right = zoom.parentElement!.parentElement!;
+  assert.ok(right.classList.contains('pdf-toolbar-right'));
+  assert.deepEqual(right.children.map(child => child.className), [
+    'pdf-zoom-control preview-zoom-control preview-control', 'pdf-page-control', 'icon-button', 'icon-button',
+  ], 'The zoom menu precedes the page number, then reload and settings');
+  assert.equal(right.children[1], h.control('Page number').parentElement);
   assert.deepEqual(zoom.options.map(option => option.textContent), [
     'Fit width', 'Fit page', '25%', '50%', '75%', '100%', '125%', '150%', '200%', '300%', '400%',
   ]);

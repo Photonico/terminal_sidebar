@@ -109,7 +109,7 @@ export class pdf_toolbar {
       event.stopPropagation();
       this.show_menu(event.key === 'ArrowUp');
     }, options);
-    right.append(page_control, zoom_control, this.button('Reload PDF', 'refresh', callbacks.reload), this.settings);
+    right.append(zoom_control, page_control, this.button('Reload PDF', 'refresh', callbacks.reload), this.settings);
     this.root.append(left, right);
 
     this.menu.id = `pdf-settings-${++toolbar_sequence}`;

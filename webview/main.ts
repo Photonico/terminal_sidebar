@@ -13,7 +13,7 @@ import { tab_actions } from './tab_actions';
 import { tab_rename } from './rename';
 import { terminal_search, is_find_shortcut } from './search';
 import { create_tab_marker, tab_marker_picker } from './tab_marker';
-import { terminal_indicator, show_tab_indicator, indicator_label, tab_completion_tracker } from './status';
+import { terminal_indicator, show_tab_indicator, indicator_label, tab_completion_tracker, version_label } from './status';
 import { install_terminal_links } from './terminal_links';
 import { terminal_text, terminal_html, terminal_markdown } from './export';
 import { terminal_pdf } from './pdf_export';
@@ -92,7 +92,7 @@ app.innerHTML = `
     </div>
     <div id="terminal-host"></div>
   </main>
-  <footer id="session-status" role="status" aria-live="polite"><span id="status-badge"><span id="status-dot"></span><span id="status-text">Loading terminals…</span></span></footer>
+  <footer id="session-status" role="status" aria-live="polite"><span id="status-badge"><span id="status-dot"></span><span id="status-text">Loading terminals…</span><span id="status-version" hidden></span></span></footer>
   <section id="configuration" aria-labelledby="configuration-title" hidden>
     <div class="configuration-heading"><h2 id="configuration-title">Startup terminals</h2><button id="refresh-shells" class="icon-button" type="button" aria-label="Detect shells again" title="Detect shells again">${icon('restart')}</button></div>
     <p class="configuration-intro">These profiles open at startup. Closing or adding a terminal during use does not change them. Blank Shell uses the default; keep secrets out of synced commands.</p>
@@ -118,6 +118,13 @@ const profile_groups = element('profile-groups');
 const status_bar = element('session-status');
 const error_banner = element('error-banner');
 const save_button = element<HTMLButtonElement>('save-profiles');
+
+const extension_version = version_label(document.querySelector<HTMLMetaElement>('meta[name="extension-version"]')?.content);
+if (extension_version) {
+  const version = element('status-version');
+  version.textContent = extension_version;
+  version.hidden = false;
+}
 
 interface sidebar_pane {
   pane: HTMLDivElement;

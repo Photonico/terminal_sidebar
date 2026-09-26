@@ -2,7 +2,7 @@
   "name": "terminal-sidebar",
   "displayName": "Terminal Sidebar",
   "description": "Sidebar terminals with Markdown, PDF, LaTeX, HTML, and formatted-source previews.",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "publisher": "ConAntares",
   "author": "Lu Niu (Photonico)",
   "license": "MIT",

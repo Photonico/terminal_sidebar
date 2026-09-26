@@ -31,6 +31,6 @@ Reloading VS Code creates new shell processes. Directory memory and command stat
 
 [User and development guide](https://github.com/Photonico/terminal_sidebar/blob/main/docs/guide.md) · [Changelog](CHANGELOG.md) · [Issues](https://github.com/Photonico/terminal_sidebar/issues)
 
-Design and maintenance: [Lu Niu (Photonico)](https://github.com/Photonico). Implementation, testing, and documentation assistance: **OpenAI Codex**.
+Design and maintenance: [Lu Niu (Photonico)](https://github.com/Photonico). Implementation, testing, and documentation assistance: **OpenAI Codex** and **Anthropic Claude**.
 
 [MIT](LICENSE) © 2026 Lu Niu (Photonico). Bundled Codicons: Microsoft, [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).

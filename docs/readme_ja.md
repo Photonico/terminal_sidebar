@@ -31,6 +31,6 @@ VS Code を再読み込みすると、シェルは新しいプロセスとして
 
 [使い方・開発ガイド（英語）](https://github.com/Photonico/terminal_sidebar/blob/main/docs/guide.md) · [変更履歴](https://github.com/Photonico/terminal_sidebar/blob/main/CHANGELOG.md) · [問題を報告](https://github.com/Photonico/terminal_sidebar/issues)
 
-設計・メンテナンス：[Lu Niu (Photonico)](https://github.com/Photonico)。実装・テスト・ドキュメント作成支援：**OpenAI Codex**。
+設計・メンテナンス：[Lu Niu (Photonico)](https://github.com/Photonico)。実装・テスト・ドキュメント作成支援：**OpenAI Codex**、**Anthropic Claude**。
 
 [MIT](https://github.com/Photonico/terminal_sidebar/blob/main/LICENSE) © 2026 Lu Niu (Photonico)。同梱の Codicons は Microsoft によるもので、[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) ライセンスが適用されます。

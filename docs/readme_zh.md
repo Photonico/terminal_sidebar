@@ -31,6 +31,6 @@
 
 [使用与开发指南（英文）](https://github.com/Photonico/terminal_sidebar/blob/main/docs/guide.md) · [更新记录](https://github.com/Photonico/terminal_sidebar/blob/main/CHANGELOG.md) · [问题反馈](https://github.com/Photonico/terminal_sidebar/issues)
 
-设计与维护：[Lu Niu (Photonico)](https://github.com/Photonico)。实现、测试与文档协助：**OpenAI Codex**。
+设计与维护：[Lu Niu (Photonico)](https://github.com/Photonico)。实现、测试与文档协助：**OpenAI Codex** 与 **Anthropic Claude**。
 
 [MIT](https://github.com/Photonico/terminal_sidebar/blob/main/LICENSE) © 2026 Lu Niu (Photonico)。内置 Codicons 由 Microsoft 提供，采用 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) 许可。

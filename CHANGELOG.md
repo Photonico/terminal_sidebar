@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.0 — Unreleased
+
+- Place the PDF zoom menu before the page number in the preview toolbar.
+- Show the extension version in the floating status badge of both sidebars.
+- Credit Anthropic Claude alongside OpenAI Codex for implementation, testing, and documentation assistance.
+
 ## 0.10.0 — Pre-release
 
 - Simplify the marker color heading and add active/inactive tab foreground colors in a new palette column.

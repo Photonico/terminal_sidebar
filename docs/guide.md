@@ -108,7 +108,8 @@ Keep modules focused, use descriptive `snake_case` for project-owned identifiers
 
 - [Lu Niu (Photonico)](https://github.com/Photonico): project design and maintenance.
 - **OpenAI Codex**: assistance with implementation, testing, and documentation.
+- **Anthropic Claude**: assistance with implementation, testing, and documentation.
 
-Commits with Codex contributions include `Co-authored-by: Codex <codex@openai.com>`.
+Commits with Codex contributions include `Co-authored-by: Codex <codex@openai.com>`. Commits with Claude contributions include a `Co-Authored-By: Claude … <noreply@anthropic.com>` trailer.
 
 [MIT](https://github.com/Photonico/terminal_sidebar/blob/main/LICENSE) © 2026 Lu Niu (Photonico). Bundled Codicons are Copyright Microsoft Corporation and licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/); bundled notices identify their source.
