@@ -3,6 +3,8 @@
 ## 0.11.0 — Unreleased
 
 - Place the PDF zoom menu before the page number in the preview toolbar.
+- Give preview toolbar buttons the same idle circular background as the terminal tab actions.
+- Describe every titled icon and control in a themed hover hint that appears after a short delay, replacing native tooltips that are slow or missing in webviews.
 - Add a version badge to the README and replace the retired Marketplace version and install-count badges with a Marketplace link.
 - Credit Anthropic Claude alongside OpenAI Codex for implementation, testing, and documentation assistance; list both as package contributors and show them on the About page.
 
