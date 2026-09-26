@@ -1,21 +1,13 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist';
+import { page_reference as reference, type page_reference } from './pdf_destination';
 import './pdf_outline.css';
 
-type page_reference = number | { num: number; gen: number };
 type outline_destination = string | page_reference;
 interface outline_entry { title: string; destination?: outline_destination; children: outline_entry[] }
 
 const maximum_nodes = 2000;
 const maximum_depth = 12;
 const maximum_title_length = 512;
-
-function reference(value: unknown): page_reference | undefined {
-  if (Number.isSafeInteger(value) && (value as number) >= 0) return value as number;
-  if (!value || typeof value !== 'object') return undefined;
-  const { num, gen } = value as Record<string, unknown>;
-  return Number.isSafeInteger(num) && (num as number) > 0 && Number.isSafeInteger(gen) && (gen as number) >= 0
-    ? { num: num as number, gen: gen as number } : undefined;
-}
 
 /** PDF data becomes a bounded, acyclic tree before any DOM is created. */
 function outline_tree(source: unknown): { entries: outline_entry[]; truncated: boolean } {
