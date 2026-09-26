@@ -8,8 +8,9 @@
 .preview-zoom-control > .codicon { position: absolute; right: 5px; top: 50%; transform: translateY(-50%); pointer-events: none; }
 .preview-zoom-control option { color: var(--vscode-dropdown-foreground, var(--view-foreground)); background: var(--vscode-dropdown-background, var(--view-background)); }
 
-/* All document readers use the same hit area, circular surface and icon box. */
-.preview-toolbar .icon-button { width: 24px; height: 24px; border-width: var(--action_inset, 2px); border-radius: 50%; padding: 2px; background-clip: padding-box; color: var(--vscode-icon-foreground, var(--view-foreground)); }
+/* All document readers use the same hit area and icon box, with the tab actions' idle
+   terminal-coloured 20px circle; hover and pressed states below take precedence. */
+.preview-toolbar .icon-button { width: 24px; height: 24px; border-width: var(--action_inset, 2px); border-radius: 50%; padding: 2px; background-clip: padding-box; background-color: var(--view-background); color: var(--vscode-icon-foreground, var(--view-foreground)); }
 .preview-toolbar .icon-button > .codicon { display: block; flex: 0 0 16px; width: 16px; height: 16px; }
 .preview-toolbar .icon-button:hover:not(:disabled) { background-color: var(--vscode-toolbar-hoverBackground, transparent); }
 .preview-toolbar .icon-button:active:not(:disabled), .preview-toolbar .icon-button[aria-pressed="true"], .preview-toolbar .icon-button[aria-expanded="true"] { background-color: var(--vscode-toolbar-activeBackground, var(--vscode-toolbar-hoverBackground, transparent)); }

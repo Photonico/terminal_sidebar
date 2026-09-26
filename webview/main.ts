@@ -21,6 +21,7 @@ import { pdf_view } from './pdf_view';
 import { document_view } from './document_view';
 import { markdown_view } from './markdown_view';
 import { startup_handshake } from './startup_handshake';
+import { hover_hints } from './hover_hint';
 import { is_terminal_tab, is_pdf_tab, is_markdown_tab, is_document_tab, type sidebar_tab } from '../src/types';
 import { is_export_payload } from '../src/export_format';
 import type {
@@ -101,6 +102,8 @@ app.innerHTML = `
       <div class="configuration-actions"><button id="save-profiles" title="Save startup configuration" class="primary" type="submit">Save</button><button id="cancel-configuration" title="Discard configuration changes" class="secondary" type="button">Cancel</button><button id="return_to_terminals" title="Return to terminals and keep the configuration draft" class="secondary" type="button">Return to terminals</button></div>
     </form>
   </section>`;
+
+new hover_hints();
 
 function element<element_type extends HTMLElement = HTMLElement>(id: string): element_type {
   const found = document.getElementById(id);
