@@ -238,7 +238,6 @@ interface harness_options {
   reverse_sync?: (...args: unknown[]) => Promise<synctex_location>;
   latex_pdf?: (...args: unknown[]) => Promise<latex_pdf_candidates>;
   workspace_uri?: { scheme: string; fsPath: string; with(change: { path: string }): unknown };
-  version?: string;
 }
 
 async function harness(options: harness_options = {}) {
@@ -374,7 +373,6 @@ async function harness(options: harness_options = {}) {
   const context = {
     subscriptions,
     extensionUri: fake_uri.parse('vscode-extension://terminal-sidebar/extension'),
-    extension: { packageJSON: { version: options.version ?? '0.11.0' } },
     globalStorageUri: fake_uri.file(options.global_storage_directory ?? global_directory(global_memory)),
     workspaceState: {
       get: (key: string) => structuredClone(memory.get(key)),
@@ -479,17 +477,6 @@ async function harness(options: harness_options = {}) {
     },
   };
 }
-
-test('both sidebars receive the package version for the footer badge as inert metadata', async test_case => {
-  const runtime = await harness();
-  test_case.after(() => runtime.dispose());
-  for (const side of ['left', 'right'] as const) {
-    assert.match((await runtime.view(side)).webview.html, /<meta name="extension-version" content="0\.11\.0">/);
-  }
-  const hostile = await harness({ version: '1.0.0"><script>' });
-  test_case.after(() => hostile.dispose());
-  assert.match((await hostile.view('left')).webview.html, /<meta name="extension-version" content="1\.0\.0script">/);
-});
 
 test('sidebars own separate processes even with the same profile and runtime IDs; every startup tab starts once', async test_case => {
   const runtime = await harness();

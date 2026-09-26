@@ -42,12 +42,6 @@ export class tab_completion_tracker {
   }
 }
 
-/** The host supplies package metadata; anything other than a plain version is not displayed. */
-export function version_label(version: string | undefined): string | undefined {
-  const value = version?.trim();
-  return value && /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(value) ? `v${value}` : undefined;
-}
-
 export function indicator_label(status: indicator_status): string {
   return { idle: 'Idle', running: 'Running', completed: 'Completed', error: 'Error' }[status];
 }

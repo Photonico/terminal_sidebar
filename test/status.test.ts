@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { terminal_indicator, show_tab_indicator, tab_completion_tracker, version_label } from '../webview/status';
+import { terminal_indicator, show_tab_indicator, tab_completion_tracker } from '../webview/status';
 
 test('tab and footer use the same command result without mistaking an idle shell for a command', () => {
   const shell = { id: 'one', status: 'running' as const };
@@ -56,12 +56,4 @@ test('successful process exits can be acknowledged and resets forget old complet
   tracker.view(completed);
   tracker.observe({ id: 'one', status: 'running' });
   assert.equal(tracker.is_viewed(completed), false);
-});
-
-test('the footer badge shows only a plain package version', () => {
-  assert.equal(version_label('0.11.0'), 'v0.11.0');
-  assert.equal(version_label(' 1.2.3-beta.1 '), 'v1.2.3-beta.1');
-  for (const value of [undefined, '', 'Unknown', '0.11', '0.11.0<script>', 'v0.11.0']) {
-    assert.equal(version_label(value), undefined, `rejects ${String(value)}`);
-  }
 });
