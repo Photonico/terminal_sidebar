@@ -1673,6 +1673,25 @@ test('open commands accept URI instances and PDF source navigation opens the mai
   assert.equal(runtime.processes.length, 0);
 });
 
+test('PDF file links open documents beside the PDF only from a trusted, matching PDF tab', async test_case => {
+  const files = preview_fixture(test_case);
+  const appendix = path.join(files.directory, 'appendix.pdf');
+  writeFileSync(appendix, '%PDF-1.4\n%%EOF');
+  const runtime = await harness({ memory: files.memory, trusted: false });
+  test_case.after(() => runtime.dispose());
+  const view = await runtime.view('right');
+  const pdf_tabs = () => view.state().tabs.filter(is_pdf_tab).map(tab => tab.uri);
+  const before = pdf_tabs();
+  await view.send({ type: 'open_pdf_link', id: 'pdf', href: 'appendix.pdf' });
+  assert.deepEqual(pdf_tabs(), before, 'untrusted workspaces ignore PDF file links');
+  await runtime.grant_trust();
+  await view.send({ type: 'open_pdf_link', id: 'markdown', href: 'appendix.pdf' });
+  assert.deepEqual(pdf_tabs(), before, 'the link must come from a PDF tab');
+  await view.send({ type: 'open_pdf_link', id: 'pdf', href: 'appendix.pdf#results' });
+  assert.deepEqual(pdf_tabs(), [...before, fake_uri.file(appendix).toString()]);
+  assert.deepEqual(runtime.links, [], 'no external browser is involved');
+});
+
 test('the Markdown source button opens its source in the main editor instead of reselecting the preview', async test_case => {
   const files = preview_fixture(test_case);
   const runtime = await harness({ memory: files.memory });

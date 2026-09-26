@@ -152,3 +152,13 @@ test('webview exports validate their format and separate plain text and HTML siz
     assert.equal(is_client_message({ type: 'export', id: 'tab_0', text: 'output', format }), false);
   }
 });
+
+test('PDF file link messages accept only document links from an identified tab', () => {
+  assert.equal(is_client_message({ type: 'open_pdf_link', id: 'pdf', href: 'appendix.pdf#results' }), true);
+  for (const message of [
+    { type: 'open_pdf_link', id: 'pdf', href: 'javascript:alert(1)' },
+    { type: 'open_pdf_link', id: 'pdf', href: 'command:workbench.action.closeWindow' },
+    { type: 'open_pdf_link', id: 'pdf' },
+    { type: 'open_pdf_link', href: 'appendix.pdf' },
+  ]) assert.equal(is_client_message(message), false, JSON.stringify(message));
+});

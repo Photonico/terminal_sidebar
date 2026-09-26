@@ -68,7 +68,7 @@ async function harness() {
   const elements: element[] = [];
   let now = 0;
   run_in_new_context(await bundled_view, {
-    module, exports: module.exports, setTimeout, clearTimeout, AbortController, performance: { now: () => now },
+    module, exports: module.exports, setTimeout, clearTimeout, AbortController, URL, performance: { now: () => now },
     document: {
       body: new element('body'), addEventListener() {},
       querySelector: () => ({ content: 'https://local.test/pdfjs' }),
@@ -200,6 +200,7 @@ test('double-clicking PDF text reports unscaled, unrotated top-left SyncTeX poin
     if (rotated) h.page.getViewport = ({ scale }) => ({
       width: 800 * scale, height: 600 * scale, scale,
       convertToPdfPoint: (x, y) => [y / scale + 5, x / scale + 10],
+      convertToViewportPoint: (x, y) => [(y - 10) * scale, (x - 5) * scale],
     });
     const loaded = h.view.load('coordinates');
     await next_turn();
@@ -325,7 +326,7 @@ test('PDF links jump to their destination point, keep web links native and send 
     'The destination point, not just its page, is brought into view');
   assert.equal(h.view.pane.dataset.pdfPage, '4');
   sibling.dispatch('click', handled());
-  assert.deepEqual(h.messages.at(-1), { type: 'open_pdf_link', id: 'document', href: 'appendix.pdf' });
+  assert.equal(JSON.stringify(h.messages.at(-1)), JSON.stringify({ type: 'open_pdf_link', id: 'document', href: 'appendix.pdf' }));
   last.dispatch('click', handled());
   await next_turn();
   assert.equal(h.view.pane.dataset.pdfPage, '10');
