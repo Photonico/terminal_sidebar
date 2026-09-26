@@ -53,7 +53,7 @@ export const usage_guides: Record<usage_language, usage_guide> = {
         'Cmd-click / Ctrl-click terminal HTTP(S) links and supported file locations such as `src/app.ts:12:3`. Relative file paths use the last known working directory; not every diagnostic format is recognized.',
       ] },
       { id: 'documents', title: 'Open and read documents', paragraphs: [
-        'Use the editor title preview icon, a file context menu, or “Terminal Sidebar: Preview in Sidebar Terminal”. Supported files are PDF, Markdown, LaTeX, HTML/HTM, CSS, JSON, and JSONC. Previews share tab ordering and markers without creating shell startup profiles.',
+        'Use the editor title preview icon, a file context menu, or “Terminal Sidebar: Preview in Sidebar Terminal”. Supported files are PDF, Markdown, LaTeX, HTML/HTM, CSS, JSON, and JSONC. Previews share tab ordering and markers without creating shell startup profiles. The toolbar floats over the document, which scrolls beneath it; the outline floats at the left and stays open until you select its button again or press Escape.',
         'Text previews provide page-sized scrolling, Zoom in / 100% / Zoom out, a zoom selector, Open source file, and Reload. Markdown and HTML also have an outline. Cmd/Ctrl + mouse wheel or Cmd/Ctrl +/-/0 controls zoom. Use j/k to scroll and g/G for the beginning/end while the preview has focus.',
         'Saving the source, including saves from Vim or Neovim, refreshes the preview. Text previews require UTF-8 files up to 4 MiB. Local resources must be beside the source or in its subdirectories. Reading positions are remembered.',
       ] },
@@ -121,7 +121,7 @@ export const usage_guides: Record<usage_language, usage_guide> = {
         '在终端 Cmd+点击／Ctrl+点击可打开 HTTP(S) 链接及支持的文件位置，例如 `src/app.ts:12:3`。相对路径以最后获知的工作目录为基准，并非所有报错格式都能识别。',
       ] },
       { id: 'documents', title: '打开与阅读文稿', paragraphs: [
-        '使用编辑器标题的预览按钮、文件右键菜单，或命令 “Terminal Sidebar: Preview in Sidebar Terminal”。支持 PDF、Markdown、LaTeX、HTML/HTM、CSS、JSON、JSONC。预览与终端共用排序和标识，不会创建启动终端配置。',
+        '使用编辑器标题的预览按钮、文件右键菜单，或命令 “Terminal Sidebar: Preview in Sidebar Terminal”。支持 PDF、Markdown、LaTeX、HTML/HTM、CSS、JSON、JSONC。预览与终端共用排序和标识，不会创建启动终端配置。工具栏悬浮在文档上方，文档从它下方滚过；目录悬浮在左侧，再次点击目录按钮或按 Esc 才会关闭。',
         '文字预览提供按一屏滚动、放大／100%／缩小、倍率选择、打开源文件与刷新。Markdown 和 HTML 还有标题目录。Cmd/Ctrl+滚轮或 Cmd/Ctrl +/-/0 控制缩放；预览获得焦点时，j/k 滚动，g/G 跳转开头／末尾。',
         '保存源文件会刷新预览，包括 Vim、Neovim 的保存。文字文件需使用 UTF-8，大小不超过 4 MiB；本地资源必须位于源文件所在目录或其子目录。阅读位置会被记住。',
       ] },
@@ -189,7 +189,7 @@ export const usage_guides: Record<usage_language, usage_guide> = {
         'ターミナルで Cmd+クリック／Ctrl+クリックすると HTTP(S) リンクや `src/app.ts:12:3` などの対応するファイル位置を開きます。相対パスは最後に取得した作業ディレクトリを使います。すべての診断形式を認識するわけではありません。',
       ] },
       { id: 'documents', title: '文書を開いて読む', paragraphs: [
-        'エディターのプレビューアイコン、ファイルのコンテキストメニュー、または “Terminal Sidebar: Preview in Sidebar Terminal” を使います。PDF、Markdown、LaTeX、HTML/HTM、CSS、JSON、JSONC に対応します。プレビューは並べ替えやマーカーを共有し、起動プロファイルは作成しません。',
+        'エディターのプレビューアイコン、ファイルのコンテキストメニュー、または “Terminal Sidebar: Preview in Sidebar Terminal” を使います。PDF、Markdown、LaTeX、HTML/HTM、CSS、JSON、JSONC に対応します。プレビューは並べ替えやマーカーを共有し、起動プロファイルは作成しません。ツールバーは文書の上に浮かび、文書はその下をスクロールします。目次は左側に浮かび、目次ボタンをもう一度選ぶか Esc を押すまで開いたままです。',
         'テキストプレビューには画面単位のスクロール、拡大／100%／縮小、倍率選択、ソースを開く、再読み込みがあります。Markdown と HTML には見出しの目次もあります。Cmd/Ctrl+ホイールまたは Cmd/Ctrl +/-/0 でズームします。フォーカス時は j/k でスクロール、g/G で先頭／末尾へ移動します。',
         'Vim や Neovim を含め、ソースを保存するとプレビューを更新します。テキストは UTF-8、4 MiB 以下が必要です。ローカル素材は文書と同じディレクトリか、その配下に置きます。閲覧位置は保存されます。',
       ] },

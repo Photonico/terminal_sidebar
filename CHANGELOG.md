@@ -4,6 +4,8 @@
 
 - Place the PDF zoom menu before the page number in the preview toolbar.
 - Give preview toolbar buttons the same idle circular background as the terminal tab actions.
+- Float the preview toolbar and notices as a card over the document, which starts below it and scrolls beneath it; wheel input over the toolbar still scrolls or zooms the document, and Fit page uses the height below the toolbar.
+- Float PDF contents and Markdown/HTML outlines as a panel over the document's left edge, so opening one no longer narrows or re-renders the document; Escape or the outline button closes it.
 - Describe every titled icon and control in a themed hover hint that appears after a short delay, replacing native tooltips that are slow or missing in webviews.
 - Add a version badge to the README and replace the retired Marketplace version and install-count badges with a Marketplace link.
 - Credit Anthropic Claude alongside OpenAI Codex for implementation, testing, and documentation assistance; list both as package contributors and show them on the About page.

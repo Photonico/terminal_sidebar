@@ -30,7 +30,7 @@ async function fixture() {
   const scrolls: ScrollToOptions[] = [];
   let changes = 0;
   const overlay = new module.exports.preview_overlay(pane, viewport, [toolbar, notice],
-    () => ({ scrollBy: (options: ScrollToOptions) => { scrolls.push(options); } }), () => { changes++; });
+    () => ({ scrollBy: ((options: ScrollToOptions) => { scrolls.push(options); }) as HTMLElement['scrollBy'] }), () => { changes++; });
   pane.prepend(overlay.root);
   let height = 36;
   Object.defineProperties(overlay.root, { offsetTop: { value: 6 }, offsetHeight: { get: () => height } });
