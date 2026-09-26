@@ -2,7 +2,7 @@
 
 [English](https://github.com/Photonico/terminal_sidebar/blob/main/README.md) · **简体中文** · [日本語](https://github.com/Photonico/terminal_sidebar/blob/main/docs/readme_ja.md)
 
-[![CI](https://github.com/Photonico/terminal_sidebar/actions/workflows/ci.yml/badge.svg)](https://github.com/Photonico/terminal_sidebar/actions/workflows/ci.yml) [![Marketplace](https://img.shields.io/visual-studio-marketplace/v/ConAntares.terminal-sidebar)](https://marketplace.visualstudio.com/items?itemName=ConAntares.terminal-sidebar) [![Installs](https://img.shields.io/visual-studio-marketplace/i/ConAntares.terminal-sidebar)](https://marketplace.visualstudio.com/items?itemName=ConAntares.terminal-sidebar) [![MIT](https://img.shields.io/github/license/Photonico/terminal_sidebar)](https://github.com/Photonico/terminal_sidebar/blob/main/LICENSE)
+[![CI](https://github.com/Photonico/terminal_sidebar/actions/workflows/ci.yml/badge.svg)](https://github.com/Photonico/terminal_sidebar/actions/workflows/ci.yml) [![Version](https://img.shields.io/github/package-json/v/Photonico/terminal_sidebar?label=version)](https://github.com/Photonico/terminal_sidebar/blob/main/CHANGELOG.md) [![Marketplace](https://img.shields.io/badge/Marketplace-Terminal%20Sidebar-007ACC)](https://marketplace.visualstudio.com/items?itemName=ConAntares.terminal-sidebar) [![MIT](https://img.shields.io/github/license/Photonico/terminal_sidebar)](https://github.com/Photonico/terminal_sidebar/blob/main/LICENSE)
 
 在 VS Code 侧栏中使用独立终端和文档预览。**Primary Side Bar（主侧栏）**采用可折叠分区，**Secondary Side Bar（辅助侧栏）**采用紧凑的标签栏。让 Vim、Neovim 等命令行工具与运行结果、文档预览并排显示。
 

@@ -10,8 +10,8 @@ type about_api = typeof import('../src/about');
 const bundle = build({ entryPoints: [path.resolve(__dirname, '../src/about.ts')], bundle: true,
   write: false, platform: 'node', format: 'cjs', external: ['vscode'] }).then(result => result.outputFiles[0].text);
 const require_builtin = create_require(path.resolve(__dirname, '../package.json'));
-const package_metadata = { displayName: 'Terminal Sidebar', version: '0.10.0', author: 'Lu Niu (Photonico)',
-  license: 'MIT', repository: { url: 'https://github.com/Photonico/terminal_sidebar.git' } };
+const package_metadata = { displayName: 'Terminal Sidebar', version: '0.11.0', author: 'Lu Niu (Photonico)',
+  contributors: ['OpenAI Codex', 'Anthropic Claude'], license: 'MIT', repository: { url: 'https://github.com/Photonico/terminal_sidebar.git' } };
 
 async function harness() {
   const opened: string[] = [];
@@ -65,6 +65,10 @@ test('About reads current extension metadata and accepts only safe GitHub reposi
   assert.equal(metadata.version, package_metadata.version);
   assert.equal(metadata.repository, 'https://github.com/Photonico/terminal_sidebar');
   assert.equal(h.api.about_metadata({ author: { name: 'Author' }, repository: 'git+https://github.com/org/repo.git' }).author, 'Author');
+  assert.deepEqual([...metadata.contributors], ['OpenAI Codex', 'Anthropic Claude']);
+  assert.deepEqual([...h.api.about_metadata({ contributors: [' Person ', { name: 'Named' }, { email: 'x@y' }, 3, ''] }).contributors],
+    ['Person', 'Named'], 'npm person objects use their name; entries without one are omitted');
+  assert.equal(h.api.about_metadata({ contributors: 'Not a list' }).contributors.length, 0);
   for (const repository of ['javascript:alert(1)', 'https://evil.test/repo', 'https://github.com@evil.test/repo',
     'https://username:password@github.com/org/repo', 'https://github.com:8443/org/repo']) {
     assert.equal(h.api.about_metadata({ repository }).repository, undefined);
@@ -73,11 +77,17 @@ test('About reads current extension metadata and accepts only safe GitHub reposi
 
 test('About escapes metadata, uses theme colors, and gives every action a hover description', async () => {
   const h = await harness();
-  const information = h.api.about_metadata({ ...package_metadata, displayName: '<img src=x onerror=evil()>', license: '"MIT"' });
+  const information = h.api.about_metadata({ ...package_metadata, displayName: '<img src=x onerror=evil()>', license: '"MIT"',
+    contributors: ['Anthropic Claude', '<img src=y onerror=evil()>'] });
   const html = h.api.about_html(information, 'https://webview.test/logo.png', 'https://webview.test', 'test_nonce');
   const document = new JSDOM(html).window.document;
   assert.equal(document.querySelector('h1')?.textContent, '<img src=x onerror=evil()>');
   assert.equal(document.querySelectorAll('img').length, 1);
+  const terms = [...document.querySelectorAll('dt')].map(term => term.textContent);
+  assert.equal(terms[terms.indexOf('Author') + 1], 'Contributors');
+  assert.equal(document.querySelectorAll('dd')[2]?.textContent, 'Anthropic Claude, <img src=y onerror=evil()>');
+  const plain = new JSDOM(h.api.about_html(h.api.about_metadata({}), '', '', 'n')).window.document;
+  assert.ok(![...plain.querySelectorAll('dt')].some(term => term.textContent === 'Contributors'), 'No empty contributors row');
   assert.ok(document.querySelector('style')?.textContent?.includes('var(--vscode-editor-background)'));
   assert.match(document.querySelector('meta[http-equiv]')!.getAttribute('content')!, /default-src 'none'/);
   for (const button of document.querySelectorAll('button')) {

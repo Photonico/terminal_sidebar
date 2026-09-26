@@ -3,8 +3,8 @@
 ## 0.11.0 — Unreleased
 
 - Place the PDF zoom menu before the page number in the preview toolbar.
-- Show the extension version in the floating status badge of both sidebars.
-- Credit Anthropic Claude alongside OpenAI Codex for implementation, testing, and documentation assistance.
+- Add a version badge to the README and replace the retired Marketplace version and install-count badges with a Marketplace link.
+- Credit Anthropic Claude alongside OpenAI Codex for implementation, testing, and documentation assistance; list both as package contributors and show them on the About page.
 
 ## 0.10.0 — Pre-release
 

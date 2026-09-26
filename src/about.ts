@@ -6,6 +6,7 @@ interface about_information {
   description: string;
   version: string;
   author: string;
+  contributors: string[];
   license: string;
   repository?: string;
 }
@@ -33,6 +34,9 @@ export function about_metadata(value: unknown): about_information {
     description: text(metadata.description, ''),
     version: text(metadata.version, 'Unknown'),
     author: text(typeof metadata.author === 'string' ? metadata.author : record(metadata.author).name, 'Unknown'),
+    contributors: (Array.isArray(metadata.contributors) ? metadata.contributors : [])
+      .map(contributor => text(typeof contributor === 'string' ? contributor : record(contributor).name, ''))
+      .filter(Boolean),
     license: text(metadata.license, 'Unknown'),
     repository,
   };
@@ -98,7 +102,8 @@ export class about_panel implements vscode.Disposable {
 }
 
 export function about_html(information: about_information, logo: string, csp_source: string, nonce: string): string {
-  const escaped = Object.fromEntries(Object.entries(information).map(([key, value]) => [key, escape_html(value ?? '')]));
+  const { contributors, ...fields } = information;
+  const escaped = Object.fromEntries(Object.entries(fields).map(([key, value]) => [key, escape_html(value ?? '')]));
   return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${escape_html(csp_source)}; style-src 'nonce-${escape_html(nonce)}'; script-src 'nonce-${escape_html(nonce)}';">
@@ -122,6 +127,7 @@ button:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-off
 </style></head><body><main>
 <header><img src="${escape_html(logo)}" alt="${escaped.name} logo"><div><h1>${escaped.name}</h1><p>${escaped.description}</p></div></header>
 <dl><dt>Version</dt><dd>${escaped.version}</dd><dt>Author</dt><dd>${escaped.author}</dd>
+${contributors.length ? `<dt>Contributors</dt><dd>${contributors.map(escape_html).join(', ')}</dd>` : ''}
 ${information.repository ? `<dt>Repository</dt><dd><button class="repository" data-action="open_repository" title="Open GitHub repository in your browser" aria-label="Open GitHub repository">${escaped.repository}</button></dd>` : ''}
 <dt>License</dt><dd><button data-action="open_license" title="Read the ${escaped.license} license" aria-label="Read the ${escaped.license} license">${escaped.license}</button></dd></dl>
 </main><script nonce="${escape_html(nonce)}">

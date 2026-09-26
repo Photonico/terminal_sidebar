@@ -5,6 +5,10 @@
   "version": "0.11.0",
   "publisher": "ConAntares",
   "author": "Lu Niu (Photonico)",
+  "contributors": [
+    "OpenAI Codex",
+    "Anthropic Claude"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",

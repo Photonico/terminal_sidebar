@@ -2,7 +2,7 @@
 
 **English** · [简体中文](https://github.com/Photonico/terminal_sidebar/blob/main/docs/readme_zh.md) · [日本語](https://github.com/Photonico/terminal_sidebar/blob/main/docs/readme_ja.md)
 
-[![CI](https://github.com/Photonico/terminal_sidebar/actions/workflows/ci.yml/badge.svg)](https://github.com/Photonico/terminal_sidebar/actions/workflows/ci.yml) [![Marketplace](https://img.shields.io/visual-studio-marketplace/v/ConAntares.terminal-sidebar)](https://marketplace.visualstudio.com/items?itemName=ConAntares.terminal-sidebar) [![Installs](https://img.shields.io/visual-studio-marketplace/i/ConAntares.terminal-sidebar)](https://marketplace.visualstudio.com/items?itemName=ConAntares.terminal-sidebar) [![MIT](https://img.shields.io/github/license/Photonico/terminal_sidebar)](LICENSE)
+[![CI](https://github.com/Photonico/terminal_sidebar/actions/workflows/ci.yml/badge.svg)](https://github.com/Photonico/terminal_sidebar/actions/workflows/ci.yml) [![Version](https://img.shields.io/github/package-json/v/Photonico/terminal_sidebar?label=version)](CHANGELOG.md) [![Marketplace](https://img.shields.io/badge/Marketplace-Terminal%20Sidebar-007ACC)](https://marketplace.visualstudio.com/items?itemName=ConAntares.terminal-sidebar) [![MIT](https://img.shields.io/github/license/Photonico/terminal_sidebar)](LICENSE)
 
 Independent terminals and document previews in VS Code. The **Primary Side Bar** uses collapsible sections; the **Secondary Side Bar** uses a compact tab strip. Keep Vim, Neovim, or another command-line tool beside its output and preview.
 
