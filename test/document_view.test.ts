@@ -285,3 +285,34 @@ test('formatted source zoom scales its text without scaling the toolbar', async 
     assert.equal(h.view.pane.querySelector('[title="Toggle document outline"]'), null);
   } finally { h.close(); }
 });
+
+test('HTML links scroll to ids, named anchors and the top, and send only external or relative links to the host', async () => {
+  const h = await fixture();
+  try {
+    const loading = h.view.load(source(`<p><a id="to-id" href="#far">Far</a> <a id="to-name" href="#legacy%20anchor">Legacy</a>
+      <a id="to-top" href="#top">Top</a> <a id="to-nowhere" href="#nowhere">Nowhere</a>
+      <a id="to-web" href="https://example.com/paper">Paper</a> <a id="to-file" href="chapter.html#intro">Chapter</a></p>
+      <h2 id="far">Far heading</h2><a name="legacy anchor"></a>`));
+    await next_turn();
+    const inner = h.complete(h.viewport.querySelector('iframe')!);
+    await loading;
+    const scrolled: string[] = [];
+    inner.window.HTMLElement.prototype.scrollIntoView = function (this: HTMLElement) {
+      scrolled.push(this.id || this.getAttribute('name') || this.tagName);
+    };
+    Object.defineProperty(inner.window, 'scrollY', { value: 500, configurable: true });
+    const click = (id: string) => {
+      const event = new inner.window.MouseEvent('click', { bubbles: true, cancelable: true });
+      inner.window.document.getElementById(id)!.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    for (const id of ['to-id', 'to-name', 'to-nowhere', 'to-top', 'to-web', 'to-file']) {
+      assert.equal(click(id), true, `${id} never navigates the preview frame`);
+    }
+    assert.deepEqual(scrolled, ['far', 'legacy anchor']);
+    assert.equal(inner.window.scrollY, 0, '#top returns to the beginning');
+    assert.deepEqual(h.messages.filter(message => message.type === 'open_document_link')
+      .map(message => (message as { href: string }).href), ['https://example.com/paper', 'chapter.html#intro'],
+    'A missing fragment is ignored rather than opening the source file');
+  } finally { h.close(); }
+});

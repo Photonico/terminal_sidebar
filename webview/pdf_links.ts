@@ -60,8 +60,9 @@ export async function render_pdf_links(page: PDFPageProxy, viewport: PageViewpor
   if (!Array.isArray(annotations)) return undefined;
   const layer = document.createElement('div');
   layer.className = 'pdf-link-layer';
+  let count = 0;
   for (const annotation of annotations) {
-    if (layer.childElementCount >= maximum_links) break;
+    if (count >= maximum_links) break;
     if (!annotation || typeof annotation !== 'object' || annotation.annotationType !== link_annotation) continue;
     const link = classify(annotation as Record<string, unknown>);
     const rect: unknown = annotation.rect;
@@ -96,6 +97,7 @@ export async function render_pdf_links(page: PDFPageProxy, viewport: PageViewpor
       }
     }
     layer.append(anchor);
+    count++;
   }
-  return layer.childElementCount ? layer : undefined;
+  return count ? layer : undefined;
 }
