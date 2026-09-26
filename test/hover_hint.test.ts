@@ -63,13 +63,13 @@ test('neighbouring icons show immediately while a hint is warm, and flip above n
   h.move(undefined, 'zoom');
   mock.timers.tick(500);
   h.move('zoom', 'reload');
-  mock.timers.tick(0);
+  mock.timers.tick(1);
   assert.equal(h.text(), 'Reload PDF');
   assert.deepEqual([h.hints.hint.style.left, h.hints.hint.style.top], ['216px', '154px']);
   h.move('reload', undefined);
   mock.timers.tick(1000);
   h.move(undefined, 'zoom');
-  mock.timers.tick(0);
+  mock.timers.tick(1);
   assert.equal(h.visible(), false, 'The warm period has expired');
 });
 
@@ -81,11 +81,11 @@ test('titled children replace their parent hint and untitled children keep it', 
   h.move('tab', 'label');
   assert.equal(h.text(), 'Build · Right-click for actions', 'The label belongs to the hovered tab');
   h.move('label', 'marker');
-  mock.timers.tick(0);
+  mock.timers.tick(1);
   assert.equal(h.text(), 'rocket · Blue');
   assert.equal(h.element('tab').title, 'Build · Right-click for actions');
   h.move('marker', 'label');
-  mock.timers.tick(0);
+  mock.timers.tick(1);
   assert.equal(h.text(), 'Build · Right-click for actions');
   assert.equal(h.element('marker').title, 'rocket · Blue');
 });
