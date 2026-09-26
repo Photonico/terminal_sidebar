@@ -63,7 +63,7 @@ export const usage_guides: Record<usage_language, usage_guide> = {
         'HTML is a static preview with local images and stylesheets. Scripts, forms, embedded frames, and remote resources are inactive. CSS, JSON, and JSONC show formatted source, retaining JSONC comments. Invalid or costly formatting falls back to the original text; source files are never rewritten.',
       ] },
       { id: 'pdf', title: 'PDF and LaTeX', paragraphs: [
-        'PDF controls offer contents, previous/next page or page-sized scrolling, zoom, a page number, and reload. The gear selects continuous scrolling (default), single page, two pages, and dark reading. Dark reading also inverts images; disable it to inspect original colours.',
+        'PDF controls offer contents, previous/next page or page-sized scrolling, zoom, a page number, and reload. The gear selects continuous scrolling (default), single page, two pages, and dark reading. Dark reading also inverts images; disable it to inspect original colours. Links work: contents, cross-references and citations jump to their destination, and web links open in your browser.',
         'Cmd/Ctrl + mouse wheel and Cmd/Ctrl +/-/0 zoom. Use h/l to turn pages and j/k to scroll. Only nearby pages render. Page, zoom, and browsing preferences are remembered per workspace. A rebuilt PDF refreshes automatically; incomplete output leaves the last valid preview visible.',
         'Opening .tex locates an existing compiled PDF using root comments, LaTeX Workshop output-directory settings, and common output folders. If several match, choose one. If none exists, compile first or select a PDF. This extension does not run a compiler or project build scripts.',
         'Double-click a PDF location to return to LaTeX source through SyncTeX. Build with `-synctex=1`, keep the matching `.synctex` or `.synctex.gz`, and install `synctex` on the extension host. `latex-workshop.synctex.path` can specify its executable. The compiler mapping may resolve to the nearest source line.',
@@ -131,7 +131,7 @@ export const usage_guides: Record<usage_language, usage_guide> = {
         'HTML 是带本地图片与样式表的静态预览；脚本、表单、嵌入框架及远程资源不会执行或加载。CSS、JSON、JSONC 显示格式化源码，并保留 JSONC 注释。语法无效或格式化耗时过长时显示原文，不改写源文件。',
       ] },
       { id: 'pdf', title: 'PDF 与 LaTeX', paragraphs: [
-        'PDF 工具栏提供目录、上一页／下一页或按一屏滚动、缩放、页码与刷新。齿轮菜单选择连续滚动（默认）、单页、双页和深色阅读。深色阅读也会反转图片颜色；查看原始颜色时请关闭。',
+        'PDF 工具栏提供目录、上一页／下一页或按一屏滚动、缩放、页码与刷新。齿轮菜单选择连续滚动（默认）、单页、双页和深色阅读。深色阅读也会反转图片颜色；查看原始颜色时请关闭。PDF 中的链接可以点击：目录、交叉引用和文献引用会跳到目标位置，网址在浏览器中打开。',
         'Cmd/Ctrl+滚轮及 Cmd/Ctrl +/-/0 调整缩放；h/l 翻页，j/k 滚动。仅渲染附近页面。页码、倍率和浏览偏好按工作区记忆。重新编译 PDF 会自动刷新；输出暂时不完整时保留上一份有效预览。',
         '打开 .tex 会根据根文档注释、LaTeX Workshop 输出目录及常见目录查找已编译 PDF。找到多个时供你选择；尚未生成时请先编译或手动选择 PDF。本扩展不会运行编译器或项目构建脚本。',
         '双击 PDF 中的位置可通过 SyncTeX 返回 LaTeX 源码。编译时使用 `-synctex=1`，保留配套 `.synctex` 或 `.synctex.gz`，并在扩展宿主安装 synctex。可用 `latex-workshop.synctex.path` 指定程序。定位取决于编译器映射，可能落在最近的源码行。',
@@ -199,7 +199,7 @@ export const usage_guides: Record<usage_language, usage_guide> = {
         'HTML はローカル画像とスタイルシートを使う静的表示です。スクリプト、フォーム、埋め込みフレーム、リモート素材は動作・読み込みしません。CSS・JSON・JSONC は整形して表示し、JSONC のコメントも保持します。無効な構文や時間のかかる整形では原文に戻り、ソース自体は変更しません。',
       ] },
       { id: 'pdf', title: 'PDF と LaTeX', paragraphs: [
-        'PDF には目次、前後のページまたは画面単位のスクロール、ズーム、ページ番号、再読み込みがあります。歯車から連続スクロール（既定）、単ページ、見開き、ダーク表示を選択します。ダーク表示は画像も反転するため、元の色を確認するときは無効にしてください。',
+        'PDF には目次、前後のページまたは画面単位のスクロール、ズーム、ページ番号、再読み込みがあります。歯車から連続スクロール（既定）、単ページ、見開き、ダーク表示を選択します。ダーク表示は画像も反転するため、元の色を確認するときは無効にしてください。PDF 内のリンクは使えます。目次・相互参照・引用は移動先へジャンプし、Web リンクはブラウザーで開きます。',
         'Cmd/Ctrl+ホイールと Cmd/Ctrl +/-/0 でズーム、h/l でページ移動、j/k でスクロールします。近くのページだけを描画します。ページ・倍率・表示設定はワークスペース単位で記憶します。再ビルド時は自動更新し、出力が不完全な間は前の有効な表示を保持します。',
         '.tex を開くと、ルート文書コメント、LaTeX Workshop の出力先、一般的なフォルダーから既存の PDF を探します。複数あれば選択し、なければ先にコンパイルするか PDF を指定します。本拡張機能はコンパイラーやプロジェクトのビルドスクリプトを実行しません。',
         'PDF 内をダブルクリックすると SyncTeX で LaTeX ソースに戻れます。`-synctex=1` でコンパイルし、対応する `.synctex`／`.synctex.gz` を残して、拡張機能ホストに synctex をインストールしてください。`latex-workshop.synctex.path` で実行ファイルを指定できます。コンパイラーの対応付けにより、近いソース行へ移動する場合があります。',
