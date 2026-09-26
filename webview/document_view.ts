@@ -195,7 +195,11 @@ export class document_view {
           const href = anchor.getAttribute('href');
           if (!is_markdown_link(href)) return;
           if (href.startsWith('#')) {
-            try { doc.getElementById(decodeURIComponent(href.slice(1)))?.scrollIntoView({ block: 'start' }); } catch { /* Malformed anchor. */ }
+            let fragment = href.slice(1);
+            try { fragment = decodeURIComponent(fragment); } catch { /* Keep the literal fragment. */ }
+            const target = fragment ? doc.getElementById(fragment) ?? doc.getElementsByName(fragment)[0] : undefined;
+            if (target) target.scrollIntoView({ block: 'start' });
+            else if (!fragment || fragment.toLowerCase() === 'top') win.scrollTo({ top: 0 });
           } else this.send({ type: 'open_document_link', id: this.tab.id, href });
         };
         doc.addEventListener('click', open_link, options);

@@ -7,6 +7,14 @@ import { install_markdown_math } from './markdown_math';
 import { local_document_resource as markdown_image_url } from './document_resources';
 export { local_document_resource as markdown_image_url } from './document_resources';
 
+/** Headings share the webview document with the sidebar's own elements, so their ids carry GitHub's prefix. */
+export const heading_id_prefix = 'user-content-';
+
+/** GitHub-style heading anchors: lower case, punctuation removed, whitespace joined by hyphens. */
+export function heading_slug(label: string): string {
+  return label.toLowerCase().replace(/[^\p{L}\p{N}\s_-]/gu, '').trim().replace(/\s+/g, '-');
+}
+
 /** Raw HTML remains text. Every generated URL is separately constrained. */
 export function render_markdown(source: markdown_source): string {
   const markdown = new MarkdownIt({ html: false, linkify: true, typographer: false, maxNesting: 40 });
@@ -24,11 +32,10 @@ export function render_markdown(source: markdown_source): string {
   };
   const heading_ids = new Map<string, number>();
   markdown.renderer.rules.heading_open = (tokens, index, options, _environment, renderer) => {
-    const label = tokens[index + 1]?.content ?? '';
-    const slug = label.toLowerCase().replace(/[^\p{L}\p{N}\s_-]/gu, '').trim().replace(/\s+/g, '-') || 'section';
+    const slug = heading_slug(tokens[index + 1]?.content ?? '') || 'section';
     const count = heading_ids.get(slug) ?? 0;
     heading_ids.set(slug, count + 1);
-    tokens[index].attrSet('id', count ? `${slug}-${count}` : slug);
+    tokens[index].attrSet('id', heading_id_prefix + (count ? `${slug}-${count}` : slug));
     return renderer.renderToken(tokens, index, options);
   };
   return markdown.render(source.text);

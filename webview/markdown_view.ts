@@ -4,7 +4,7 @@ import { preview_font_picker } from './preview_font_picker';
 import { preview_overlay } from './preview_controls';
 import type { client_message, markdown_tab } from '../src/types';
 import { is_markdown_link, type markdown_source } from '../src/markdown_state';
-import { render_markdown } from './markdown_render';
+import { render_markdown, heading_id_prefix, heading_slug } from './markdown_render';
 import { document_search, type document_match } from './document_search';
 import './markdown_view.css';
 import './markdown_math.css';
@@ -128,19 +128,30 @@ export class markdown_view {
     }
   }
 
+  /** Web and mail links reach VS Code's webview link handling, which opens them once and without a trust
+   * prompt in trusted workspaces. Fragments and relative files stop here so the host does not act on them too. */
   private open_link(event: MouseEvent): void {
     const anchor = event.target instanceof Element ? event.target.closest('a') : undefined;
-    if (!anchor) return;
-    event.preventDefault();
+    if (!anchor || !this.content.contains(anchor)) return;
     const href = anchor.getAttribute('href');
+    if (href && /^(?:https?|mailto):/i.test(href) && is_markdown_link(href)) return;
+    event.preventDefault();
+    event.stopPropagation();
     if (!is_markdown_link(href)) return;
-    if (href.startsWith('#')) {
-      try {
-        const heading = this.content.querySelector(`#${CSS.escape(decodeURIComponent(href.slice(1)))}`);
-        if (heading) { heading.scrollIntoView({ block: 'start' }); return; }
-      } catch { return; }
-    }
-    this.send({ type: 'open_markdown_link', id: this.tab.id, href });
+    if (href.startsWith('#')) this.reveal_fragment(href.slice(1));
+    else this.send({ type: 'open_markdown_link', id: this.tab.id, href });
+  }
+
+  /** Accepts the anchors people write: exact ids, heading text, GitHub slugs and different letter case. */
+  private reveal_fragment(fragment: string): void {
+    let decoded = fragment;
+    try { decoded = decodeURIComponent(fragment); } catch { /* Keep the literal fragment. */ }
+    if (!decoded || decoded.toLowerCase() === 'top') { this.viewport.scrollTop = 0; return; }
+    const candidates = [decoded, heading_id_prefix + decoded, heading_id_prefix + heading_slug(decoded)];
+    const elements = [...this.content.querySelectorAll<HTMLElement>('[id]')];
+    const target = candidates.map(id => elements.find(element => element.id === id)).find(Boolean)
+      ?? elements.find(element => candidates.some(id => element.id.toLowerCase() === id.toLowerCase()));
+    target?.scrollIntoView({ block: 'start' });
   }
 
   reveal_match(match: document_match): boolean {

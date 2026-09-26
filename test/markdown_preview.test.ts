@@ -27,7 +27,7 @@ test('Markdown state accepts local documents and bounded scroll positions only',
 
 test('Markdown supports ordinary syntax while raw HTML and executable links stay inert', () => {
   const html = render_markdown({ base_url, text: '# Heading\n\n**Bold** and *emphasis*.\n\n| One | Two |\n| --- | --- |\n| a | b |\n\n<script>alert(1)</script>\n\n[bad](javascript:alert(1))\n[command](command:workbench.action.closeWindow)\n[ok](https://example.com)\n\n```ts\nconst a = 1;\n```' });
-  assert.match(html, /<h1 id="heading">Heading<\/h1>/);
+  assert.match(html, /<h1 id="user-content-heading">Heading<\/h1>/, 'Heading ids cannot collide with the sidebar\'s own elements');
   assert.match(html, /<strong>Bold<\/strong>/);
   assert.match(html, /<table>/);
   assert.match(html, /&lt;script&gt;/);
@@ -44,9 +44,11 @@ test('Markdown links cannot invoke commands and heading anchors are stable and u
     assert.equal(is_markdown_link(href), false);
   }
   const html = render_markdown({ base_url, text: '# Same\n\n# Same\n\n## 中文 标题\n\n[Part](#same-1)' });
-  assert.match(html, /id="same"/);
-  assert.match(html, /id="same-1"/);
-  assert.match(html, /id="中文-标题"/);
+  assert.match(html, /id="user-content-same"/);
+  assert.match(html, /id="user-content-same-1"/);
+  assert.match(html, /id="user-content-中文-标题"/);
+  assert.match(render_markdown({ base_url, text: '## Status text' }), /id="user-content-status-text"/,
+    'A heading named like the status badge keeps its own id');
 });
 
 test('Markdown images resolve only within the selected document directory', () => {
