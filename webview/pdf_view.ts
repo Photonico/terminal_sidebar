@@ -5,6 +5,7 @@ import { document_search, type document_match } from './document_search';
 import { layout_document, adjacent_page, current_page, visible_pages, type document_layout, type page_size } from './pdf_layout';
 import { pdf_toolbar } from './pdf_toolbar';
 import { pdf_outline } from './pdf_outline';
+import { preview_overlay } from './preview_controls';
 import './pdf_view.css';
 import './pdf_text_layer.css';
 
@@ -77,6 +78,7 @@ export class pdf_view {
   private readonly notice = document.createElement('div');
   private readonly toolbar: pdf_toolbar;
   private readonly outline: pdf_outline;
+  private readonly overlay: preview_overlay;
   private outline_open = false;
   private mode: pdf_mode;
   private dark: boolean;
@@ -129,11 +131,7 @@ export class pdf_view {
     this.pane.setAttribute('aria-label', tab.name);
     this.outline = new pdf_outline(page => this.navigate(page));
     this.toolbar = new pdf_toolbar({
-      outline: () => {
-        this.outline_open = !this.outline_open;
-        this.outline.set_open(this.outline_open);
-        this.update_controls();
-      },
+      outline: () => this.set_outline(!this.outline_open),
       move: direction => this.move(direction),
       zoom: direction => this.change_zoom(direction),
       page: page => { this.navigate(page); this.focus(); },
@@ -164,7 +162,7 @@ export class pdf_view {
     this.viewport.append(this.pages);
     this.viewport.addEventListener('scroll', () => {
       if (!this.pdf || this.pane.hidden || !this.geometry?.continuous) return;
-      const page = current_page(this.geometry.continuous, this.viewport.scrollTop, this.viewport.clientHeight) + 1;
+      const page = current_page(this.geometry.continuous, this.viewport.scrollTop, this.visible_height()) + 1;
       if (page !== this.page) {
         this.page = page;
         this.update_controls();
@@ -176,7 +174,17 @@ export class pdf_view {
     const body = document.createElement('div');
     body.className = 'pdf-body';
     body.append(this.outline.root, this.viewport);
-    this.pane.append(this.toolbar.root, this.notice, body);
+    this.outline.root.addEventListener('keydown', event => {
+      if (event.isComposing || event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+      this.set_outline(false);
+      this.toolbar.focus_outline();
+    });
+    // Fit page follows the height left below the toolbar; other zooms only reveal newly uncovered pages.
+    this.overlay = new preview_overlay(this.pane, this.viewport, [this.toolbar.root, this.notice], () => this.viewport,
+      () => { if (this.zoom === 'page-fit') void this.render(); else void this.render_visible(); });
+    this.pane.append(this.overlay.root, body);
     this.observer = new ResizeObserver(() => {
       clearTimeout(this.resize_timer);
       this.resize_timer = setTimeout(() => {
@@ -198,6 +206,18 @@ export class pdf_view {
   }
 
   focus(): void { this.viewport.focus(); }
+
+  /** The floating outline covers the document's edge without resizing it, so pages never re-render. */
+  private set_outline(open: boolean): void {
+    this.outline_open = open;
+    this.outline.set_open(open);
+    this.update_controls();
+  }
+
+  /** The reading area below the floating toolbar; scroll offsets already start beneath it. */
+  private visible_height(): number {
+    return Math.max(1, this.viewport.clientHeight - this.overlay.space);
+  }
   refresh(): void { if (!this.disposed) this.send({ type: 'load_pdf', id: this.tab.id }); }
 
   error(message: string): void {
@@ -268,7 +288,7 @@ export class pdf_view {
     if (!reveal_match) this.scroll_to_match = false;
     if (this.mode !== 'continuous') { void this.render(false); return; }
     const box = this.geometry?.boxes.get(this.page - 1);
-    if (box) this.viewport.scrollTop = box.top + (position === 'bottom' ? Math.max(0, box.height - this.viewport.clientHeight + 24) : 0);
+    if (box) this.viewport.scrollTop = box.top + (position === 'bottom' ? Math.max(0, box.height - this.visible_height() + 24) : 0);
     void this.render_visible();
     this.highlight_match();
   }
@@ -287,7 +307,7 @@ export class pdf_view {
 
   private move(direction: -1 | 1): void {
     if (!this.pdf) return;
-    if (this.mode === 'continuous') this.viewport.scrollBy({ top: direction * this.viewport.clientHeight });
+    if (this.mode === 'continuous') this.viewport.scrollBy({ top: direction * this.visible_height() });
     else this.navigate(adjacent_page(this.page, this.pdf.numPages, this.mode, direction));
   }
 
@@ -376,7 +396,7 @@ export class pdf_view {
       this.sizes = Array.from({ length: pdf.numPages }, (_, index) => this.sizes[index] ?? ({ width: size.width, height: size.height }));
       page.cleanup();
     }
-    this.geometry = layout_document(this.sizes, this.viewport.clientWidth, this.viewport.clientHeight,
+    this.geometry = layout_document(this.sizes, this.viewport.clientWidth, this.visible_height(),
       this.zoom, this.mode, this.page);
     this.pages.style.height = `${this.geometry.height}px`;
     this.pages.style.width = `${this.geometry.width}px`;
@@ -389,7 +409,7 @@ export class pdf_view {
   private async render_visible(): Promise<void> {
     if (!this.pdf || this.disposed || this.pane.hidden || !this.geometry) return;
     const visible = this.geometry.continuous
-      ? visible_pages(this.geometry.continuous, this.viewport.scrollTop, this.viewport.clientHeight)
+      ? visible_pages(this.geometry.continuous, this.viewport.scrollTop - this.overlay.space, this.viewport.clientHeight)
       : [...this.geometry.boxes.keys()];
     this.canvas_pixel_budget = Math.min(4_000_000, 16_000_000 / visible.length);
     for (const index of this.rendered.keys()) if (!visible.includes(index)) this.release_page(index);
@@ -543,6 +563,7 @@ export class pdf_view {
       return;
     }
     switch (event.key) {
+      case 'Escape': if (!this.outline_open) return; this.set_outline(false); break;
       case 'h': case 'ArrowLeft': this.navigate(adjacent_page(this.page, this.pdf?.numPages ?? 1, this.mode, -1)); break;
       case 'l': case 'ArrowRight': this.navigate(adjacent_page(this.page, this.pdf?.numPages ?? 1, this.mode, 1)); break;
       case 'j': this.viewport.scrollBy({ top: 70 }); break;
@@ -563,6 +584,7 @@ export class pdf_view {
     this.cancel_render();
     this.search.dispose();
     this.toolbar.dispose();
+    this.overlay.dispose();
     this.outline.dispose();
     clearTimeout(this.zoom_timer);
     this.observer.disconnect();

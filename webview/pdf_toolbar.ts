@@ -191,6 +191,8 @@ export class pdf_toolbar {
     this.dark.setAttribute('aria-checked', String(state.dark));
   }
 
+  focus_outline(): void { this.outline.focus(); }
+
   set_visible(visible: boolean): void {
     if (!visible) this.close_menu(false);
   }

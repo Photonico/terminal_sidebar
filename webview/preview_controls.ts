@@ -23,3 +23,48 @@ export function preview_button(label: string, symbol: string | undefined, action
   button.addEventListener('click', action, { signal });
   return button;
 }
+
+const float_gap = 6;
+
+/** Floats a preview's toolbar and notice over its document. The pane publishes the height they cover
+ * as --preview_float_space, so documents start below the toolbar and scroll beneath it. */
+export class preview_overlay {
+  readonly root = document.createElement('div');
+  space = 0;
+  private readonly observer?: ResizeObserver;
+
+  constructor(private readonly pane: HTMLElement, viewport: HTMLElement, children: HTMLElement[],
+    scroller: () => Pick<HTMLElement, 'scrollBy'>, private readonly changed: () => void = () => {}) {
+    this.root.className = 'preview-float';
+    this.root.append(...children);
+    // The toolbar covers the document, so wheel input over it still scrolls or zooms what lies beneath.
+    this.root.addEventListener('wheel', event => {
+      const forwarded = new WheelEvent('wheel', { deltaX: event.deltaX, deltaY: event.deltaY, deltaMode: event.deltaMode,
+        ctrlKey: event.ctrlKey, metaKey: event.metaKey, shiftKey: event.shiftKey, altKey: event.altKey, cancelable: true });
+      viewport.dispatchEvent(forwarded);
+      event.preventDefault();
+      if (forwarded.defaultPrevented) return;
+      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? viewport.clientHeight : 1;
+      scroller().scrollBy({ left: event.deltaX * unit, top: event.deltaY * unit });
+    }, { passive: false });
+    if (typeof ResizeObserver === 'function') {
+      this.observer = new ResizeObserver(() => this.measure());
+      this.observer.observe(this.root);
+    }
+  }
+
+  private measure(): void {
+    const height = this.root.offsetHeight;
+    if (!height) return; // A hidden pane keeps the space it last had.
+    const space = Math.ceil(this.root.offsetTop + height + float_gap);
+    if (space === this.space) return;
+    this.space = space;
+    this.pane.style.setProperty('--preview_float_space', `${space}px`);
+    this.changed();
+  }
+
+  dispose(): void {
+    this.observer?.disconnect();
+    this.root.remove();
+  }
+}

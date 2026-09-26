@@ -1,4 +1,4 @@
-.preview-toolbar { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; padding: 4px 6px; border-bottom: 1px solid var(--view-border); background: var(--vscode-sideBar-background, var(--view-background)); }
+.preview-toolbar { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; padding: 4px 6px; border: 1px solid var(--vscode-widget-border, var(--view-border)); border-radius: var(--vscode-cornerRadius-large, 6px); background: var(--vscode-editorWidget-background, var(--vscode-sideBar-background, var(--view-background))); }
 .preview-toolbar-left, .preview-toolbar-right { display: flex; flex: 0 1 auto; flex-wrap: wrap; align-items: center; gap: 2px; min-width: 0; max-width: 100%; }
 .preview-toolbar-right { margin-left: auto; gap: 4px; }
 .preview-toolbar .preview-control { height: 24px; border: 1px solid var(--vscode-input-border, transparent); border-radius: var(--tab-radius, 4px); font-size: 11px; }
@@ -17,3 +17,12 @@
 .preview-toolbar .icon-button:focus-visible { border-radius: 50%; outline: 1px solid var(--vscode-focusBorder); outline-offset: -2px; }
 
 .preview-toolbar .preview-zoom-symbol { display: block; flex: 0 0 16px; width: 16px; height: 16px; stroke-width: 1; }
+
+/* The toolbar and any notice float as cards over the document; the gaps between them pass input through. */
+.preview-float { position: absolute; z-index: 20; top: 6px; left: 6px; right: 6px; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; pointer-events: none; }
+.preview-float > * { pointer-events: auto; box-shadow: 0 2px 8px var(--vscode-widget-shadow, transparent); }
+.preview-float > .preview-toolbar { align-self: stretch; }
+.preview-float > [role="status"] { max-width: 100%; border: 1px solid var(--vscode-widget-border, var(--view-border)); border-radius: var(--tab-radius, 4px); background: var(--vscode-editorWidget-background, var(--view-background)); }
+
+/* Outlines float over the document's left edge below the toolbar, so opening one never reflows the document. */
+.pdf-body > .preview-outline, .reading-body > .preview-outline { position: absolute; z-index: 15; top: var(--preview_float_space, 6px); left: 6px; width: clamp(160px, 45%, 280px); max-width: calc(100% - 12px); max-height: calc(100% - var(--preview_float_space, 6px) - 6px); overflow-x: hidden; overflow-y: auto; border: 1px solid var(--vscode-widget-border, var(--view-border)); border-radius: var(--vscode-cornerRadius-large, 6px); background: var(--vscode-editorWidget-background, var(--vscode-sideBar-background, var(--view-background))); box-shadow: 0 2px 8px var(--vscode-widget-shadow, transparent); }

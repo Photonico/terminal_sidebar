@@ -1,6 +1,7 @@
 import { document_highlights, document_search_text } from './document_highlights';
 import { reading_toolbar } from './reading_toolbar';
 import { preview_font_picker } from './preview_font_picker';
+import { preview_overlay } from './preview_controls';
 import type { client_message, markdown_tab } from '../src/types';
 import { is_markdown_link, type markdown_source } from '../src/markdown_state';
 import { render_markdown } from './markdown_render';
@@ -28,6 +29,7 @@ export class markdown_view {
   private restore_frame?: number;
   private readonly highlights: document_highlights;
   private readonly toolbar: reading_toolbar;
+  private readonly overlay: preview_overlay;
   private readonly font_picker: preview_font_picker;
 
   constructor(readonly tab: markdown_tab, private readonly send: (message: client_message) => void) {
@@ -49,7 +51,7 @@ export class markdown_view {
     this.pane.setAttribute('aria-label', tab.name);
     this.font_picker = new preview_font_picker(font => this.send({ type: 'set_preview_font', id: tab.id, font }));
     this.toolbar = new reading_toolbar('markdown', {
-      move: direction => this.viewport.scrollBy({ top: direction * this.viewport.clientHeight }),
+      move: direction => this.viewport.scrollBy({ top: direction * Math.max(1, this.viewport.clientHeight - this.overlay.space) }),
       height: () => this.viewport.clientHeight,
       zoom: (value, previous) => {
         this.content.style.zoom = String(value);
@@ -80,7 +82,8 @@ export class markdown_view {
     const body = document.createElement('div');
     body.className = 'reading-body';
     body.append(this.toolbar.outline, this.viewport);
-    this.pane.append(this.toolbar.root, this.notice, body);
+    this.overlay = new preview_overlay(this.pane, this.viewport, [this.toolbar.root, this.notice], () => this.viewport);
+    this.pane.append(this.overlay.root, body);
   }
 
   set_visible(visible: boolean): void {
@@ -179,6 +182,7 @@ export class markdown_view {
     this.disposed = true;
     this.search.dispose();
     this.toolbar.dispose();
+    this.overlay.dispose();
     this.font_picker.dispose();
     this.select_match(undefined);
     clearTimeout(this.scroll_timer);

@@ -1,4 +1,4 @@
-.pdf-outline { min-width: 0; min-height: 0; overflow: auto; color: var(--vscode-sideBar-foreground, var(--view-foreground)); background: var(--vscode-sideBar-background); font-size: 12px; }
+.pdf-outline { min-width: 0; min-height: 0; overflow: auto; color: var(--vscode-editorWidget-foreground, var(--vscode-sideBar-foreground, var(--view-foreground))); font-size: 12px; }
 .pdf-outline[hidden], .pdf-outline [hidden] { display: none; }
 .pdf-outline-heading { padding: 8px; font-weight: 600; }
 .pdf-outline-status { margin: 0; padding: 6px 8px; color: var(--vscode-descriptionForeground); overflow-wrap: anywhere; }

@@ -57,7 +57,7 @@ export class pdf_outline {
   private disposed = false;
 
   constructor(private readonly navigate: (page: number) => void) {
-    this.root.className = 'pdf-outline';
+    this.root.className = 'pdf-outline preview-outline';
     this.root.hidden = true;
     this.root.setAttribute('aria-label', 'PDF contents');
     const heading = document.createElement('div');

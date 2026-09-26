@@ -1,6 +1,6 @@
 .markdown-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .markdown-notice { padding: 6px 10px; color: var(--vscode-descriptionForeground); }
-.markdown-viewport { flex: 1 1 0; min-width: 0; min-height: 0; overflow: auto; padding: 16px; background: var(--vscode-editor-background); color: var(--vscode-editor-foreground); outline-offset: -1px; user-select: text; }
+.markdown-viewport { flex: 1 1 0; min-width: 0; min-height: 0; overflow: auto; padding: 16px; padding-top: calc(16px + var(--preview_float_space, 0px)); scroll-padding-top: var(--preview_float_space, 0px); background: var(--vscode-editor-background); color: var(--vscode-editor-foreground); outline-offset: -1px; user-select: text; }
 .markdown-content { max-width: 900px; margin: 0 auto; font: inherit; font-family: var(--markdown_font_family, var(--vscode-font-family, sans-serif)); line-height: 1.6; overflow-wrap: anywhere; }
 .markdown-content > :first-child { margin-top: 0; }
 .markdown-content > :last-child { margin-bottom: 0; }

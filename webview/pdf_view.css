@@ -1,6 +1,6 @@
 .pdf-pane { display: flex; flex-direction: column; min-height: 0; }
 .pdf-notice { padding: 5px 8px; color: var(--vscode-descriptionForeground); font-size: 11px; }
-.pdf-viewport { flex: 1 1 0; min-height: 0; min-width: 0; overflow-x: auto; overflow-y: scroll; scrollbar-gutter: stable; overflow-anchor: none; padding: 12px; background: var(--vscode-editor-background); outline-offset: -1px; }
+.pdf-viewport { flex: 1 1 0; min-height: 0; min-width: 0; overflow-x: auto; overflow-y: scroll; scrollbar-gutter: stable; overflow-anchor: none; padding: 12px; padding-top: calc(12px + var(--preview_float_space, 0px)); scroll-padding-top: var(--preview_float_space, 0px); background: var(--vscode-editor-background); outline-offset: -1px; }
 .pdf-pages { position: relative; flex: none; }
 .pdf-page { position: absolute; background: white; box-shadow: 0 1px 5px var(--vscode-widget-shadow, transparent); color-scheme: light; }
 .pdf-page canvas { display: block; }
@@ -12,9 +12,8 @@
 .pdf-viewport::-webkit-scrollbar-thumb:hover { background: var(--vscode-scrollbarSlider-hoverBackground); }
 .pdf-viewport::-webkit-scrollbar-thumb:active { background: var(--vscode-scrollbarSlider-activeBackground); }
 
-.pdf-body { display: flex; flex: 1 1 0; min-height: 0; min-width: 0; }
+.pdf-body { position: relative; display: flex; flex: 1 1 0; min-height: 0; min-width: 0; }
 /* Dark reading changes the PDF canvas only; selection and search remain theme-driven. */
 .pdf-pane[data-pdf-dark="true"] .pdf-page canvas { filter: invert(1) hue-rotate(180deg); }
 .pdf-pane[data-pdf-dark="true"] .pdf_find_match { mix-blend-mode: screen; }
 
-.pdf-body > .pdf-outline { flex: 0 0 clamp(130px, 32%, 240px); max-width: 45%; border-right: 1px solid var(--view-border); }

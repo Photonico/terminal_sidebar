@@ -2,6 +2,7 @@ import type { client_message, document_tab } from '../src/types';
 import type { document_source } from '../src/document_state';
 import { is_markdown_link } from '../src/markdown_state';
 import { reading_toolbar } from './reading_toolbar';
+import { preview_overlay } from './preview_controls';
 import { source_formatter } from './document_render';
 import { hydrate_html_resources } from './html_resources';
 import { document_highlights, document_search_text } from './document_highlights';
@@ -19,6 +20,7 @@ export class document_view {
   private readonly notice = document.createElement('div');
   private readonly formatter = new source_formatter();
   private readonly toolbar: reading_toolbar;
+  private readonly overlay: preview_overlay;
   private content?: HTMLElement;
   private frame?: HTMLIFrameElement;
   private pending_frame?: { frame: HTMLIFrameElement; cancel(): void };
@@ -48,7 +50,7 @@ export class document_view {
     this.pane.setAttribute('aria-label', tab.name);
     this.toolbar = new reading_toolbar(tab.format, {
       move: direction => (this.frame?.contentWindow ?? this.viewport).scrollBy({
-        top: direction * (this.frame?.clientHeight ?? this.viewport.clientHeight),
+        top: direction * (this.frame?.clientHeight ?? Math.max(1, this.viewport.clientHeight - this.overlay.space)),
       }),
       height: () => this.frame?.clientHeight ?? this.viewport.clientHeight,
       zoom: (value, previous) => {
@@ -80,7 +82,9 @@ export class document_view {
     const body = document.createElement('div');
     body.className = 'reading-body';
     body.append(this.toolbar.outline, this.viewport);
-    this.pane.append(this.toolbar.root, this.notice, body);
+    this.overlay = new preview_overlay(this.pane, this.viewport, [this.toolbar.root, this.notice],
+      () => this.frame?.contentWindow ?? this.viewport);
+    this.pane.append(this.overlay.root, body);
   }
 
   set_visible(visible: boolean): void {
@@ -258,7 +262,7 @@ export class document_view {
     this.remember(); this.disposed = true; ++this.revision;
     this.pending_frame?.cancel(); this.events?.abort(); this.formatter.dispose();
     this.resource_load?.abort();
-    this.toolbar.dispose();
+    this.toolbar.dispose(); this.overlay.dispose();
     this.highlights?.clear(); this.search.dispose(); this.pane.remove();
     this.source = undefined; this.rendered_source = undefined; this.rendering_source = undefined;
     this.content = undefined; this.frame = undefined;

@@ -28,11 +28,7 @@ export class reading_toolbar {
     left.className = 'preview-toolbar-left';
     left.append(create_document_badge(format));
     if (format === 'markdown' || format === 'html') {
-      this.outline_button = this.button('Toggle document outline', 'symbol-keyword', () => {
-        this.outline.hidden = !this.outline.hidden;
-        this.outline_button!.setAttribute('aria-expanded', String(!this.outline.hidden));
-        this.outline_button!.setAttribute('aria-pressed', String(!this.outline.hidden));
-      });
+      this.outline_button = this.button('Toggle document outline', 'symbol-keyword', () => this.set_outline(this.outline.hidden));
       this.outline_button.disabled = true;
       this.outline_button.setAttribute('aria-expanded', 'false');
       left.append(this.outline_button);
@@ -66,9 +62,23 @@ export class reading_toolbar {
       return button;
     }));
     this.root.append(left, right);
-    this.outline.className = 'reading-outline';
+    this.outline.className = 'reading-outline preview-outline';
     this.outline.setAttribute('aria-label', 'Document outline');
     this.outline.hidden = true;
+    this.outline.addEventListener('keydown', event => {
+      if (event.isComposing || event.key !== 'Escape') return;
+      event.preventDefault(); event.stopPropagation();
+      this.set_outline(false);
+      this.outline_button?.focus();
+    }, { signal: this.events.signal });
+  }
+
+  /** The floating outline stays open while navigating; its button or Escape closes it. */
+  private set_outline(open: boolean): void {
+    if (!this.outline_button) return;
+    this.outline.hidden = !open;
+    this.outline_button.setAttribute('aria-expanded', String(open));
+    this.outline_button.setAttribute('aria-pressed', String(open));
   }
 
   private button(label: string, symbol: string | undefined, action: () => void): HTMLButtonElement {
@@ -82,11 +92,7 @@ export class reading_toolbar {
     if (this.outline_button) {
       const headings = [...root.querySelectorAll<HTMLElement>('h1, h2, h3, h4, h5, h6')].slice(0, 1000);
       this.outline_button.disabled = !headings.length;
-      if (!headings.length) {
-        this.outline.hidden = true;
-        this.outline_button.setAttribute('aria-expanded', 'false');
-        this.outline_button.setAttribute('aria-pressed', 'false');
-      }
+      if (!headings.length) this.set_outline(false);
       for (const heading of headings) {
         const label = heading.textContent?.trim() || 'Untitled section';
         const button = document.createElement('button');
@@ -124,6 +130,11 @@ export class reading_toolbar {
   }
 
   keydown(event: KeyboardEvent): boolean {
+    if (!this.disposed && !event.isComposing && event.key === 'Escape' && !this.outline.hidden) {
+      this.set_outline(false);
+      event.preventDefault(); event.stopPropagation();
+      return true;
+    }
     if (this.disposed || event.isComposing || event.altKey || (!event.metaKey && !event.ctrlKey)
       || !['+', '=', '-', '0'].includes(event.key)) return false;
     this.change_zoom(event.key === '0' ? 0 : event.key === '-' ? -1 : 1);

@@ -247,6 +247,47 @@ test('refresh and hidden search result callbacks preserve the PDF reading page',
   h.view.dispose();
 });
 
+test('the toolbar and notice float over the pages, and the floating outline opens without re-rendering', async () => {
+  const h = await harness();
+  const loaded = h.view.load('outline');
+  await next_turn();
+  h.tasks[0].resolve(h.document);
+  await loaded;
+  const find = (name: string) => h.elements.find(item => item.className.split(' ').includes(name))!;
+  const [overlay, body] = (h.view.pane as unknown as element).children;
+  assert.equal(overlay.className, 'preview-float');
+  assert.deepEqual(overlay.children.map(child => child.className.split(' ')[0]), ['pdf-toolbar', 'pdf-notice']);
+  assert.deepEqual(body.children.map(child => child.className), ['pdf-outline preview-outline', 'pdf-viewport']);
+  let renders = 0;
+  const render = h.page.render;
+  h.page.render = () => { renders++; return render(); };
+  const outline = find('pdf-outline');
+  const button = h.elements.find(item => item.getAttribute('aria-label') === 'Toggle document outline')!;
+  button.dispatch('click', {});
+  await next_turn();
+  assert.equal(outline.hidden, false);
+  assert.equal(button.getAttribute('aria-pressed'), 'true');
+  assert.equal(renders, 0, 'The floating outline leaves the page width unchanged');
+  let focused = 0;
+  button.focus = () => { focused++; };
+  const escape = () => ({ key: 'Escape', defaulted: false, preventDefault() { this.defaulted = true; }, stopPropagation() {} });
+  const inside = escape();
+  outline.dispatch('keydown', inside);
+  assert.equal(outline.hidden, true);
+  assert.equal(inside.defaulted, true);
+  assert.equal(focused, 1, 'Escape inside the outline returns to its button');
+  button.dispatch('click', {});
+  const viewport = find('pdf-viewport');
+  const from_pages = escape();
+  viewport.dispatch('keydown', from_pages);
+  assert.equal(outline.hidden, true, 'Escape from the pages closes the outline too');
+  assert.equal(button.getAttribute('aria-pressed'), 'false');
+  const idle = escape();
+  viewport.dispatch('keydown', idle);
+  assert.equal(idle.defaulted, false, 'Escape stays available once the outline is closed');
+  h.view.dispose();
+});
+
 test('scrolling directly across the document updates the page and frees distant canvases', async () => {
   const h = await harness();
   const loaded = h.view.load('scroll-navigation');
