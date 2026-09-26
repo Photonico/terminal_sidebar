@@ -98,6 +98,7 @@ async function harness() {
     getViewport: ({ scale }: { scale: number }) => ({
       width: 600 * scale, height: 800 * scale, scale,
       convertToPdfPoint: (x: number, y: number) => [x / scale + 5, 810 - y / scale],
+      convertToViewportPoint: (x: number, y: number) => [(x - 5) * scale, (810 - y) * scale],
     }),
     view: [5, 10, 605, 810],
     render: () => ({ promise: Promise.resolve(), cancel() {} }),
@@ -285,6 +286,49 @@ test('the toolbar and notice float over the pages, and the floating outline open
   const idle = escape();
   viewport.dispatch('keydown', idle);
   assert.equal(idle.defaulted, false, 'Escape stays available once the outline is closed');
+  h.view.dispose();
+});
+
+test('PDF links jump to their destination point, keep web links native and send sibling files to the host', async () => {
+  const h = await harness();
+  Object.assign(h.page, { getAnnotations: async () => [
+    { annotationType: 2, rect: [105, 700, 205, 720], dest: 'section.4' },
+    { annotationType: 2, rect: [105, 600, 205, 620], url: 'https://example.com/paper' },
+    { annotationType: 2, rect: [105, 500, 205, 520], unsafeUrl: 'appendix.pdf' },
+    { annotationType: 2, rect: [105, 400, 205, 420], action: 'LastPage' },
+  ] });
+  const requested: unknown[] = [];
+  const loaded = h.view.load('links');
+  await next_turn();
+  h.tasks[0].resolve({ ...h.document,
+    getDestination: async (name: string) => { requested.push(name); return [{ num: 40, gen: 0 }, { name: 'XYZ' }, 5, 410, null]; },
+    getPageIndex: async () => 3 });
+  await loaded;
+  await next_turn();
+  const layer = h.elements.find(item => item.className === 'pdf-link-layer')!;
+  assert.ok(layer, 'Rendered pages receive a link layer');
+  const [internal, web, sibling, last] = layer.children as unknown as Array<element & { href?: string; style: Record<string, string> }>;
+  assert.equal(web.href, 'https://example.com/paper');
+  assert.equal(internal.href, undefined);
+  const scale = (640 - 24) / 600;
+  assert.equal(internal.style.top, `${(810 - 720) * scale}px`, 'Link areas use the rendered page scale');
+  const viewport = h.elements.find(item => item.className === 'pdf-viewport')!;
+  const handled = () => ({ prevented: 0, stopped: 0, preventDefault() { this.prevented++; }, stopPropagation() { this.stopped++; } });
+  const click = handled();
+  internal.dispatch('click', click);
+  for (let turn = 0; turn < 4; turn++) await next_turn();
+  assert.deepEqual([click.prevented, click.stopped], [1, 1]);
+  assert.deepEqual(requested, ['section.4']);
+  const geometry = (h.view as unknown as { geometry: { boxes: Map<number, { top: number; scale: number }> } }).geometry;
+  const box = geometry.boxes.get(3)!;
+  assert.ok(Math.abs(viewport.scrollTop - (box.top + (810 - 410) * box.scale)) < 0.001,
+    'The destination point, not just its page, is brought into view');
+  assert.equal(h.view.pane.dataset.pdfPage, '4');
+  sibling.dispatch('click', handled());
+  assert.deepEqual(h.messages.at(-1), { type: 'open_pdf_link', id: 'document', href: 'appendix.pdf' });
+  last.dispatch('click', handled());
+  await next_turn();
+  assert.equal(h.view.pane.dataset.pdfPage, '10');
   h.view.dispose();
 });
 
