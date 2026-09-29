@@ -92,7 +92,7 @@ export class pdf_view {
       const pages = this.pdf?.numPages ?? 0;
       if (!pages) return;
       if (action === 'FirstPage' || action === 'LastPage') this.navigate(action === 'FirstPage' ? 1 : pages);
-      else this.navigate(adjacent_page(this.page, pages, this.mode, action === 'NextPage' ? 1 : -1));
+      else this.turn_page(action === 'NextPage' ? 1 : -1);
     },
     open: href => this.send({ type: 'open_pdf_link', id: this.tab.id, href }),
   };
@@ -118,6 +118,7 @@ export class pdf_view {
   private rendered_width = 0;
   private page: number;
   private zoom: pdf_zoom;
+  private wheel_page_time = -Infinity;
 
 
   constructor(
@@ -159,7 +160,8 @@ export class pdf_view {
         this.mode = mode;
         this.remember();
         this.update_controls();
-        void this.render();
+        this.viewport.scrollLeft = 0;
+        void this.render(false);
       },
       dark: enabled => {
         this.dark = enabled;
@@ -172,14 +174,18 @@ export class pdf_view {
     this.notice.textContent = 'Loading PDF...';
     this.viewport.className = 'pdf-viewport';
     this.viewport.tabIndex = 0;
-    this.viewport.setAttribute('aria-label', 'PDF pages. Use h and l to turn pages, j and k to scroll; Command or Control plus mouse wheel to zoom.');
+    this.viewport.setAttribute('aria-label', 'PDF pages. Use arrow keys to scroll, Page Up and Page Down to turn pages, Shift plus mouse wheel to scroll horizontally; Command or Control plus mouse wheel to zoom.');
     this.viewport.addEventListener('keydown', event => this.keydown(event));
+    this.toolbar.root.addEventListener('keydown', event => this.keydown(event));
     this.viewport.addEventListener('wheel', event => this.wheel(event), { passive: false });
     this.pages.className = 'pdf-pages';
     this.viewport.append(this.pages);
     this.viewport.addEventListener('scroll', () => {
       if (!this.pdf || this.pane.hidden || !this.geometry?.continuous) return;
-      const page = current_page(this.geometry.continuous, this.viewport.scrollTop, this.visible_height()) + 1;
+      const horizontal = this.geometry.axis === 'horizontal';
+      const page = current_page(this.geometry.continuous,
+        horizontal ? this.viewport.scrollLeft : this.viewport.scrollTop,
+        horizontal ? this.viewport.clientWidth : this.visible_height(), this.geometry.axis) + 1;
       if (page !== this.page) {
         this.page = page;
         this.update_controls();
@@ -303,9 +309,12 @@ export class pdf_view {
     this.remember();
     this.update_controls();
     if (!reveal_match) this.scroll_to_match = false;
-    if (this.mode !== 'continuous') { void this.render(false); return; }
+    if (this.mode === 'single' || this.mode === 'spread') { void this.render(false, position); return; }
     const box = this.geometry?.boxes.get(this.page - 1);
-    if (box) this.viewport.scrollTop = box.top + (position === 'bottom' ? Math.max(0, box.height - this.visible_height() + 24) : 0);
+    if (box) {
+      if (this.mode === 'horizontal') this.viewport.scrollLeft = box.left ?? 0;
+      else this.viewport.scrollTop = box.top + (position === 'bottom' ? Math.max(0, box.height - this.visible_height() + 24) : 0);
+    }
     void this.render_visible();
     this.highlight_match();
   }
@@ -346,7 +355,32 @@ export class pdf_view {
   private move(direction: -1 | 1): void {
     if (!this.pdf) return;
     if (this.mode === 'continuous') this.viewport.scrollBy({ top: direction * this.visible_height() });
-    else this.navigate(adjacent_page(this.page, this.pdf.numPages, this.mode, direction));
+    else if (this.mode === 'horizontal') this.viewport.scrollBy({ left: direction * this.viewport.clientWidth });
+    else this.turn_page(direction);
+  }
+
+  private turn_page(direction: -1 | 1): void {
+    if (!this.pdf) return;
+    const next = adjacent_page(this.page, this.pdf.numPages, this.mode, direction);
+    if (next !== this.page) this.navigate(next);
+  }
+
+  /** Paged modes finish scrolling the current page before moving to the next page or spread. */
+  private scroll_vertical(delta: number, wheel = false): void {
+    if (!delta || !this.pdf) return;
+    const bottom = Math.max(0, this.viewport.scrollHeight - this.viewport.clientHeight);
+    const at_edge = delta < 0 ? this.viewport.scrollTop <= 1 : this.viewport.scrollTop >= bottom - 1;
+    if ((this.mode === 'single' || this.mode === 'spread') && at_edge) {
+      const direction = delta < 0 ? -1 : 1;
+      const next = adjacent_page(this.page, this.pdf.numPages, this.mode, direction);
+      if (next === this.page) return;
+      // A trackpad's trailing wheel events must not skip several fitted pages at once.
+      if (wheel && performance.now() - this.wheel_page_time < 300) return;
+      if (wheel) this.wheel_page_time = performance.now();
+      this.navigate(next, direction < 0 ? 'bottom' : 'top');
+      return;
+    }
+    this.viewport.scrollBy({ top: delta });
   }
 
   private change_zoom(direction: -1 | 0 | 1): void {
@@ -369,12 +403,30 @@ export class pdf_view {
   }
 
   private wheel(event: WheelEvent): void {
-    if ((!event.metaKey && !event.ctrlKey) || event.altKey || !this.pdf || !Number.isFinite(event.deltaY)) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const current = typeof this.zoom === 'number' ? this.zoom : this.geometry?.boxes.get(this.page - 1)?.scale ?? 1;
-    const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? this.viewport.clientHeight : 1);
-    this.set_zoom(Math.round(current * Math.exp(-Math.max(-500, Math.min(500, delta)) * 0.002) * 1000) / 1000, true);
+    if (event.altKey || !this.pdf || !Number.isFinite(event.deltaY)) return;
+    const vertical_unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? this.visible_height() : 1;
+    const horizontal_unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? this.viewport.clientWidth : 1;
+    if (event.metaKey || event.ctrlKey) {
+      event.preventDefault();
+      event.stopPropagation();
+      const current = typeof this.zoom === 'number' ? this.zoom : this.geometry?.boxes.get(this.page - 1)?.scale ?? 1;
+      const delta = event.deltaY * vertical_unit;
+      this.set_zoom(Math.round(current * Math.exp(-Math.max(-500, Math.min(500, delta)) * 0.002) * 1000) / 1000, true);
+      return;
+    }
+    const delta_x = Number.isFinite(event.deltaX) ? event.deltaX : 0;
+    if (event.shiftKey) {
+      event.preventDefault();
+      event.stopPropagation();
+      // Chromium may already translate Shift+wheel into deltaX.
+      this.viewport.scrollBy({ left: (event.deltaY || delta_x) * horizontal_unit });
+    } else if (this.mode === 'single' || this.mode === 'spread') {
+      event.preventDefault();
+      event.stopPropagation();
+      if (delta_x) this.viewport.scrollBy({ left: delta_x * horizontal_unit });
+      if (Math.abs(event.deltaY) >= Math.abs(delta_x)) this.scroll_vertical(event.deltaY * vertical_unit, true);
+      else this.viewport.scrollBy({ top: event.deltaY * vertical_unit });
+    }
   }
 
   private release_page(index: number): void {
@@ -415,11 +467,12 @@ export class pdf_view {
     }
   }
 
-  private async render(preserve_scroll = true): Promise<void> {
+  private async render(preserve_scroll = true, position: 'top' | 'bottom' = 'top'): Promise<void> {
     if (!this.pdf || this.disposed || this.pane.hidden || this.viewport.clientWidth < 1) return;
     const pdf = this.pdf;
     const old = this.geometry?.boxes.get(this.page - 1);
     const fraction = preserve_scroll && old ? (this.viewport.scrollTop - old.top) / old.height : 0;
+    const horizontal_fraction = preserve_scroll && old ? (this.viewport.scrollLeft - (old.left ?? 0)) / old.width : 0;
     this.cancel_render();
     const revision = this.render_revision;
     if (this.sizes.length !== pdf.numPages || this.sizes.filter(Boolean).length !== pdf.numPages) {
@@ -439,15 +492,22 @@ export class pdf_view {
     this.pages.style.height = `${this.geometry.height}px`;
     this.pages.style.width = `${this.geometry.width}px`;
     const box = this.geometry.boxes.get(this.page - 1)!;
-    this.viewport.scrollTop = Math.max(0, box.top + fraction * box.height);
+    this.viewport.scrollTop = position === 'bottom' ? Math.max(0, this.viewport.scrollHeight - this.viewport.clientHeight)
+      : Math.max(0, box.top + fraction * box.height);
+    if (preserve_scroll || this.mode === 'horizontal') {
+      this.viewport.scrollLeft = Math.max(0, (box.left ?? 0) + horizontal_fraction * box.width);
+    }
     this.rendered_width = this.viewport.clientWidth;
     await this.render_visible();
   }
 
   private async render_visible(): Promise<void> {
     if (!this.pdf || this.disposed || this.pane.hidden || !this.geometry) return;
+    const horizontal = this.geometry.axis === 'horizontal';
     const visible = this.geometry.continuous
-      ? visible_pages(this.geometry.continuous, this.viewport.scrollTop - this.overlay.space, this.viewport.clientHeight)
+      ? visible_pages(this.geometry.continuous,
+        horizontal ? this.viewport.scrollLeft : this.viewport.scrollTop - this.overlay.space,
+        horizontal ? this.viewport.clientWidth : this.viewport.clientHeight, this.geometry.axis)
       : [...this.geometry.boxes.keys()];
     this.canvas_pixel_budget = Math.min(4_000_000, 16_000_000 / visible.length);
     for (const index of this.rendered.keys()) if (!visible.includes(index)) this.release_page(index);
@@ -595,7 +655,8 @@ export class pdf_view {
   }
 
   private keydown(event: KeyboardEvent): void {
-    if (event.isComposing || event.altKey) return;
+    if (event.defaultPrevented || event.isComposing || event.altKey) return;
+    if (event.target instanceof Element && event.target.closest('input, select, textarea, [contenteditable], [role="menu"]')) return;
     if (event.ctrlKey || event.metaKey) {
       if (!['+', '=', '-', '0'].includes(event.key)) return;
       this.change_zoom(event.key === '0' ? 0 : event.key === '-' ? -1 : 1);
@@ -605,10 +666,12 @@ export class pdf_view {
     }
     switch (event.key) {
       case 'Escape': if (!this.outline_open) return; this.set_outline(false); break;
-      case 'h': case 'ArrowLeft': this.navigate(adjacent_page(this.page, this.pdf?.numPages ?? 1, this.mode, -1)); break;
-      case 'l': case 'ArrowRight': this.navigate(adjacent_page(this.page, this.pdf?.numPages ?? 1, this.mode, 1)); break;
-      case 'j': this.viewport.scrollBy({ top: 70 }); break;
-      case 'k': this.viewport.scrollBy({ top: -70 }); break;
+      case 'h': case 'PageUp': this.turn_page(-1); break;
+      case 'l': case 'PageDown': this.turn_page(1); break;
+      case 'ArrowLeft': this.viewport.scrollBy({ left: -70 }); break;
+      case 'ArrowRight': this.viewport.scrollBy({ left: 70 }); break;
+      case 'j': case 'ArrowDown': this.scroll_vertical(70); break;
+      case 'k': case 'ArrowUp': this.scroll_vertical(-70); break;
       case 'g': this.navigate(1); break;
       case 'G': this.navigate(this.pdf?.numPages ?? 1); break;
       case 'r': this.refresh(); break;

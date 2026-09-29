@@ -37,6 +37,52 @@ test('the toolbar identifies the page occupying most of the viewport after a res
   assert.equal(current_page(pages, 650, 600), 1);
 });
 
+test('horizontal continuous geometry tracks mixed widths along the horizontal axis', () => {
+  const sizes = [{ width: 600, height: 800 }, { width: 800, height: 600 }, { width: 300, height: 1200 }];
+  const layout = layout_document(sizes, 624, 824, 1, 'horizontal', 2);
+  const pages = layout.continuous!;
+  assert.equal(layout.axis, 'horizontal');
+  assert.deepEqual(pages.map(page => [page.left, page.top, page.width, page.height]),
+    [[0, 0, 600, 800], [612, 0, 800, 600], [1424, 0, 300, 1200]]);
+  assert.equal(layout.width, 1724);
+  assert.equal(layout.height, 1200);
+  assert.deepEqual([...layout.boxes.values()], pages);
+  assert.equal(page_at(pages, -10, layout.axis), 0);
+  assert.equal(page_at(pages, 1000, layout.axis), 1);
+  assert.equal(page_at(pages, 100000, layout.axis), 2);
+  assert.deepEqual(visible_pages(pages, 650, 650, layout.axis), [1, 2]);
+  assert.equal(current_page(pages, 590, 700, layout.axis), 1);
+  assert.equal(current_page(pages, 1350, 350, layout.axis), 2);
+});
+
+test('horizontal page fitting preserves page aspect ratios and centers short documents', () => {
+  const fitted = layout_document([{ width: 600, height: 800 }, { width: 800, height: 600 }],
+    624, 824, 'page-fit', 'horizontal', 1);
+  assert.deepEqual(fitted.continuous!.map(page => [page.left, page.width, page.height]),
+    [[0, 600, 800], [612, 600, 450]]);
+  const short = layout_document([{ width: 600, height: 1200 }], 624, 824, 'page-fit', 'horizontal', 1);
+  assert.equal(short.width, 600);
+  assert.equal(short.height, 800);
+  assert.equal(short.continuous![0].left, 100);
+  assert.equal(short.continuous![0].width, 400);
+  assert.deepEqual(visible_pages(short.continuous!, 0, 600, short.axis), [0]);
+  const empty = layout_document([], 624, 824, 'page-fit', 'horizontal', 1);
+  assert.equal(empty.width, 600);
+  assert.equal(empty.height, 0);
+  assert.deepEqual(visible_pages(empty.continuous!, 0, 600, empty.axis), []);
+});
+
+test('horizontal long documents render visible pages plus one prefetch after direct jumps', () => {
+  const pages = layout_pages(Array.from({ length: 10000 }, () => ({ width: 600, height: 800 })),
+    2000, 3000, .1, 'horizontal');
+  for (const offset of [0, 7000, 200000, 900000]) {
+    const visible = visible_pages(pages, offset, 2000, 'horizontal');
+    assert.ok(visible.length < 32);
+    assert.ok(visible.includes(page_at(pages, offset + 2000, 'horizontal')));
+    assert.equal(visible[0], page_at(pages, offset, 'horizontal'));
+  }
+});
+
 test('single and spread layouts fit mixed pages and keep odd final pages reachable', async () => {
   const sizes = [{ width: 600, height: 800 }, { width: 800, height: 600 }, { width: 600, height: 1200 }];
   const spread = layout_document(sizes, 1436, 824, 'page-width', 'spread', 2);
@@ -56,4 +102,17 @@ test('single and spread layouts fit mixed pages and keep odd final pages reachab
   assert.equal(enlarged.width, 5612);
   assert.equal(enlarged.boxes.get(0)!.left, 0);
   assert.equal(enlarged.boxes.get(1)!.left, 2412);
+});
+
+test('spread navigation preserves the selected page when no adjacent pair exists', () => {
+  assert.equal(adjacent_page(9, 10, 'spread', 1), 9);
+  assert.equal(adjacent_page(10, 10, 'spread', 1), 10);
+  assert.equal(adjacent_page(1, 10, 'spread', -1), 1);
+  assert.equal(adjacent_page(2, 10, 'spread', -1), 2);
+  assert.equal(adjacent_page(2, 10, 'spread', 1), 3);
+  assert.equal(adjacent_page(10, 10, 'spread', -1), 7);
+  assert.equal(adjacent_page(8, 9, 'spread', 1), 9);
+  assert.equal(adjacent_page(9, 9, 'spread', 1), 9);
+  assert.equal(adjacent_page(1, 1, 'spread', -1), 1);
+  assert.equal(adjacent_page(1, 1, 'spread', 1), 1);
 });

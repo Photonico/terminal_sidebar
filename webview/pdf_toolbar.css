@@ -6,4 +6,4 @@
 .pdf-settings-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 7px; border: 0; border-radius: var(--vscode-cornerRadius-small, 3px); color: inherit; background: transparent; text-align: left; font-size: 12px; white-space: nowrap; }
 .pdf-settings-item[aria-checked="false"] > .codicon { visibility: hidden; }
 .pdf-settings-item:hover, .pdf-settings-item:focus-visible { color: var(--vscode-menu-selectionForeground, var(--view-foreground)); background: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground, transparent)); outline: 1px solid var(--vscode-menu-selectionBorder, transparent); outline-offset: -1px; }
-.pdf-settings-separator { height: 1px; margin: 4px 5px; background: var(--vscode-menu-separatorBackground, var(--view-border)); }
+.pdf-toolbar .pdf-mode-control { width: 156px; }

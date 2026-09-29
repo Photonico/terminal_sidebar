@@ -2,6 +2,8 @@
 
 ## 0.11.0 — Unreleased
 
+- Add horizontal continuous PDF scrolling and place all four display modes in a dropdown beside zoom; keep dark reading in the gear menu and match navigation arrows to the scroll direction.
+- Support PDF arrow-key navigation: wheel and Up/Down scroll vertically, Shift+wheel and Left/Right scroll horizontally, and PageUp/PageDown turn pages or spreads. In single/two-page mode, vertical scrolling at an edge turns pages, with backward turns entering at the bottom.
 - Place the PDF zoom menu before the page number in the preview toolbar.
 - Give preview toolbar buttons the same idle circular background as the terminal tab actions.
 - Float the preview toolbar and notices as a card over the document, which starts below it and scrolls beneath it; wheel input over the toolbar still scrolls or zooms the document, and Fit page uses the height below the toolbar.

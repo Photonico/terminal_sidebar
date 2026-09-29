@@ -42,9 +42,9 @@ export class pdf_toolbar {
   private readonly page_input = document.createElement('input');
   private readonly page_count = document.createElement('span');
   private readonly zoom_select = document.createElement('select');
+  private readonly mode_select = document.createElement('select');
   private readonly settings: HTMLButtonElement;
   private readonly menu = document.createElement('div');
-  private readonly modes = new Map<pdf_mode, HTMLButtonElement>();
   private readonly dark: HTMLButtonElement;
   private custom_zoom?: HTMLOptionElement;
   private page_dirty = false;
@@ -100,6 +100,23 @@ export class pdf_toolbar {
       callbacks.set_zoom(value === 'page-width' || value === 'page-fit' ? value : Number(value));
     }, options);
     zoom_control.append(this.zoom_select, icon('chevron-down'));
+
+    const mode_control = document.createElement('span');
+    mode_control.className = 'pdf-mode-control preview-zoom-control preview-control';
+    this.mode_select.title = 'Display mode';
+    this.mode_select.setAttribute('aria-label', 'Display mode');
+    for (const [mode, label] of [
+      ['continuous', 'Continuous vertical'], ['horizontal', 'Continuous horizontal'],
+      ['single', 'Single page'], ['spread', 'Two pages'],
+    ] as const) this.mode_select.add(new Option(label, mode));
+    this.mode_select.addEventListener('change', () => {
+      const mode = this.mode_select.value;
+      if (mode === 'continuous' || mode === 'horizontal' || mode === 'single' || mode === 'spread') {
+        callbacks.mode(mode);
+      }
+    }, options);
+    mode_control.append(this.mode_select, icon('chevron-down'));
+
     this.settings = this.button('PDF settings', 'settings-gear', () => this.toggle_menu());
     this.settings.setAttribute('aria-haspopup', 'menu');
     this.settings.setAttribute('aria-expanded', 'false');
@@ -109,7 +126,7 @@ export class pdf_toolbar {
       event.stopPropagation();
       this.show_menu(event.key === 'ArrowUp');
     }, options);
-    right.append(zoom_control, page_control, this.button('Reload PDF', 'refresh', callbacks.reload), this.settings);
+    right.append(zoom_control, mode_control, page_control, this.button('Reload PDF', 'refresh', callbacks.reload), this.settings);
     this.root.append(left, right);
 
     this.menu.id = `pdf-settings-${++toolbar_sequence}`;
@@ -118,21 +135,8 @@ export class pdf_toolbar {
     this.menu.setAttribute('role', 'menu');
     this.menu.setAttribute('aria-label', 'PDF settings');
     this.settings.setAttribute('aria-controls', this.menu.id);
-    const modes = document.createElement('div');
-    modes.setAttribute('role', 'group');
-    modes.setAttribute('aria-label', 'Page layout');
-    for (const [mode, label] of [
-      ['continuous', 'Continuous'], ['single', 'Single page'], ['spread', 'Two pages'],
-    ] as const) {
-      const button = this.menu_item(label, 'menuitemradio', () => callbacks.mode(mode));
-      this.modes.set(mode, button);
-      modes.append(button);
-    }
-    const separator = document.createElement('div');
-    separator.className = 'pdf-settings-separator';
-    separator.setAttribute('role', 'separator');
     this.dark = this.menu_item('Dark mode', 'menuitemcheckbox', () => callbacks.dark(!this.state.dark));
-    this.menu.append(modes, separator, this.dark);
+    this.menu.append(this.dark);
     this.menu.addEventListener('keydown', event => this.menu_keydown(event), options);
     document.body.append(this.menu);
     document.addEventListener('pointerdown', event => {
@@ -154,19 +158,20 @@ export class pdf_toolbar {
 
   update(state: pdf_toolbar_state): void {
     this.state = { ...state };
-    const vertical = state.mode === 'continuous';
+    const horizontal = state.mode === 'horizontal';
+    const continuous = state.mode === 'continuous' || horizontal;
     const pair_start = Math.floor((state.page - 1) / 2) * 2;
-    this.previous.disabled = state.pages === 0 || (!vertical && (state.mode === 'spread' ? pair_start === 0 : state.page <= 1));
-    this.next.disabled = state.pages === 0 || (!vertical && (state.mode === 'spread' ? pair_start + 2 >= state.pages : state.page >= state.pages));
+    this.previous.disabled = state.pages === 0 || (!continuous && (state.mode === 'spread' ? pair_start === 0 : state.page <= 1));
+    this.next.disabled = state.pages === 0 || (!continuous && (state.mode === 'spread' ? pair_start + 2 >= state.pages : state.page >= state.pages));
     for (const [button, label] of [
-      [this.previous, vertical ? 'Scroll up one page' : state.mode === 'spread' ? 'Previous two pages' : 'Previous page'],
-      [this.next, vertical ? 'Scroll down one page' : state.mode === 'spread' ? 'Next two pages' : 'Next page'],
+      [this.previous, continuous ? `Scroll ${horizontal ? 'left' : 'up'} one page` : state.mode === 'spread' ? 'Previous two pages' : 'Previous page'],
+      [this.next, continuous ? `Scroll ${horizontal ? 'right' : 'down'} one page` : state.mode === 'spread' ? 'Next two pages' : 'Next page'],
     ] as const) {
       button.title = label;
       button.setAttribute('aria-label', label);
     }
-    this.previous.firstElementChild!.className = `codicon codicon-arrow-circle-${vertical ? 'up' : 'left'}`;
-    this.next.firstElementChild!.className = `codicon codicon-arrow-circle-${vertical ? 'down' : 'right'}`;
+    this.previous.firstElementChild!.className = `codicon codicon-arrow-circle-${horizontal ? 'left' : 'up'}`;
+    this.next.firstElementChild!.className = `codicon codicon-arrow-circle-${horizontal ? 'right' : 'down'}`;
     this.outline.setAttribute('aria-expanded', String(state.outline_open));
     this.outline.setAttribute('aria-pressed', String(state.outline_open));
     this.page_input.disabled = state.pages === 0;
@@ -187,7 +192,7 @@ export class pdf_toolbar {
       this.zoom_select.add(this.custom_zoom);
     }
     this.zoom_select.value = zoom;
-    for (const [mode, button] of this.modes) button.setAttribute('aria-checked', String(mode === state.mode));
+    this.mode_select.value = state.mode;
     this.dark.setAttribute('aria-checked', String(state.dark));
   }
 

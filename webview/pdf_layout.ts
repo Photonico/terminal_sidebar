@@ -2,47 +2,61 @@ import type { pdf_mode, pdf_zoom } from '../src/pdf_state';
 
 export interface page_size { width: number; height: number }
 export interface page_box extends page_size { top: number; scale: number; left?: number }
+export type scroll_axis = 'vertical' | 'horizontal';
 export const page_gap = 12;
 
 /** Geometry is independent of canvas lifetime, so the scrollbar spans the whole PDF. */
 export function layout_pages(sizes: readonly page_size[], width: number, height: number,
-  zoom: number | 'page-width' | 'page-fit'): page_box[] {
-  let top = 0;
+  zoom: number | 'page-width' | 'page-fit', axis: scroll_axis = 'vertical'): page_box[] {
+  let offset = 0;
   return sizes.map(size => {
     const scale = Math.max(0.1, typeof zoom === 'number' ? zoom : zoom === 'page-width'
       ? (width - 24) / size.width : Math.min((width - 24) / size.width, (height - 24) / size.height));
-    const box = { top, width: size.width * scale, height: size.height * scale, scale };
-    top += box.height + page_gap;
+    const box = { top: axis === 'vertical' ? offset : 0,
+      ...(axis === 'horizontal' ? { left: offset } : {}),
+      width: size.width * scale, height: size.height * scale, scale };
+    offset += (axis === 'vertical' ? box.height : box.width) + page_gap;
     return box;
   });
 }
 
-export function page_at(boxes: readonly page_box[], offset: number): number {
+function page_start(box: page_box, axis: scroll_axis): number {
+  return axis === 'horizontal' ? box.left ?? 0 : box.top;
+}
+
+function page_length(box: page_box, axis: scroll_axis): number {
+  return axis === 'horizontal' ? box.width : box.height;
+}
+
+export function page_at(boxes: readonly page_box[], offset: number, axis: scroll_axis = 'vertical'): number {
   let low = 0;
   let high = boxes.length - 1;
   while (low < high) {
     const middle = Math.ceil((low + high) / 2);
-    if (boxes[middle].top <= offset) low = middle;
+    if (page_start(boxes[middle], axis) <= offset) low = middle;
     else high = middle - 1;
   }
   return low;
 }
 
-export function visible_pages(boxes: readonly page_box[], top: number, height: number): number[] {
+export function visible_pages(boxes: readonly page_box[], offset: number, length: number,
+  axis: scroll_axis = 'vertical'): number[] {
   if (!boxes.length) return [];
-  const first = page_at(boxes, Math.max(0, top));
-  const last = page_at(boxes, top + height);
+  const first = page_at(boxes, Math.max(0, offset), axis);
+  const last = page_at(boxes, offset + length, axis);
   // Always cover every visible page; only one extra page is prefetched.
   return Array.from({ length: Math.min(last - first + 2, boxes.length - first) }, (_, index) => first + index);
 }
 
 /** The toolbar follows the page with the largest visible portion. */
-export function current_page(boxes: readonly page_box[], top: number, height: number): number {
-  let selected = page_at(boxes, top);
+export function current_page(boxes: readonly page_box[], offset: number, length: number,
+  axis: scroll_axis = 'vertical'): number {
+  let selected = page_at(boxes, offset, axis);
   let largest = -1;
-  for (let index = selected; index < boxes.length && boxes[index].top < top + height; index++) {
+  for (let index = selected; index < boxes.length && page_start(boxes[index], axis) < offset + length; index++) {
     const box = boxes[index];
-    const visible = Math.min(box.top + box.height, top + height) - Math.max(box.top, top);
+    const start = page_start(box, axis);
+    const visible = Math.min(start + page_length(box, axis), offset + length) - Math.max(start, offset);
     if (visible > largest) { selected = index; largest = visible; }
   }
   return selected;
@@ -52,6 +66,7 @@ export interface document_layout {
   boxes: Map<number, page_box>;
   width: number;
   height: number;
+  axis: scroll_axis;
   continuous?: readonly page_box[];
 }
 
@@ -65,17 +80,26 @@ export function page_group(page: number, count: number, mode: pdf_mode): number[
 
 export function adjacent_page(page: number, count: number, mode: pdf_mode, direction: -1 | 1): number {
   const first = page_group(page, count, mode)[0] ?? 0;
-  return Math.max(1, Math.min(count, first + 1 + direction * (mode === 'spread' ? 2 : 1)));
+  const target = first + 1 + direction * (mode === 'spread' ? 2 : 1);
+  return target >= 1 && target <= count ? target : Math.max(1, Math.min(count, Math.trunc(page)));
 }
 
 export function layout_document(sizes: readonly page_size[], width: number, height: number,
   zoom: pdf_zoom, mode: pdf_mode, page: number): document_layout {
-  if (mode === 'continuous') {
-    const continuous = layout_pages(sizes, width, height, zoom);
-    const content_width = continuous.reduce((maximum, box) => Math.max(maximum, box.width), Math.max(0, width - 24));
-    const last = continuous.at(-1);
-    return { boxes: new Map(continuous.map((box, index) => [index, { ...box, left: (content_width - box.width) / 2 }])),
-      width: content_width, height: last ? last.top + last.height : 0, continuous };
+  if (mode === 'continuous' || mode === 'horizontal') {
+    const axis = mode === 'horizontal' ? 'horizontal' : 'vertical';
+    const pages = layout_pages(sizes, width, height, zoom, axis);
+    const last = pages.at(-1);
+    const row_width = last ? (last.left ?? 0) + last.width : 0;
+    const content_width = Math.max(0, width - 24, axis === 'horizontal' ? row_width
+      : pages.reduce((maximum, box) => Math.max(maximum, box.width), 0));
+    const content_height = axis === 'horizontal'
+      ? pages.reduce((maximum, box) => Math.max(maximum, box.height), 0)
+      : last ? last.top + last.height : 0;
+    const continuous = pages.map(box => ({ ...box, left: axis === 'horizontal'
+      ? (box.left ?? 0) + (content_width - row_width) / 2 : (content_width - box.width) / 2 }));
+    return { boxes: new Map(continuous.map((box, index) => [index, box])),
+      width: content_width, height: content_height, axis, continuous };
   }
   const indices = page_group(page, sizes.length, mode);
   const gap = indices.length > 1 ? page_gap : 0;
@@ -91,5 +115,5 @@ export function layout_document(sizes: readonly page_size[], width: number, heig
     boxes.set(index, { left, top: 0, width: size.width * scale, height: size.height * scale, scale });
     left += size.width * scale + page_gap;
   }
-  return { boxes, width: content_width, height: base_height * scale };
+  return { boxes, width: content_width, height: base_height * scale, axis: 'vertical' };
 }

@@ -1,5 +1,5 @@
 /** PDF paths and reading positions belong to this workspace, never shell profiles. */
-export type pdf_mode = 'continuous' | 'single' | 'spread';
+export type pdf_mode = 'continuous' | 'horizontal' | 'single' | 'spread';
 export type pdf_zoom = 'page-width' | 'page-fit' | number;
 
 export interface pdf_position {
@@ -36,7 +36,7 @@ export function is_pdf_source_uri(value: unknown, pdf_uri: string): value is str
 export function is_pdf_position(value: unknown): value is pdf_position {
   if (!value || typeof value !== 'object') return false;
   const { page, zoom, mode, dark } = value as Record<string, unknown>;
-  return (mode === undefined || mode === 'continuous' || mode === 'single' || mode === 'spread')
+  return (mode === undefined || mode === 'continuous' || mode === 'horizontal' || mode === 'single' || mode === 'spread')
     && (dark === undefined || typeof dark === 'boolean')
     && Number.isInteger(page) && Number(page) >= 1 && Number(page) <= 1_000_000
     && (zoom === 'page-width' || zoom === 'page-fit'

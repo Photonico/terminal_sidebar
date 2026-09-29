@@ -53,9 +53,11 @@ test('PDF toolbar emits navigation and zoom actions, preserving custom zoom valu
   const right = zoom.parentElement!.parentElement!;
   assert.ok(right.classList.contains('pdf-toolbar-right'));
   assert.deepEqual(right.children.map(child => child.className), [
-    'pdf-zoom-control preview-zoom-control preview-control', 'pdf-page-control', 'icon-button', 'icon-button',
-  ], 'The zoom menu precedes the page number, then reload and settings');
-  assert.equal(right.children[1], h.control('Page number').parentElement);
+    'pdf-zoom-control preview-zoom-control preview-control', 'pdf-mode-control preview-zoom-control preview-control',
+    'pdf-page-control', 'icon-button', 'icon-button',
+  ], 'The display mode sits beside zoom, before the page number, reload and settings');
+  assert.equal(right.children[1], h.control('Display mode').parentElement);
+  assert.equal(right.children[2], h.control('Page number').parentElement);
   assert.deepEqual(zoom.options.map(option => option.textContent), [
     'Fit width', 'Fit page', '25%', '50%', '75%', '100%', '125%', '150%', '200%', '300%', '400%',
   ]);
@@ -104,52 +106,64 @@ test('PDF page input commits once for Enter/change in either order and preserves
   h.toolbar.dispose();
 });
 
-test('PDF settings supports keyboard navigation, layout selection, dark mode and dismissal', async () => {
+test('PDF display mode uses a native select and follows reader state', async () => {
+  const h = await harness();
+  const mode = h.control('Display mode');
+  assert.equal(mode.tag, 'select');
+  assert.equal(mode.value, 'continuous');
+  assert.deepEqual(mode.options.map(option => [option.value, option.textContent]), [
+    ['continuous', 'Continuous vertical'], ['horizontal', 'Continuous horizontal'],
+    ['single', 'Single page'], ['spread', 'Two pages'],
+  ]);
+  for (const value of ['horizontal', 'single', 'spread', 'continuous']) {
+    mode.value = value;
+    mode.dispatch('change');
+    assert.deepEqual(h.calls.at(-1), { action: 'mode', value });
+  }
+  h.update({ mode: 'horizontal' });
+  assert.equal(mode.value, 'horizontal');
+  assert.equal(h.calls.length, 4, 'Reader updates do not emit redundant layout changes');
+  h.toolbar.dispose();
+  mode.dispatch('change');
+  assert.equal(h.calls.length, 4, 'Disposal removes the mode listener');
+});
+
+test('PDF settings contains only dark mode and supports keyboard navigation and dismissal', async () => {
   const h = await harness();
   const settings = h.control('PDF settings');
   const menu = h.document.elements.find(element => element.getAttribute('role') === 'menu')!;
-  const continuous = h.control('Continuous');
-  const single = h.control('Single page');
-  const spread = h.control('Two pages');
   const dark = h.control('Dark mode');
+  assert.deepEqual(menu.children, [dark]);
+  assert.equal(dark.getAttribute('role'), 'menuitemcheckbox');
+  assert.equal(dark.getAttribute('aria-checked'), 'false');
   settings.focus();
   settings.dispatch('keydown', { key: 'ArrowDown' });
   assert.equal(menu.hidden, false);
   assert.equal(settings.getAttribute('aria-expanded'), 'true');
-  assert.equal(h.document.activeElement, continuous);
-  assert.equal(continuous.getAttribute('aria-checked'), 'true');
-  continuous.dispatch('keydown', { key: 'ArrowDown' });
-  assert.equal(h.document.activeElement, single);
-  single.dispatch('keydown', { key: 'End' });
   assert.equal(h.document.activeElement, dark);
-  dark.dispatch('keydown', { key: 'Home' });
-  assert.equal(h.document.activeElement, continuous);
-  continuous.dispatch('keydown', { key: 'ArrowUp' });
-  assert.equal(h.document.activeElement, dark, 'Up wraps from the first item');
-  dark.dispatch('keydown', { key: 'ArrowUp' });
-  assert.equal(h.document.activeElement, spread);
-  spread.click();
-  assert.deepEqual(h.calls, [{ action: 'mode', value: 'spread' }]);
-  assert.equal(menu.hidden, true);
-  assert.equal(h.document.activeElement, settings);
-  h.update({ mode: 'spread' });
-  assert.equal(spread.getAttribute('aria-checked'), 'true');
-  assert.equal(continuous.getAttribute('aria-checked'), 'false');
+  for (const key of ['ArrowDown', 'ArrowUp', 'Home', 'End']) {
+    const event = dark.dispatch('keydown', { key });
+    assert.equal(event.defaultPrevented, true);
+    assert.equal(h.document.activeElement, dark, 'The only settings item retains keyboard focus');
+  }
   settings.dispatch('keydown', { key: 'ArrowUp' });
   assert.equal(h.document.activeElement, dark);
   dark.click();
   assert.deepEqual(h.calls.at(-1), { action: 'dark', value: true });
+  assert.equal(menu.hidden, true);
+  assert.equal(h.document.activeElement, settings);
   h.update({ dark: true });
+  assert.equal(dark.getAttribute('aria-checked'), 'true');
   settings.click();
   dark.click();
   assert.deepEqual(h.calls.at(-1), { action: 'dark', value: false });
   settings.click();
-  const escape = continuous.dispatch('keydown', { key: 'Escape' });
+  const escape = dark.dispatch('keydown', { key: 'Escape' });
   assert.equal(escape.defaultPrevented, true);
   assert.equal(menu.hidden, true);
   assert.equal(h.document.activeElement, settings);
   settings.click();
-  const tab = continuous.dispatch('keydown', { key: 'Tab' });
+  const tab = dark.dispatch('keydown', { key: 'Tab' });
   assert.equal(tab.defaultPrevented, false, 'Tab remains available to browser focus navigation');
   assert.equal(menu.hidden, true);
   settings.click();
@@ -168,7 +182,7 @@ test('PDF settings supports keyboard navigation, layout selection, dark mode and
   settings.click();
   h.control('Reload PDF').click();
   assert.equal(menu.parentElement, undefined);
-  assert.equal(h.calls.length, 3, 'Disposal removes all action listeners');
+  assert.equal(h.calls.length, 2, 'Disposal removes all action listeners');
 });
 
 test('PDF navigation boundaries follow continuous scrolling and complete spreads', async () => {
@@ -182,11 +196,22 @@ test('PDF navigation boundaries follow continuous scrolling and complete spreads
     assert.match(previous.firstElementChild!.className, /arrow-circle-up$/);
     assert.match(next.firstElementChild!.className, /arrow-circle-down$/);
   }
+  for (const page of [1, 10]) {
+    h.update({ mode: 'horizontal', page });
+    assert.equal(previous.disabled, false);
+    assert.equal(next.disabled, false, 'The final page may still extend beyond the viewport');
+    assert.match(previous.firstElementChild!.className, /arrow-circle-left$/);
+    assert.match(next.firstElementChild!.className, /arrow-circle-right$/);
+    assert.equal(previous.getAttribute('aria-label'), 'Scroll left one page');
+    assert.equal(next.getAttribute('aria-label'), 'Scroll right one page');
+  }
   h.update({ mode: 'single', page: 1 });
   assert.equal(previous.disabled, true);
   assert.equal(next.disabled, false);
   assert.equal(previous.title, 'Previous page');
   assert.equal(next.title, 'Next page');
+  assert.match(previous.firstElementChild!.className, /arrow-circle-up$/);
+  assert.match(next.firstElementChild!.className, /arrow-circle-down$/);
   h.update({ page: 10 });
   assert.equal(previous.disabled, false);
   assert.equal(next.disabled, true);
@@ -199,8 +224,8 @@ test('PDF navigation boundaries follow continuous scrolling and complete spreads
     h.update({ page });
     assert.equal(previous.disabled, false);
     assert.equal(next.disabled, true, `The final pair has no next spread at page ${page}`);
-    assert.match(previous.firstElementChild!.className, /arrow-circle-left$/);
-    assert.match(next.firstElementChild!.className, /arrow-circle-right$/);
+    assert.match(previous.firstElementChild!.className, /arrow-circle-up$/);
+    assert.match(next.firstElementChild!.className, /arrow-circle-down$/);
     assert.equal(previous.getAttribute('aria-label'), 'Previous two pages');
     assert.equal(next.getAttribute('aria-label'), 'Next two pages');
   }

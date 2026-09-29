@@ -22,7 +22,11 @@ HTML (`.html` or `.htm`) renders as a static page with local images and styleshe
 
 Text previews require UTF-8 files up to 4 MiB. Saving from Vim, Neovim, or another editor refreshes them, including replace-on-save. Resources must be in the document's directory or its subdirectories. Markdown filename aliases `.markdown`, `.mdown`, `.mkd`, `.mkdn`, and `.mdwn` are also supported.
 
-PDF controls offer contents, page selection, zoom, and refresh. The gear selects continuous scrolling (default), single page, two pages, or dark reading. **Cmd/Ctrl + mouse wheel** zooms; **h/l** turns pages and **j/k** scrolls. Only nearby pages render. Page, zoom, and browsing preferences are remembered per workspace. Dark reading inverts page colours, including images; turn it off to inspect original colours.
+PDF controls offer contents, page selection, zoom, and refresh. The dropdown beside zoom selects continuous vertical scrolling (default), continuous horizontal scrolling, single page, or two pages. The left navigation buttons show left/right arrows in horizontal mode and up/down arrows in the other modes. The gear contains dark reading, which inverts page colours, including images; turn it off to inspect original colours.
+
+While the PDF has focus, the **mouse wheel** and **Up/Down** scroll vertically; **Shift + wheel** and **Left/Right** scroll horizontally. In horizontal continuous mode, horizontal scrolling moves along the pages. In single/two-page mode, vertical scrolling past the top or bottom turns to the previous/next page or spread; going back enters at the bottom. **PageUp/PageDown** or **h/l** turn pages or spreads directly; **j/k** also scroll vertically.
+
+**Cmd/Ctrl + mouse wheel** and **Cmd/Ctrl +/-/0** zoom. Only nearby pages render. Page, zoom, and browsing preferences are remembered per workspace.
 
 Rebuilding a PDF refreshes it automatically; an incomplete or missing output keeps the last valid preview. Text previews share scroll and zoom controls, including **Cmd/Ctrl + mouse wheel** and **Cmd/Ctrl +/-/0**. Markdown and HTML also offer a vertical heading outline beside the document. Use **j/k** to scroll and **g/G** for the beginning/end; reading positions are remembered.
 

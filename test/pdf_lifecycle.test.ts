@@ -5,6 +5,7 @@ import { setImmediate as next_turn } from 'node:timers/promises';
 import test from 'node:test';
 import { build } from 'esbuild';
 import type { pdf_view } from '../webview/pdf_view';
+import type { pdf_position } from '../src/pdf_state';
 
 const bundled_view = build({
   entryPoints: [path.resolve(__dirname, '../webview/pdf_view.ts')], bundle: true,
@@ -34,11 +35,13 @@ class element {
   clientWidth = 640;
   clientHeight = 480;
   scrollTop = 0;
-  scrollHeight = 480;
+  scrollLeft = 0;
+  get scrollHeight() { return Math.max(this.clientHeight, (parseFloat(this.children[0]?.style.height ?? '') || 0) + 24); }
+  get scrollWidth() { return Math.max(this.clientWidth, (parseFloat(this.children[0]?.style.width ?? '') || 0) + 24); }
   dataset: Record<string, string> = {};
   children: element[] = [];
   parent?: element;
-  style = { setProperty() {} };
+  style = { height: '', width: '', setProperty() {} };
   private readonly listeners = new Map<string, Array<(event: unknown) => void>>();
   constructor(readonly tag: string) {}
   setAttribute(name: string, value: string) { this.attributes.set(name, value); }
@@ -54,8 +57,15 @@ class element {
   replaceChildren(...children: element[]) { this.children = children; }
   remove() { if (this.parent) this.parent.children = this.parent.children.filter(child => child !== this); }
   focus() {}
-  scrollBy({ top }: { top: number }) { this.scrollTop += top; this.dispatch('scroll', {}); }
-  closest() { return this.tag === 'span' ? this : undefined; }
+  scrollBy({ top = 0, left = 0 }: { top?: number; left?: number }) {
+    this.scrollTop = Math.max(0, Math.min(this.scrollHeight - this.clientHeight, this.scrollTop + top));
+    this.scrollLeft = Math.max(0, Math.min(this.scrollWidth - this.clientWidth, this.scrollLeft + left));
+    this.dispatch('scroll', {});
+  }
+  closest(selector: string) {
+    if (selector === '.textLayer span') return this.tag === 'span' ? this : undefined;
+    return ['input', 'select', 'textarea'].includes(this.tag) ? this : undefined;
+  }
   getBoundingClientRect() { return { left: 10, top: 20 }; }
   querySelectorAll(tag: string): element[] {
     return this.children.flatMap(child => [...(child.tag === tag ? [child] : []), ...child.querySelectorAll(tag)]);
@@ -63,7 +73,7 @@ class element {
   querySelector(tag: string): element | undefined { return this.querySelectorAll(tag)[0]; }
 }
 
-async function harness() {
+async function harness(position: Partial<pdf_position> = {}) {
   const module = { exports: {} as { pdf_view: typeof pdf_view } };
   const elements: element[] = [];
   let now = 0;
@@ -92,6 +102,7 @@ async function harness() {
   let loader: () => Promise<typeof library> = async () => library;
   const view = new module.exports.pdf_view({
     id: 'document', name: 'Document', pdf_uri: 'file:///document.pdf', page: 1, zoom: 'page-width', kind: 'pdf',
+    ...position,
   } as unknown as ConstructorParameters<typeof pdf_view>[0], message => messages.push(message),
   () => loader() as unknown as Promise<typeof import('pdfjs-dist')>);
   const page = {
@@ -402,7 +413,9 @@ test('paged browsing, search jumps, zoom and dark mode survive PDF refresh', asy
   const load = h.view.load('modes');
   await next_turn(); h.tasks[0].resolve(h.document); await load;
   const button = (title: string) => h.elements.find(element => element.tag === 'button' && element.title === title)!;
-  button('Two pages').dispatch('click', {});
+  const mode = h.elements.find(element => element.tag === 'select' && element.title === 'Display mode')!;
+  mode.value = 'spread';
+  mode.dispatch('change', {});
   await next_turn();
   assert.equal(h.view.pane.dataset.pdfMode, 'spread');
   let canvases = h.view.pane.querySelectorAll('canvas');
@@ -411,7 +424,8 @@ test('paged browsing, search jumps, zoom and dark mode survive PDF refresh', asy
   await next_turn();
   assert.equal(h.view.pane.dataset.pdfPage, '7');
   assert.ok([...canvases].every(canvas => canvas.width === 0), 'the previous pair releases its bitmaps');
-  button('Single page').dispatch('click', {});
+  mode.value = 'single';
+  mode.dispatch('change', {});
   await next_turn();
   assert.equal(h.view.pane.querySelectorAll('canvas').length, 1);
   button('Dark mode').dispatch('click', {});
@@ -451,4 +465,150 @@ test('modifier wheel zoom coalesces rendering, clamps scale and leaves ordinary 
   const disposed = h.messages.length;
   await new Promise(resolve => setTimeout(resolve, 110));
   assert.equal(h.messages.length, disposed, 'a disposed reader cannot commit delayed zoom');
+});
+
+function input_event(values: Record<string, unknown>) {
+  return { defaultPrevented: false, stopped: false, ...values,
+    preventDefault() { this.defaultPrevented = true; }, stopPropagation() { this.stopped = true; } };
+}
+
+async function reading_harness(position: Partial<pdf_position> = {}) {
+  const h = await harness(position);
+  const load = h.view.load('navigation');
+  await next_turn(); h.tasks[0].resolve(h.document); await load; await next_turn();
+  const viewport = h.elements.find(item => item.className === 'pdf-viewport')!;
+  const key = (key: string) => {
+    const event = input_event({ key, target: viewport });
+    viewport.dispatch('keydown', event);
+    return event;
+  };
+  const wheel = (deltaY: number, values: Record<string, unknown> = {}) => {
+    const event = input_event({ deltaY, deltaX: 0, deltaMode: 0, ...values });
+    viewport.dispatch('wheel', event);
+    return event;
+  };
+  return { ...h, viewport, key, wheel };
+}
+
+test('arrow keys pan in every PDF mode, while PageUp and PageDown turn pages or spreads', async () => {
+  for (const mode of ['continuous', 'horizontal', 'single', 'spread'] as const) {
+    const h = await reading_harness({ mode, zoom: 2 });
+    const down = h.key('ArrowDown');
+    assert.equal(h.viewport.scrollTop, 70, mode);
+    assert.equal(down.defaultPrevented, true);
+    assert.equal(down.stopped, true);
+    h.key('ArrowRight');
+    assert.equal(h.viewport.scrollLeft, 70, mode);
+    assert.equal(h.view.pane.dataset.pdfPage, '1', 'panning does not directly turn pages');
+    h.key('ArrowUp'); h.key('ArrowLeft');
+    assert.equal(h.viewport.scrollTop, 0);
+    assert.equal(h.viewport.scrollLeft, 0);
+    h.key('PageDown'); await next_turn();
+    assert.equal(h.view.pane.dataset.pdfPage, mode === 'spread' ? '3' : '2', mode);
+    h.key('PageUp'); await next_turn();
+    assert.equal(h.view.pane.dataset.pdfPage, '1', mode);
+    h.view.dispose();
+  }
+});
+
+test('Shift+wheel pans horizontally in all modes, including pretranslated and line/page deltas', async () => {
+  for (const mode of ['continuous', 'horizontal', 'single', 'spread'] as const) {
+    const h = await reading_harness({ mode, zoom: 2 });
+    assert.equal(h.wheel(90, { shiftKey: true }).defaultPrevented, true);
+    assert.equal(h.viewport.scrollLeft, 90, mode);
+    h.wheel(0, { shiftKey: true, deltaX: 30 });
+    assert.equal(h.viewport.scrollLeft, 120);
+    h.wheel(2, { shiftKey: true, deltaMode: 1 });
+    assert.equal(h.viewport.scrollLeft, 152);
+    h.wheel(-1, { shiftKey: true, deltaMode: 2 });
+    assert.equal(h.viewport.scrollLeft, 0);
+    assert.equal(h.viewport.scrollTop, 0);
+    assert.equal(h.view.pane.dataset.pdfPage, '1');
+    h.view.dispose();
+  }
+});
+
+test('single and spread modes scroll to an edge before turning, and return to the previous bottom', async () => {
+  for (const mode of ['single', 'spread'] as const) {
+    const h = await reading_harness({ mode, zoom: 2 });
+    h.key('ArrowRight');
+    const bottom = h.viewport.scrollHeight - h.viewport.clientHeight;
+    h.viewport.scrollTop = bottom - 20;
+    h.key('ArrowDown');
+    assert.equal(h.viewport.scrollTop, bottom);
+    assert.equal(h.view.pane.dataset.pdfPage, '1');
+    h.key('ArrowDown'); await next_turn();
+    assert.equal(h.view.pane.dataset.pdfPage, mode === 'spread' ? '3' : '2');
+    assert.equal(h.viewport.scrollTop, 0);
+    assert.equal(h.viewport.scrollLeft, 70, 'page turns preserve horizontal panning');
+    h.key('ArrowUp'); await next_turn();
+    assert.equal(h.view.pane.dataset.pdfPage, '1');
+    assert.equal(h.viewport.scrollTop, bottom, 'reverse turns enter at the previous page bottom');
+    h.viewport.scrollTop = 0;
+    h.key('ArrowUp');
+    assert.equal(h.viewport.scrollTop, 0, 'the first page remains at its upper edge');
+    h.wheel(80);
+    assert.equal(h.viewport.scrollTop, 80, 'ordinary wheel pans tall pages');
+    h.viewport.scrollTop = bottom;
+    h.wheel(80); await next_turn();
+    assert.equal(h.view.pane.dataset.pdfPage, mode === 'spread' ? '3' : '2');
+    h.view.dispose();
+  }
+});
+
+test('wheel bursts do not skip fitted pages and document boundaries stay in place', async () => {
+  for (const mode of ['single', 'spread'] as const) {
+    const h = await reading_harness({ mode, zoom: 'page-fit' });
+    h.wheel(100); await next_turn();
+    const step = mode === 'spread' ? 2 : 1;
+    assert.equal(h.view.pane.dataset.pdfPage, String(1 + step));
+    h.set_time(100);
+    h.wheel(100); await next_turn();
+    assert.equal(h.view.pane.dataset.pdfPage, String(1 + step), 'trailing wheel event is coalesced');
+    h.set_time(350);
+    h.wheel(100); await next_turn();
+    assert.equal(h.view.pane.dataset.pdfPage, String(1 + 2 * step));
+    h.key('G'); await next_turn();
+    h.set_time(700);
+    h.wheel(100); h.key('PageDown'); await next_turn();
+    assert.equal(h.view.pane.dataset.pdfPage, '10', 'the final page/spread stays selected');
+    h.view.dispose();
+  }
+});
+
+test('horizontal scrolling tracks the current page, releases offscreen canvases and preserves zoom position', async () => {
+  const h = await reading_harness({ mode: 'horizontal', zoom: 2 });
+  const old_canvases = h.view.pane.querySelectorAll('canvas');
+  h.viewport.scrollLeft = 9 * (1200 + 12);
+  h.viewport.dispatch('scroll', {}); await next_turn();
+  assert.equal(h.view.pane.dataset.pdfPage, '10');
+  assert.ok([...old_canvases].every(canvas => canvas.width === 0));
+  assert.ok(h.view.pane.querySelectorAll('canvas').length <= 3);
+  h.key('ArrowDown');
+  assert.equal(h.view.pane.dataset.pdfPage, '10', 'vertical movement stays within the horizontal row');
+  h.key('PageUp'); await next_turn();
+  assert.equal(h.view.pane.dataset.pdfPage, '9');
+  assert.equal(h.viewport.scrollLeft, 8 * (1200 + 12));
+  h.key('ArrowRight');
+  const zoom = h.elements.find(item => item.tag === 'select' && item.title === 'Zoom')!;
+  zoom.value = '3'; zoom.dispatch('change', {}); await next_turn();
+  assert.ok(Math.abs(h.viewport.scrollLeft - (8 * (1800 + 12) + 105)) < 0.001);
+  assert.equal(h.viewport.scrollTop, 105, 'both pan offsets scale with zoom');
+  h.view.dispose();
+});
+
+test('PDF toolbar buttons allow reader navigation while inputs and dropdowns retain native keys', async () => {
+  const h = await reading_harness({ zoom: 2 });
+  const toolbar = h.elements.find(item => item.className.split(' ').includes('pdf-toolbar'))!;
+  const button = h.elements.find(item => item.title === 'Zoom in')!;
+  const arrow = input_event({ key: 'ArrowDown', target: button });
+  toolbar.dispatch('keydown', arrow);
+  assert.equal(h.viewport.scrollTop, 70);
+  for (const control of h.elements.filter(item => item.tag === 'input' || item.tag === 'select')) {
+    const event = input_event({ key: 'ArrowDown', target: control });
+    toolbar.dispatch('keydown', event);
+    assert.equal(event.defaultPrevented, false);
+    assert.equal(h.viewport.scrollTop, 70);
+  }
+  h.view.dispose();
 });

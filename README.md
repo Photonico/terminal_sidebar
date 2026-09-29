@@ -17,7 +17,7 @@ Requires VS Code **1.106+** on desktop or a remote extension host. No separate N
 
 ## Work beside your editor
 
-- Saving a document refreshes its preview, including saves from Vim. PDFs support scrolling, single/two-page layouts, zoom, and remembered reading positions.
+- Saving a document refreshes its preview, including saves from Vim. PDFs offer vertical/horizontal continuous scrolling and single/two-page layouts beside the zoom menu, with arrow-key navigation and remembered reading positions.
 - Markdown supports common syntax, task lists, footnotes, and KaTeX math. **Change preview font** defaults to **Default**; your choice follows VS Code Settings Sync.
 - Preview static HTML with local assets, or formatted CSS/JSON/JSONC source. HTML scripts and forms remain inactive.
 - **Cmd+F / Ctrl+F** searches terminal buffers and document text, with case, whole-word, regex, counts, and highlighting. Right-click the search button to search all open tabs on both sides. PDF search requires a text layer.
