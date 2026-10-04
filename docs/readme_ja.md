@@ -13,11 +13,12 @@ VS Code **1.106 以降**のデスクトップ版、またはリモート拡張�
 1. **Extensions: Install from VSIX…** から、拡張機能ホストの環境に合った VSIX をインストールします。[Marketplace](https://marketplace.visualstudio.com/items?itemName=ConAntares.terminal-sidebar) では公開済みのバージョンも入手できます。
 2. **Side Terminals** を開き、**+** でターミナルを作成します。矢印ボタンで反対側のビューを開けます。
 3. 歯車ボタンで起動時のターミナルを設定します。ターミナルを閉じても、その起動プロファイルは削除されません。
-4. エディターのタイトルバーにある **Preview in Sidebar Terminal** で PDF、Markdown、LaTeX、HTML、CSS、JSON、JSONC をプレビューできます。LaTeX はコンパイル済みの PDF を表示するため、先に普段のツールでビルドしてください。
+4. エディターのタイトルバーにある **Preview in Sidebar Terminal** で SVG、EPS、PostScript、PDF、Markdown、LaTeX、HTML、CSS、JSON、JSONC をプレビューできます。LaTeX はコンパイル済みの PDF を表示するため、先に普段のツールでビルドしてください。
 
 ## エディターと並べて使う
 
 - Vim などでドキュメントを保存すると、プレビューが自動更新されます。PDF はズームメニューの横で縦／横の連続スクロール、単ページ／見開きを選べ、矢印キーでの移動と閲覧位置の保存に対応しています。
+- SVG はベクター画像として表示し、拡大しても細部を保ちます。追加ソフトは不要です。EPS（`.eps`）と PostScript（`.ps`）は、ローカルまたはリモートの拡張機能ホストにインストールした **Ghostscript** で変換し、PDF ビューアーで表示します。自動検出できない場合は `terminalSidebar.ghostscriptPath` に実行ファイルの絶対パスを指定してください。変換には信頼済みワークスペースが必要で、元のファイルは変更しません。
 - Markdown は一般的な構文、タスクリスト、脚注、KaTeX 数式に対応しています。**Change preview font** の初期値は **Default**。フォントの選択は VS Code Settings Sync で同期できます。
 - HTML はローカルの画像やスタイルを使う静的ページとして表示し、CSS・JSON・JSONC はソースを整形して表示します。HTML のスクリプトやフォームは動作しません。
 - **Cmd+F / Ctrl+F** でターミナルのバッファとドキュメントの文字を検索できます。大文字と小文字の区別、単語単位の検索、正規表現、件数表示、ハイライトに対応しています。検索ボタンの右クリックで、両側の開いているタブをまとめて検索できます。PDF の検索にはテキスト層が必要です。

@@ -1,7 +1,7 @@
-export type document_format = 'html' | 'css' | 'json' | 'jsonc';
+export type document_format = 'html' | 'css' | 'json' | 'jsonc' | 'svg';
 export interface document_position { scroll: number }
 export interface document_source { text: string; base_url: string }
-export const document_extensions = ['html', 'htm', 'css', 'json', 'jsonc'] as const;
+export const document_extensions = ['html', 'htm', 'css', 'json', 'jsonc', 'svg'] as const;
 
 /** Document previews only read bounded text files on the connected extension host. */
 export function document_format_for_uri(value: unknown): document_format | undefined {
@@ -13,7 +13,7 @@ export function document_format_for_uri(value: unknown): document_format | undef
       || uri.search || uri.hash || /[\x00-\x1f\x7f]/.test(pathname)) return undefined;
     const extension = /\.([a-z]+)$/i.exec(pathname)?.[1].toLowerCase();
     return extension === 'html' || extension === 'htm' ? 'html'
-      : extension === 'css' || extension === 'json' || extension === 'jsonc' ? extension : undefined;
+      : extension === 'css' || extension === 'json' || extension === 'jsonc' || extension === 'svg' ? extension : undefined;
   } catch { return undefined; }
 }
 

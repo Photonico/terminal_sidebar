@@ -13,11 +13,12 @@ Requires VS Code **1.106+** on desktop or a remote extension host. No separate N
 1. Install a matching VSIX through **Extensions: Install from VSIX…**. [Marketplace](https://marketplace.visualstudio.com/items?itemName=ConAntares.terminal-sidebar) also lists published versions.
 2. Open **Side Terminals** and select **+** for a shell. The arrow button opens the other side bar.
 3. Select the gear to configure startup terminals. Closing a terminal keeps its startup profile.
-4. Use **Preview in Sidebar Terminal** in the editor title bar for PDF, Markdown, LaTeX, HTML, CSS, JSON, or JSONC. LaTeX opens an existing compiled PDF; build with your usual tools first.
+4. Use **Preview in Sidebar Terminal** in the editor title bar for SVG, EPS, PostScript, PDF, Markdown, LaTeX, HTML, CSS, JSON, or JSONC. LaTeX opens an existing compiled PDF; build with your usual tools first.
 
 ## Work beside your editor
 
 - Saving a document refreshes its preview, including saves from Vim. PDFs offer vertical/horizontal continuous scrolling and single/two-page layouts beside the zoom menu, with arrow-key navigation and remembered reading positions.
+- SVG previews retain vector detail when zooming and need no extra software. EPS (`.eps`) and PostScript (`.ps`) use the PDF viewer after conversion by **Ghostscript**, installed on the local or remote extension host. Set `terminalSidebar.ghostscriptPath` to its absolute executable path if automatic discovery fails. Conversion requires a trusted workspace and leaves the source unchanged.
 - Markdown supports common syntax, task lists, footnotes, and KaTeX math. **Change preview font** defaults to **Default**; your choice follows VS Code Settings Sync.
 - Preview static HTML with local assets, or formatted CSS/JSON/JSONC source. HTML scripts and forms remain inactive.
 - **Cmd+F / Ctrl+F** searches terminal buffers and document text, with case, whole-word, regex, counts, and highlighting. Right-click the search button to search all open tabs on both sides. PDF search requires a text layer.

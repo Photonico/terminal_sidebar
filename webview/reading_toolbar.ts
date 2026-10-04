@@ -18,9 +18,11 @@ export class reading_toolbar {
   private readonly zoom_select = document.createElement('select');
   private custom_zoom?: HTMLOptionElement;
   private zoom = 1;
+  private readonly minimum_zoom: number;
   private disposed = false;
 
   constructor(format: string, private readonly callbacks: reading_callbacks, actions: reading_action[]) {
+    this.minimum_zoom = format === 'svg' ? 0.01 : 0.25;
     this.root.className = 'reading-toolbar preview-toolbar';
     this.root.setAttribute('role', 'toolbar');
     this.root.setAttribute('aria-label', `${format.toUpperCase()} navigation`);
@@ -110,13 +112,14 @@ export class reading_toolbar {
   }
 
   private change_zoom(direction: -1 | 0 | 1): void {
-    this.set_zoom(direction === 0 ? 1 : Math.round(this.zoom * (direction > 0 ? 1.2 : 1 / 1.2) * 100) / 100);
+    const precision = this.minimum_zoom < 0.25 ? 1000 : 100;
+    this.set_zoom(direction === 0 ? 1 : Math.round(this.zoom * (direction > 0 ? 1.2 : 1 / 1.2) * precision) / precision);
   }
 
-  private set_zoom(value: number): void {
+  set_zoom(value: number): void {
     if (this.disposed || !Number.isFinite(value)) return;
     const previous = this.zoom;
-    this.zoom = Math.max(0.25, Math.min(4, value));
+    this.zoom = Math.max(this.minimum_zoom, Math.min(4, value));
     this.custom_zoom?.remove(); this.custom_zoom = undefined;
     const selected = String(this.zoom);
     if (![...this.zoom_select.options].some(option => option.value === selected)) {

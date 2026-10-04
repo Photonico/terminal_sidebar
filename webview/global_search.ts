@@ -108,6 +108,7 @@ export class global_search {
         return entry.text;
       }
       if (source.kind === 'document') {
+        if (source.format === 'svg') return '';
         if (source.format === 'html') {
           const html = new DOMParser().parseFromString(prepare_html({ text: source.text, base_url: 'https://invalid.local/' }), 'text/html');
           return html_search_text(html.body);

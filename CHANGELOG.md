@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.13.0 — Development
+
+- Preview SVG files as vector images with zoom, scrolling, and automatic refresh after saving.
+- Preview EPS and PostScript files through the PDF viewer using Ghostscript installed on the extension host. Add the machine setting `terminalSidebar.ghostscriptPath` for a custom executable; conversion requires a trusted workspace and leaves the source unchanged.
+
 ## 0.12.0 — Pre-release
 
 - Add horizontal continuous PDF scrolling and place all four display modes in a dropdown beside zoom; keep dark reading in the gear menu and match navigation arrows to the scroll direction.

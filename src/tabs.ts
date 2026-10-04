@@ -4,7 +4,7 @@ import { copy_tab_marker, is_tab_marker, type tab_marker } from './tab_marker';
 import { is_pdf_tab, is_markdown_tab, is_document_tab, is_terminal_tab, type terminal_profile, type terminal_tab, type sidebar_tab, type pdf_tab, type markdown_tab, type document_tab } from './types';
 import { document_format_for_uri, is_document_position, type document_format, type document_position } from './document_state';
 import { is_markdown_uri, is_markdown_position, type markdown_position } from './markdown_state';
-import { is_pdf_uri, is_pdf_source_uri, is_pdf_position, copy_pdf_position, type pdf_position } from './pdf_state';
+import { is_pdf_preview_uri, is_pdf_source_uri, is_pdf_position, copy_pdf_position, type pdf_position } from './pdf_state';
 
 export interface remembered_tab {
   id: string;
@@ -66,7 +66,7 @@ function read_memory(value: unknown): tab_memory {
     if ([pdf, markdown, document].filter(value => value !== undefined).length > 1) continue;
     if (pdf !== undefined) {
       const uri = pdf && typeof pdf === 'object' && 'uri' in pdf ? pdf.uri : undefined;
-      if (profile_id !== undefined || markdown !== undefined || !is_pdf_position(pdf) || !is_pdf_uri(uri)) continue;
+      if (profile_id !== undefined || markdown !== undefined || !is_pdf_position(pdf) || !is_pdf_preview_uri(uri)) continue;
       descriptor.pdf = { uri, ...copy_pdf_position(pdf) };
       const source_uri = 'source_uri' in pdf ? pdf.source_uri : undefined;
       if (is_pdf_source_uri(source_uri, uri)) descriptor.pdf.source_uri = source_uri;
@@ -226,7 +226,7 @@ export class sidebar_tabs {
   }
 
   open_pdf(uri: string, name: string, source_uri?: string): pdf_tab {
-    if (!is_pdf_uri(uri) || !is_tab_name(name)) throw new Error('Choose a local PDF file.');
+    if (!is_pdf_preview_uri(uri) || !is_tab_name(name)) throw new Error('Choose a local PDF, EPS or PS file.');
     let tab = this.current_tabs.find((item): item is pdf_tab => is_pdf_tab(item) && item.uri === uri);
     if (!tab) {
       this.assert_capacity();
@@ -265,7 +265,7 @@ export class sidebar_tabs {
 
   open_document(uri: string, name: string): document_tab {
     const format = document_format_for_uri(uri);
-    if (!format || !is_tab_name(name)) throw new Error('Choose an HTML, CSS, JSON or JSONC file.');
+    if (!format || !is_tab_name(name)) throw new Error('Choose an HTML, CSS, JSON or JSONC file, or an SVG image.');
     let tab = this.current_tabs.find((item): item is document_tab => is_document_tab(item) && item.uri === uri);
     if (!tab) {
       this.assert_capacity();

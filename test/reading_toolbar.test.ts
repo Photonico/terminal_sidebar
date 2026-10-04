@@ -83,6 +83,18 @@ test('reader zoom shortcuts leave ordinary typing and scrolling alone and clamp 
   } finally { h.close(); }
 });
 
+test('SVG fit can go below text-reader zoom limits and still zoom in from one percent', async () => {
+  const h = await fixture('svg');
+  try {
+    h.toolbar.set_zoom(0.001);
+    assert.equal(h.zooms.at(-1), 0.01);
+    h.control('Zoom in').click();
+    assert.equal(h.zooms.at(-1), 0.012);
+    h.control('Actual size (100%)').click();
+    assert.equal(h.zooms.at(-1), 1);
+  } finally { h.close(); }
+});
+
 test('outline follows current document headings and preserves zoom after a refresh', async () => {
   const h = await fixture('html');
   try {

@@ -13,11 +13,12 @@
 1. 通过 **Extensions: Install from VSIX…** 安装与扩展宿主平台匹配的 VSIX。[扩展商店](https://marketplace.visualstudio.com/items?itemName=ConAntares.terminal-sidebar)也提供已发布的版本。
 2. 打开 **Side Terminals**，点击 **+** 创建终端。箭头按钮可以打开另一侧的终端视图。
 3. 点击齿轮配置启动终端。关闭终端不会删除对应的启动配置。
-4. 点击主编辑器标题栏的 **Preview in Sidebar Terminal**，预览 PDF、Markdown、LaTeX、HTML、CSS、JSON 或 JSONC。LaTeX 使用已有的编译结果，请先用惯用工具生成 PDF。
+4. 点击主编辑器标题栏的 **Preview in Sidebar Terminal**，预览 SVG、EPS、PostScript、PDF、Markdown、LaTeX、HTML、CSS、JSON 或 JSONC。LaTeX 使用已有的编译结果，请先用惯用工具生成 PDF。
 
 ## 配合你的编辑器
 
 - 用 Vim 等编辑器保存文档后，预览会自动刷新。PDF 可在缩放菜单旁选择垂直／水平连续滚动、单页／双页模式，支持方向键导航及阅读位置记忆。
+- SVG 以矢量图显示，放大保留细节，无需额外软件。EPS（`.eps`）和 PostScript（`.ps`）由本地或远程扩展宿主上的 **Ghostscript** 转换后，使用 PDF 阅读器显示。请在扩展宿主安装 Ghostscript；自动检测不到时，可用 `terminalSidebar.ghostscriptPath` 指定可执行程序的绝对路径。转换需要受信任的工作区，且不改写源文件。
 - Markdown 支持常用语法、任务列表、脚注和 KaTeX 公式。**Change preview font** 默认为 **Default**；字体选择可随 VS Code Settings Sync 同步。
 - HTML 以静态网页呈现，可加载本地资源；CSS、JSON、JSONC 显示格式化源码。HTML 中的脚本和表单不运行。
 - 按 **Cmd+F / Ctrl+F** 搜索终端缓冲区和文档文字，支持区分大小写、全字匹配、正则表达式、结果计数和高亮。右键查找按钮可搜索两侧所有已打开的标签。PDF 搜索需要文本层。

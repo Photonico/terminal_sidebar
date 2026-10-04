@@ -29,6 +29,8 @@ async function fixture(format: document_tab['format'] = 'html', fetcher: typeof 
   const dom = new JSDOM('<!doctype html><head><meta name="pdf-assets" content="https://assets.local/dist/pdfjs"></head><body></body>', { url: base_url });
   const documents: JSDOM[] = [];
   const workers: worker_fixture[] = [];
+  const blobs = new Map<string, Blob>();
+  const revoked: string[] = [];
   const messages: client_message[] = [];
   let find_calls = 0;
   const module = { exports: {} as view_api };
@@ -37,7 +39,13 @@ async function fixture(format: document_tab['format'] = 'html', fetcher: typeof 
     DOMParser: dom.window.DOMParser, NodeFilter: dom.window.NodeFilter,
     AbortController: dom.window.AbortController, AbortSignal: dom.window.AbortSignal,
     DOMException: dom.window.DOMException, FocusEvent: dom.window.FocusEvent,
-    TextEncoder, TextDecoder, URL, Blob, Response, Headers, setTimeout, clearTimeout,
+    TextEncoder, TextDecoder, URL: class extends URL {
+      static createObjectURL(blob: Blob): string {
+        const url = `blob:preview-${blobs.size + 1}`;
+        blobs.set(url, blob); return url;
+      }
+      static revokeObjectURL(url: string): void { revoked.push(url); }
+    }, Blob, Response, Headers, setTimeout, clearTimeout,
     btoa: dom.window.btoa.bind(dom.window), fetch: fetcher,
     Worker: class extends worker_fixture { constructor() { super(); workers.push(this); } },
   });
@@ -65,7 +73,11 @@ async function fixture(format: document_tab['format'] = 'html', fetcher: typeof 
     frame.dispatchEvent(new dom.window.Event('load'));
     return inner;
   };
-  return { dom, view, viewport, complete, workers, messages, finds: () => find_calls,
+  const complete_svg = (image: HTMLImageElement, width = 800, height = 400) => {
+    Object.defineProperties(image, { naturalWidth: { value: width }, naturalHeight: { value: height } });
+    image.dispatchEvent(new dom.window.Event('load'));
+  };
+  return { dom, view, viewport, complete, complete_svg, workers, blobs, revoked, messages, finds: () => find_calls,
     close() { view.dispose(); for (const document of documents) document.window.close(); dom.window.close(); },
   };
 }
@@ -314,5 +326,124 @@ test('HTML links scroll to ids, named anchors and the top, and send only externa
     assert.deepEqual(h.messages.filter(message => message.type === 'open_document_link')
       .map(message => (message as { href: string }).href), ['https://example.com/paper', 'chapter.html#intro'],
     'A missing fragment is ignored rather than opening the source file');
+  } finally { h.close(); }
+});
+
+const vector = (label: string) => `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="400" viewBox="0 0 800 400"><text>${label}</text></svg>`;
+
+test('SVG uses an image context with original vector content, fits initially and keeps zoom when refreshed', async () => {
+  const h = await fixture('svg');
+  try {
+    Object.defineProperties(h.viewport, { clientWidth: { value: 424 }, clientHeight: { value: 424 } });
+    const original = vector('Vector text');
+    const loading = h.view.load(source(original));
+    const image = h.viewport.querySelector('img')!;
+    const url = image.src;
+    assert.equal(await h.blobs.get(url)!.text(), original);
+    assert.equal(h.blobs.get(url)!.type, 'image/svg+xml;charset=utf-8');
+    assert.equal(h.viewport.querySelector('svg, iframe, object, code'), null);
+    assert.equal(h.workers.length, 0);
+    h.complete_svg(image);
+    await loading;
+    assert.equal(image.hidden, false);
+    assert.equal(image.style.width, '400px');
+    assert.equal(image.style.height, '200px');
+    assert.equal(h.view.pane.querySelector<HTMLSelectElement>('[aria-label="Zoom"]')!.value, '0.5');
+    h.view.pane.querySelector<HTMLButtonElement>('[title="Actual size (100%)"]')!.click();
+    assert.equal(image.style.width, '800px');
+    const reload = h.view.load(source(vector('Updated')));
+    const replacement = [...h.viewport.querySelectorAll('img')].find(value => value !== image)!;
+    h.complete_svg(replacement);
+    await reload;
+    assert.equal(replacement.style.width, '800px');
+    assert.equal(h.revoked.includes(url), true);
+    h.view.pane.querySelector<HTMLButtonElement>('[title="Fit image"]')!.click();
+    assert.equal(replacement.style.width, '400px');
+    h.view.dispose();
+    assert.deepEqual(h.revoked, [...h.blobs.keys()]);
+  } finally { h.close(); }
+});
+
+test('SVG parse and image-load failures retain the last good preview', async () => {
+  const h = await fixture('svg');
+  try {
+    const loading = h.view.load(source(vector('Good')));
+    const good = h.viewport.querySelector('img')!;
+    h.complete_svg(good);
+    await loading;
+    await h.view.load(source('<svg xmlns="http://www.w3.org/2000/svg"><broken></svg>'));
+    assert.equal(h.viewport.querySelector('img'), good);
+    assert.equal(h.blobs.size, 1);
+    assert.match(h.view.pane.querySelector('.document-notice')!.textContent!, /could not be parsed/);
+    const failing = h.view.load(source(vector('Broken image')));
+    const broken = [...h.viewport.querySelectorAll('img')].find(value => value !== good)!;
+    const broken_url = broken.src;
+    broken.dispatchEvent(new h.dom.window.Event('error'));
+    await failing;
+    assert.equal(h.viewport.querySelector('img'), good);
+    assert.equal(h.revoked.includes(broken_url), true);
+    assert.equal(h.revoked.includes(good.src), false);
+    assert.match(h.view.pane.querySelector('.document-notice')!.textContent!, /could not be rendered/);
+  } finally { h.close(); }
+});
+
+test('SVG loads are cancelled on replacement, hiding and disposal without stale image or Blob leaks', async () => {
+  const h = await fixture('svg');
+  try {
+    const first_load = h.view.load(source(vector('Stale')));
+    const first = h.viewport.querySelector('img')!;
+    const next_load = h.view.load(source(vector('Current')));
+    const current = h.viewport.querySelector('img')!;
+    assert.notEqual(first, current);
+    await first_load;
+    h.complete_svg(first);
+    assert.equal(first.isConnected, false);
+    h.view.set_visible(false);
+    await next_load;
+    assert.equal(current.isConnected, false);
+    await h.view.load(source(vector('Latest hidden save')));
+    assert.equal(h.viewport.querySelector('img'), null);
+    h.view.set_visible(true);
+    const latest = h.viewport.querySelector('img')!;
+    assert.match(await h.blobs.get(latest.src)!.text(), /Latest hidden save/);
+    h.complete_svg(latest);
+    await next_turn();
+    assert.equal(latest.hidden, false);
+    const disposed = h.view.load(source(vector('Disposed')));
+    h.view.dispose();
+    await disposed;
+    assert.equal(h.view.pane.isConnected, false);
+    assert.equal(new Set(h.revoked).size, h.blobs.size);
+    assert.equal(h.revoked.length, h.blobs.size, 'Every URL is revoked exactly once');
+  } finally { h.close(); }
+});
+
+test('SVG arrows, page keys and Shift-wheel pan the image and Ctrl-F does not search XML', async () => {
+  const h = await fixture('svg');
+  try {
+    const moves: ScrollToOptions[] = [];
+    h.viewport.scrollBy = ((options: ScrollToOptions) => { moves.push(options); }) as HTMLElement['scrollBy'];
+    Object.defineProperties(h.viewport, { clientWidth: { value: 400 }, clientHeight: { value: 300 } });
+    const loading = h.view.load(source(vector('Visible image text')));
+    h.complete_svg(h.viewport.querySelector('img')!);
+    await loading;
+    for (const key of ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown']) {
+      const event = new h.dom.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+      h.viewport.dispatchEvent(event);
+      assert.equal(event.defaultPrevented, true);
+    }
+    for (const init of [{ deltaY: 50 }, { deltaY: 60, shiftKey: true }, { deltaX: 70, shiftKey: true },
+      { deltaY: 1, shiftKey: true, deltaMode: 2 }]) {
+      const event = new h.dom.window.WheelEvent('wheel', { ...init, cancelable: true });
+      h.viewport.dispatchEvent(event);
+      assert.equal(event.defaultPrevented, true);
+    }
+    assert.deepEqual(moves.map(value => ({ top: value.top ?? 0, left: value.left ?? 0 })), [
+      { top: -48, left: 0 }, { top: 48, left: 0 }, { top: 0, left: -48 }, { top: 0, left: 48 },
+      { top: -300, left: 0 }, { top: 300, left: 0 }, { top: 50, left: 0 },
+      { top: 0, left: 60 }, { top: 0, left: 70 }, { top: 0, left: 400 },
+    ]);
+    h.viewport.dispatchEvent(new h.dom.window.KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true, cancelable: true }));
+    assert.equal(h.finds(), 0);
   } finally { h.close(); }
 });

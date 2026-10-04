@@ -3,7 +3,7 @@ import test from 'node:test';
 import { sidebar_tabs } from '../src/tabs';
 import { is_pdf_tab, is_markdown_tab, is_terminal_tab } from '../src/types';
 import { is_client_message } from '../src/profiles';
-import { is_pdf_uri, is_pdf_source_uri, is_pdf_position } from '../src/pdf_state';
+import { is_pdf_uri, is_pdf_preview_uri, is_pdf_source_uri, is_pdf_position } from '../src/pdf_state';
 
 test('mixed document and terminal tabs restore order, reading position and markers without launch data', () => {
   const profiles = [{ id: 'vim', name: 'Vim', command: 'vim', shell: '' }];
@@ -124,4 +124,23 @@ test('PDF browser preferences survive restart and reject malformed state', () =>
   for (const bad of [{ mode: 'book' }, { dark: 'false' }, { mode: null }]) {
     assert.equal(is_client_message({ type: 'pdf_position', id: pdf.id, position: { page: 1, zoom: 1, ...bad } }), false);
   }
+});
+
+test('vector previews restore original source identity, share capacity and keep TeX associations PDF-only', () => {
+  const model = new sidebar_tabs([]);
+  for (const uri of ['file:///work/figure.EPS', 'vscode-remote://ssh-remote+host/work/paper.ps']) {
+    assert.equal(is_pdf_uri(uri), false);
+    assert.equal(is_pdf_preview_uri(uri), true);
+    const tab = model.open_pdf(uri, 'Vector', 'file:///work/figure.tex');
+    assert.equal(tab.source_uri, undefined);
+    model.set_pdf_position(tab.id, { page: 2, zoom: 'page-fit', dark: true });
+    assert.equal(model.open_pdf(uri, 'Again').id, tab.id);
+  }
+  const svg = model.open_document('file:///work/icon.svg', 'SVG');
+  model.set_document_position(svg.id, { scroll: 42 });
+  const restored = new sidebar_tabs([], model.remember());
+  assert.deepEqual(restored.tabs, model.tabs);
+  assert.ok(restored.tabs.every(tab => !is_terminal_tab(tab)));
+  for (let index = 0; index < 5; index++) model.open_pdf(`file:///work/figure${index}.eps`, 'EPS');
+  assert.throws(() => model.open_document('file:///extra.svg', 'Extra'), /maximum 8/);
 });

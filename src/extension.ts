@@ -14,7 +14,9 @@ import { discover_shells } from './discovery';
 import { session_manager, type session_launch } from './sessions';
 import { sidebar_tabs } from './tabs';
 import { pdf_watch } from './pdf_watch';
-import { is_pdf_uri } from './pdf_state';
+import { postscript_watch } from './postscript_watch';
+import { postscript_format_for_uri } from './vector_state';
+import { is_pdf_uri, is_pdf_preview_uri } from './pdf_state';
 import { is_pdf_tab, is_markdown_tab, is_document_tab, is_terminal_tab } from './types';
 import { text_document_watch } from './text_document_watch';
 import { is_markdown_link } from './markdown_state';
@@ -64,7 +66,8 @@ class sidebar_view implements vscode.WebviewViewProvider, vscode.Disposable {
   readonly history = new Map<string, string>();
   readonly pending_output = new Map<string, string>();
   readonly sessions: session_manager;
-  readonly pdfs = new Map<string, pdf_watch>();
+  readonly pdfs = new Map<string, pdf_watch | postscript_watch>();
+  readonly converted_pdfs = new Map<string, vscode.Uri>();
   readonly documents = new Map<string, text_document_watch>();
   private readonly subscriptions: vscode.Disposable[] = [];
 
@@ -173,6 +176,7 @@ class sidebar_view implements vscode.WebviewViewProvider, vscode.Disposable {
     this.sessions.dispose();
     for (const pdf of this.pdfs.values()) pdf.dispose();
     this.pdfs.clear();
+    this.converted_pdfs.clear();
     for (const document of this.documents.values()) document.dispose();
     this.documents.clear();
     this.history.clear();
@@ -208,6 +212,8 @@ class terminal_sidebar implements vscode.Disposable {
     };
     this.global_search = new global_search_host({
       view: side => this.views[side], tabs: side => this.ensure_layout(this.views[side]).tabs,
+      pdf_uri: (side, tab) => postscript_format_for_uri(tab.uri)
+        ? this.views[side].converted_pdfs.get(tab.id) : vscode.Uri.parse(tab.uri),
       reveal: async (side, id) => {
         const view = this.views[side];
         const layout = this.ensure_layout(view);
@@ -224,6 +230,17 @@ class terminal_sidebar implements vscode.Disposable {
     void this.refresh_shells();
     context.subscriptions.push(
       vscode.workspace.onDidChangeConfiguration(event => {
+        if (event.affectsConfiguration('terminalSidebar.ghostscriptPath')) {
+          for (const view of Object.values(this.views)) {
+            for (const tab of view.tab_layout?.tabs ?? []) {
+              if (!is_pdf_tab(tab) || !postscript_format_for_uri(tab.uri)) continue;
+              view.pdfs.get(tab.id)?.dispose();
+              view.pdfs.delete(tab.id);
+              view.converted_pdfs.delete(tab.id);
+              this.load_pdf(view, tab.id);
+            }
+          }
+        }
         if (event.affectsConfiguration('terminalSidebar.sidebars')
           || event.affectsConfiguration('terminalSidebar.profiles')) {
           this.reload_configuration();
@@ -346,10 +363,18 @@ class terminal_sidebar implements vscode.Disposable {
       if (!is_terminal_tab(tab)) {
         // VS Code accepts descendants of roots, not a root file itself.
         roots.push(vscode.Uri.joinPath(vscode.Uri.parse(tab.uri), '..'));
+        if (is_pdf_tab(tab) && postscript_format_for_uri(tab.uri)) {
+          roots.push(this.vector_cache_uri(vscode.Uri.parse(tab.uri)));
+        }
       }
     }
     return [...new Map(roots.map(uri => [uri.toString(), uri])).entries()]
       .sort(([left], [right]) => left.localeCompare(right)).map(([, uri]) => uri);
+  }
+
+  private vector_cache_uri(source: vscode.Uri): vscode.Uri {
+    const cache = vscode.Uri.joinPath(this.context.globalStorageUri, 'vector-previews');
+    return source.scheme === 'vscode-remote' ? source.with({ path: cache.path }) : cache;
   }
 
   /** Start each open tab once, on first use of its sidebar, after Workspace Trust. */
@@ -475,7 +500,7 @@ class terminal_sidebar implements vscode.Disposable {
     }
     if (!uri) return;
     if (!accepts(uri)) {
-      view.error('Choose a PDF, Markdown, LaTeX, HTML, CSS, JSON or JSONC file on the local or connected remote filesystem.');
+      view.error('Choose a PDF, SVG, EPS, PS, Markdown, LaTeX, HTML, CSS, JSON or JSONC file on the local or connected remote filesystem.');
       return;
     }
     try {
@@ -502,7 +527,7 @@ class terminal_sidebar implements vscode.Disposable {
         }
         return;
       }
-      if (format === 'pdf') { await this.open_pdf(uri, side); return; }
+      if (format === 'pdf' || format === 'eps' || format === 'ps') { await this.open_pdf(uri, side); return; }
       const layout = this.ensure_layout(view);
       const name = path.basename(uri.fsPath).slice(0, 80);
       const tab = format === 'markdown' ? layout.open_markdown(uri.toString(), name) : layout.open_document(uri.toString(), name);
@@ -551,7 +576,7 @@ class terminal_sidebar implements vscode.Disposable {
 
   private async reverse_pdf_sync(view: sidebar_view, uri: string, position: Extract<client_message, { type: 'pdf_reverse_sync' }>): Promise<void> {
     const tab = view.tab_layout?.tabs.find(tab => tab.id === position.id);
-    if (!tab || !is_pdf_tab(tab) || tab.uri !== uri) return;
+    if (!tab || !is_pdf_tab(tab) || tab.uri !== uri || !is_pdf_uri(uri)) return;
     const key = `${view.side}:synctex`;
     if (this.pending_terminal_actions.has(key)) return;
     this.pending_terminal_actions.add(key);
@@ -588,8 +613,8 @@ class terminal_sidebar implements vscode.Disposable {
       }))?.[0];
     }
     if (!uri) return;
-    if (!is_pdf_uri(uri.toString())) {
-      this.views[side].error('Choose a PDF on the local or connected remote filesystem.');
+    if (!is_pdf_preview_uri(uri.toString())) {
+      this.views[side].error('Choose a PDF, EPS or PS file on the local or connected remote filesystem.');
       return;
     }
     const view = this.views[side];
@@ -607,12 +632,23 @@ class terminal_sidebar implements vscode.Disposable {
     let watcher = view.pdfs.get(id);
     if (!watcher) {
       const uri = vscode.Uri.parse(tab.uri);
-      watcher = new pdf_watch(uri, () => {
+      const changed = (source: vscode.Uri) => {
         const webview = view.view?.webview;
         if (!webview || !view.tab_layout?.tabs.some(tab => tab.id === id)) return;
-        const url = webview.asWebviewUri(uri).with({ query: `revision=${Date.now()}` }).toString();
+        const url = webview.asWebviewUri(source).with({ query: `revision=${Date.now()}` }).toString();
         view.post({ type: 'pdf_source', id, url });
-      }, message => view.post({ type: 'pdf_error', id, message }));
+      };
+      const unavailable = (message: string) => view.post({ type: 'pdf_error' as const, id, message });
+      if (postscript_format_for_uri(tab.uri)) {
+        watcher = new postscript_watch(uri, this.vector_cache_uri(uri).fsPath, pdf_path => {
+          const local = vscode.Uri.file(pdf_path);
+          const converted = uri.scheme === 'vscode-remote' ? uri.with({ path: local.path }) : local;
+          view.converted_pdfs.set(id, converted);
+          changed(converted);
+        }, unavailable, {
+          executable: vscode.workspace.getConfiguration('terminalSidebar', uri).get<string>('ghostscriptPath', ''),
+        });
+      } else watcher = new pdf_watch(uri, () => changed(uri), unavailable);
       view.pdfs.set(id, watcher);
     }
     watcher.refresh();
@@ -967,6 +1003,7 @@ class terminal_sidebar implements vscode.Disposable {
     view.sessions.remove(id);
     view.pdfs.get(id)?.dispose();
     view.pdfs.delete(id);
+    view.converted_pdfs.delete(id);
     view.documents.get(id)?.dispose();
     view.documents.delete(id);
     view.history.delete(id);

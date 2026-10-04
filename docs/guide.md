@@ -12,7 +12,11 @@ Right-click a terminal tab for rename, marker, restart, close, and export action
 
 ## Document previews
 
-Use **Terminal Sidebar: Preview in Sidebar Terminal**, the preview icon in the editor title toolbar, or the document's context menu. Documents share tab ordering, markers, and the Primary Side Bar's folding layout with terminals. Opening a preview never adds a shell startup profile.
+Use **Terminal Sidebar: Preview in Sidebar Terminal**, the preview icon in the editor title toolbar, or the document's context menu. Supported formats include SVG, EPS, PostScript, PDF, Markdown, LaTeX, HTML, CSS, JSON, and JSONC. Documents share tab ordering, markers, and the Primary Side Bar's folding layout with terminals. Opening a preview never adds a shell startup profile.
+
+SVG (`.svg`) renders directly as a vector image, with scrolling, zoom, and automatic refresh on save. It needs no additional software. SVG is an image preview; its labels are not part of document text search.
+
+EPS (`.eps`) and PostScript (`.ps`) are converted to PDF for the existing PDF viewer. Install **Ghostscript** on the machine running the extension host; for SSH, containers, or WSL, this means the remote environment. The extension discovers an installed executable automatically. If needed, set `terminalSidebar.ghostscriptPath` in User or Remote settings to its absolute path, without arguments. The setting is machine-specific. Conversion requires a trusted workspace, refreshes after source saves, and leaves the original file unchanged. **Save a copy…** copies that original EPS or PostScript file.
 
 Markdown supports ordinary CommonMark/GFM syntax, including tables, task lists, strikethrough, fenced code, links, and local images, plus footnotes and KaTeX math (`$…$`, `$$…$$`, `\(…\)`, `\[…\]`, and fenced `math`). Raw HTML appears as text. Unsupported or oversized formulas remain readable as source; this is not a full LaTeX compiler or a renderer for every Markdown extension.
 

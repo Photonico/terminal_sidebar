@@ -45,13 +45,15 @@ const bundled_host = build({
   plugins: [{
     name: 'host-test-operating-system-boundaries',
     setup(builder) {
-      builder.onResolve({ filter: /^\.\/(discovery|shell|latex_preview)$/ }, arguments_object => ({
+      builder.onResolve({ filter: /^\.\/(discovery|shell|latex_preview|postscript_preview)$/ }, arguments_object => ({
         path: arguments_object.path,
         namespace: 'host-test',
       }));
       builder.onLoad({ filter: /.*/, namespace: 'host-test' }, arguments_object => ({
         contents: arguments_object.path === './latex_preview'
           ? 'exports.reverse_sync = (...args) => globalThis.test_reverse_sync(...args); exports.resolve_latex_pdf = (...args) => globalThis.test_latex_pdf(...args);'
+          : arguments_object.path === './postscript_preview'
+          ? 'exports.convert_postscript = (...args) => globalThis.test_postscript(...args);'
           : arguments_object.path === './discovery'
           ? 'exports.discover_shells = async () => [];'
           : 'exports.resolve_shell = (_selection, options) => ({ file: "test-shell", args: [], env: options.env });',
@@ -237,6 +239,8 @@ interface harness_options {
   open_destination?: string;
   reverse_sync?: (...args: unknown[]) => Promise<synctex_location>;
   latex_pdf?: (...args: unknown[]) => Promise<latex_pdf_candidates>;
+  postscript?: (source: string, cache: string, options: { executable?: string; signal?: AbortSignal })
+    => Promise<{ pdf_path: string; dispose(): Promise<void> }>;
   workspace_uri?: { scheme: string; fsPath: string; with(change: { path: string }): unknown };
 }
 
@@ -392,6 +396,7 @@ async function harness(options: harness_options = {}) {
     URL,
     TextEncoder,
     TextDecoder,
+    AbortController,
     test_reverse_sync: async (...args: unknown[]) => {
       sync_calls.push(args);
       if (!options.reverse_sync) throw new Error('No SyncTeX fixture configured.');
@@ -399,6 +404,7 @@ async function harness(options: harness_options = {}) {
     },
     test_latex_pdf: async (...args: unknown[]) => options.latex_pdf
       ? options.latex_pdf(...args) : { root_uri: String(args[0]), pdf_uris: [] },
+    test_postscript: options.postscript ?? (() => { throw new Error('No PostScript fixture configured.'); }),
     process,
     setTimeout,
     clearTimeout,
@@ -1951,6 +1957,120 @@ test('document global search snapshots carry their format and links reuse previe
   await right.send({ type: 'open_document_link', id: tab.id, href: uri.toString() });
   assert.deepEqual(runtime.opened_files, [uri.fsPath], 'the source button opens the current source in the editor');
   assert.equal(runtime.processes.length, 0);
+});
+
+test('SVG previews load source images, keep source-copy behavior and stay out of text search', async test_case => {
+  const files = preview_fixture(test_case);
+  const uri = fake_uri.file(path.join(files.directory, 'figure.svg'));
+  const destination = path.join(files.directory, 'figure-copy.svg');
+  const text = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="40"/></svg>';
+  writeFileSync(uri.fsPath, text);
+  const runtime = await harness({ configuration: { left: [], right: [] }, save_destination: destination });
+  test_case.after(() => runtime.dispose());
+  const view = await runtime.view('right');
+  await runtime.command('terminalSidebar.openPreview', uri);
+  const tab = view.state().tabs.find(is_document_tab)!;
+  assert.equal(tab.format, 'svg');
+  await view.send({ type: 'load_document', id: tab.id });
+  await wait_for(() => view.messages.some(message => message.type === 'document_source'), 'SVG source arrives');
+  const source = view.messages.find(message => message.type === 'document_source');
+  assert.ok(source?.type === 'document_source');
+  assert.equal(source.source.text, text);
+  await view.send({ type: 'search_catalog', request: 'vector_catalog' });
+  const catalog = view.messages.find(message => message.type === 'search_catalog');
+  assert.ok(catalog?.type === 'search_catalog' && !catalog.tabs.some(item => item.id === tab.id));
+  await view.send({ type: 'open_document_link', id: tab.id, href: uri.toString() });
+  assert.deepEqual(runtime.opened_files, [uri.fsPath]);
+  await view.send({ type: 'save_document', id: tab.id });
+  assert.deepEqual(runtime.copied_files, [{ source: uri.toString(), target: fake_uri.file(destination).toString(), overwrite: true }]);
+  assert.equal(runtime.processes.length, 0);
+});
+
+test('EPS and PS previews convert original files, search the cached PDF and retain originals across restore', async test_case => {
+  const files = preview_fixture(test_case);
+  const conversions: Array<{ source: string; cache: string; executable?: string }> = [];
+  let cleanups = 0;
+  const runtime = await harness({ configuration: { left: [], right: [] },
+    save_destination: path.join(files.directory, 'saved.eps'),
+    settings: { 'terminalSidebar.ghostscriptPath': '/configured/gs' },
+    postscript: async (source, cache, options) => {
+      conversions.push({ source, cache, executable: options.executable });
+      const pdf_path = path.join(cache, `result-${conversions.length}.pdf`);
+      return { pdf_path, dispose: async () => { cleanups++; } };
+    },
+  });
+  test_case.after(() => runtime.dispose());
+  const left = await runtime.view('left');
+  const right = await runtime.view('right');
+  for (const extension of ['eps', 'ps']) {
+    const uri = fake_uri.file(path.join(files.directory, `figure.${extension}`));
+    writeFileSync(uri.fsPath, '%!PS-Adobe-3.0\nshowpage\n');
+    await runtime.command('terminalSidebar.openPreview', uri);
+    const tab = right.state().tabs.find(item => is_pdf_tab(item) && item.uri === uri.toString())!;
+    assert.ok(is_pdf_tab(tab));
+    await right.send({ type: 'load_pdf', id: tab.id });
+    await wait_for(() => right.messages.some(message => message.type === 'pdf_source' && message.id === tab.id), 'converted vector PDF arrives');
+    const conversion = conversions.at(-1)!;
+    assert.equal(conversion.source, uri.fsPath);
+    assert.equal(conversion.executable, '/configured/gs');
+    assert.equal(conversion.cache, path.join(runtime.global_storage_directory, 'vector-previews'));
+    assert.ok(right.webview.options.localResourceRoots?.some(root => root.fsPath === conversion.cache));
+    await left.send({ type: 'search_read', request: `vector_${extension}`, side: 'right', id: tab.id });
+    const result = left.messages.find(message => message.type === 'search_source' && message.request === `vector_${extension}`);
+    assert.ok(result?.type === 'search_source' && result.source?.kind === 'pdf');
+    assert.ok(new URL(result.source.url).pathname.endsWith('.pdf'));
+    assert.notEqual(new URL(result.source.url).pathname, new URL(uri.toString()).pathname);
+    await right.send({ type: 'pdf_reverse_sync', id: tab.id, page: 1, x: 10, y: 10 });
+    assert.equal(runtime.sync_calls.length, 0, 'PostScript has no TeX source association');
+    await right.send({ type: 'pdf_position', id: tab.id, position: { page: 1, zoom: 'page-fit' } });
+    const restored = await harness({ configuration: { left: [], right: [] }, memory: runtime.memory });
+    const restored_view = await restored.view('right');
+    assert.ok(restored_view.state().tabs.some(item => is_pdf_tab(item) && item.uri === uri.toString() && item.zoom === 'page-fit'));
+    restored.dispose();
+    if (extension === 'eps') {
+      await right.send({ type: 'save_document', id: tab.id });
+      assert.equal(runtime.copied_files.at(-1)?.source, uri.toString());
+    }
+    await right.send({ type: 'close_tab', id: tab.id });
+    await wait_for(() => cleanups === conversions.length, 'converted cache disposed on close');
+  }
+  assert.equal(runtime.processes.length, 0);
+});
+
+test('untrusted vector previews cannot start conversion, including restored source tabs', async test_case => {
+  const uri = 'file:///figure.eps';
+  const memory = new Map<string, unknown>([['terminalSidebar.tabs.right', {
+    version: 1, tabs: [{ id: 'eps', name: 'Figure', pdf: { uri, page: 1, zoom: 'page-fit' } }],
+    active_id: 'eps', expanded_ids: ['eps'], next_number: 0,
+  }]]);
+  let conversions = 0;
+  const runtime = await harness({ configuration: { left: [], right: [] }, memory, trusted: false,
+    postscript: async () => { conversions++; throw new Error('Must not run'); },
+  });
+  test_case.after(() => runtime.dispose());
+  const view = await runtime.view('right');
+  await view.send({ type: 'load_pdf', id: 'eps' });
+  await runtime.command('terminalSidebar.openPreview', fake_uri.parse('file:///other.ps'));
+  assert.equal(conversions, 0);
+  assert.equal(runtime.watchers.length, 0);
+  assert.equal(view.state().tabs.length, 1);
+});
+
+test('PostScript cache resource roots retain a remote host but never inherit a source UNC authority', async test_case => {
+  for (const uri of ['file://fileserver/share/figure.eps', 'vscode-remote://ssh-remote+machine/work/figure.ps']) {
+    const memory = new Map<string, unknown>([['terminalSidebar.tabs.right', {
+      version: 1, tabs: [{ id: 'vector', name: 'Vector', pdf: { uri, page: 1, zoom: 'page-fit' } }],
+      active_id: 'vector', expanded_ids: ['vector'], next_number: 0,
+    }]]);
+    const runtime = await harness({ configuration: { left: [], right: [] }, memory });
+    test_case.after(() => runtime.dispose());
+    const view = await runtime.view('right');
+    const roots = view.webview.options.localResourceRoots ?? [];
+    const cache = roots.map(root => new URL(root.toString())).find(root => root.pathname.endsWith('/vector-previews'))!;
+    assert.ok(cache);
+    assert.equal(cache.hostname, uri.startsWith('vscode-remote:') ? 'ssh-remote+machine' : '');
+    assert.equal(cache.protocol, uri.startsWith('vscode-remote:') ? 'vscode-remote:' : 'file:');
+  }
 });
 
 test('untrusted workspaces cannot open or load HTML and source previews', async test_case => {

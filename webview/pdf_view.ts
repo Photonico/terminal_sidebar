@@ -1,6 +1,7 @@
 import type { PDFDocumentLoadingTask, PDFDocumentProxy, PDFPageProxy, RenderTask, TextLayer } from 'pdfjs-dist';
 import type { client_message, pdf_tab } from '../src/types';
 import type { pdf_zoom, pdf_mode } from '../src/pdf_state';
+import { postscript_format_for_uri } from '../src/vector_state';
 import { document_search, type document_match } from './document_search';
 import { layout_document, adjacent_page, current_page, visible_pages, type document_layout, type page_size } from './pdf_layout';
 import { pdf_toolbar } from './pdf_toolbar';
@@ -148,6 +149,7 @@ export class pdf_view {
     this.pane.setAttribute('role', 'tabpanel');
     this.pane.setAttribute('aria-label', tab.name);
     this.outline = new pdf_outline(page => this.navigate(page));
+    const format = postscript_format_for_uri(tab.uri) ?? 'pdf';
     this.toolbar = new pdf_toolbar({
       outline: () => this.set_outline(!this.outline_open),
       move: direction => this.move(direction),
@@ -168,10 +170,10 @@ export class pdf_view {
         this.remember();
         this.update_controls();
       },
-    });
+    }, format);
     this.notice.className = 'pdf-notice';
     this.notice.setAttribute('role', 'status');
-    this.notice.textContent = 'Loading PDF...';
+    this.notice.textContent = format === 'pdf' ? 'Loading PDF...' : `Converting ${format.toUpperCase()} preview…`;
     this.viewport.className = 'pdf-viewport';
     this.viewport.tabIndex = 0;
     this.viewport.setAttribute('aria-label', 'PDF pages. Use arrow keys to scroll, Page Up and Page Down to turn pages, Shift plus mouse wheel to scroll horizontally; Command or Control plus mouse wheel to zoom.');
@@ -567,6 +569,7 @@ export class pdf_view {
       entry.source = page_text(content.items);
       const view = [...page.view];
       rendered.addEventListener('dblclick', event => {
+        if (postscript_format_for_uri(this.tab.uri)) return;
         if (!(event.target instanceof Element) || !event.target.closest('.textLayer span')) return;
         const rectangle = rendered.getBoundingClientRect();
         const [x, y] = viewport.convertToPdfPoint(event.clientX - rectangle.left, event.clientY - rectangle.top);

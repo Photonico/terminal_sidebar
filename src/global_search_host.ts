@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { randomUUID as random_uuid } from 'node:crypto';
 import { read_markdown } from './markdown_watch';
 import { read_text_document } from './text_document_watch';
-import { is_terminal_tab, is_markdown_tab, is_document_tab, type sidebar_side, type sidebar_tab } from './types';
+import { is_terminal_tab, is_markdown_tab, is_document_tab, type sidebar_side, type sidebar_tab, type pdf_tab } from './types';
 import type { search_request, search_response, search_source, terminal_snapshot } from './global_search_protocol';
 
 interface search_view {
@@ -15,6 +15,7 @@ interface search_host_options {
   view(side: sidebar_side): search_view;
   tabs(side: sidebar_side): readonly sidebar_tab[];
   reveal(side: sidebar_side, id: string): Promise<void>;
+  pdf_uri?(side: sidebar_side, tab: pdf_tab): vscode.Uri | undefined;
 }
 
 /** Route text snapshots, never process input or arbitrary file paths, between the two views. */
@@ -31,7 +32,8 @@ export class global_search_host {
       if (pending?.side === side) pending.finish(message.snapshot);
     } else if (message.type === 'search_catalog') {
       requester.post({ type: 'search_catalog', request: message.request, tabs: (['left', 'right'] as const).flatMap(side =>
-        this.options.tabs(side).map(tab => ({ side, id: tab.id, name: tab.name, kind: tab.kind ?? 'terminal' }))) });
+        this.options.tabs(side).filter(tab => !is_document_tab(tab) || tab.format !== 'svg')
+          .map(tab => ({ side, id: tab.id, name: tab.name, kind: tab.kind ?? 'terminal' }))) });
     } else if (message.type === 'search_read') {
       try {
         const tab = this.options.tabs(message.side).find(tab => tab.id === message.id);
@@ -42,10 +44,13 @@ export class global_search_host {
         } else if (is_markdown_tab(tab)) {
           source = { kind: 'markdown', text: await read_markdown(vscode.Uri.parse(tab.uri).fsPath) };
         } else if (is_document_tab(tab)) {
+          if (tab.format === 'svg') throw new Error('SVG images do not expose searchable text.');
           source = { kind: 'document', format: tab.format, text: await read_text_document(vscode.Uri.parse(tab.uri).fsPath, tab.format.toUpperCase()) };
         } else {
           if (!requester.view) return;
-          source = { kind: 'pdf', url: requester.view.webview.asWebviewUri(vscode.Uri.parse(tab.uri))
+          const uri = this.options.pdf_uri ? this.options.pdf_uri(message.side, tab) : vscode.Uri.parse(tab.uri);
+          if (!uri) throw new Error('Open this preview and wait for conversion before searching it.');
+          source = { kind: 'pdf', url: requester.view.webview.asWebviewUri(uri)
             .with({ query: `search=${Date.now()}` }).toString() };
         }
         requester.post({ type: 'search_source', request: message.request, source });

@@ -52,17 +52,17 @@ export class pdf_toolbar {
     page: 1, pages: 0, zoom: 'page-width', mode: 'continuous', dark: false, outline_open: false,
   };
 
-  constructor(private readonly callbacks: pdf_toolbar_callbacks) {
+  constructor(private readonly callbacks: pdf_toolbar_callbacks, format: 'pdf' | 'eps' | 'ps' = 'pdf') {
     const options = { signal: this.events.signal };
     this.root.className = 'pdf-toolbar preview-toolbar';
     this.root.setAttribute('role', 'toolbar');
-    this.root.setAttribute('aria-label', 'PDF navigation');
+    this.root.setAttribute('aria-label', `${format.toUpperCase()} navigation`);
     const left = document.createElement('div');
     left.className = 'pdf-toolbar-left preview-toolbar-left';
     this.outline = this.button('Toggle document outline', 'symbol-keyword', callbacks.outline);
     this.previous = this.button('Previous page', 'arrow-circle-up', () => callbacks.move(-1));
     this.next = this.button('Next page', 'arrow-circle-down', () => callbacks.move(1));
-    left.append(create_document_badge('pdf'), this.outline, this.previous, this.next,
+    left.append(create_document_badge(format), this.outline, this.previous, this.next,
       this.zoom_button('Zoom in', 1), this.zoom_button('Actual size (100%)', 0),
       this.zoom_button('Zoom out', -1));
 

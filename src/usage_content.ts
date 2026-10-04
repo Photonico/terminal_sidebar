@@ -53,7 +53,7 @@ export const usage_guides: Record<usage_language, usage_guide> = {
         'Cmd-click / Ctrl-click terminal HTTP(S) links and supported file locations such as `src/app.ts:12:3`. Relative file paths use the last known working directory; not every diagnostic format is recognized.',
       ] },
       { id: 'documents', title: 'Open and read documents', paragraphs: [
-        'Use the editor title preview icon, a file context menu, or “Terminal Sidebar: Preview in Sidebar Terminal”. Supported files are PDF, Markdown, LaTeX, HTML/HTM, CSS, JSON, and JSONC. Previews share tab ordering and markers without creating shell startup profiles. The toolbar floats over the document, which scrolls beneath it; the outline floats at the left and stays open until you select its button again or press Escape.',
+        'Use the editor title preview icon, a file context menu, or “Terminal Sidebar: Preview in Sidebar Terminal”. Supported files are SVG, EPS, PostScript, PDF, Markdown, LaTeX, HTML/HTM, CSS, JSON, and JSONC. Previews share tab ordering and markers without creating shell startup profiles. The toolbar floats over the document, which scrolls beneath it; the outline floats at the left and stays open until you select its button again or press Escape.',
         'Text previews provide page-sized scrolling, Zoom in / 100% / Zoom out, a zoom selector, Open source file, and Reload. Markdown and HTML also have an outline. Cmd/Ctrl + mouse wheel or Cmd/Ctrl +/-/0 controls zoom. Use j/k to scroll and g/G for the beginning/end while the preview has focus.',
         'Saving the source, including saves from Vim or Neovim, refreshes the preview. Text previews require UTF-8 files up to 4 MiB. Local resources must be beside the source or in its subdirectories. Reading positions are remembered.',
       ] },
@@ -62,11 +62,16 @@ export const usage_guides: Record<usage_language, usage_guide> = {
         'Change preview font selects the Markdown reading font. Default follows VS Code; Editor font follows the editor setting. The User setting `terminalSidebar.markdownFontFamily` follows Settings Sync when enabled. Install custom fonts on each device.',
         'HTML is a static preview with local images and stylesheets. Scripts, forms, embedded frames, and remote resources are inactive. CSS, JSON, and JSONC show formatted source, retaining JSONC comments. Invalid or costly formatting falls back to the original text; source files are never rewritten.',
       ] },
+      { id: 'vectors', title: 'SVG, EPS, and PostScript', paragraphs: [
+        'SVG (.svg) renders directly as a vector image, with scrolling, zoom, and automatic refresh after saving. It needs no additional software. SVG labels are part of the image and are not included in document text search.',
+        'EPS (.eps) and PostScript (.ps) use the PDF viewer after conversion by Ghostscript. Install Ghostscript on the extension host: locally for a local window, or in the remote environment for SSH, containers, or WSL. If automatic discovery fails, set `terminalSidebar.ghostscriptPath` in User or Remote settings to the absolute executable path, without arguments. This setting is machine-specific.',
+        'Conversion requires a trusted workspace and refreshes after source saves. The original EPS or PostScript file remains unchanged; Save a copy… copies that original file. PDF controls and text search apply to the converted preview when it contains text.',
+      ] },
       { id: 'pdf', title: 'PDF and LaTeX', paragraphs: [
         'PDF controls offer contents, navigation, zoom, a page number, and reload. The dropdown beside zoom selects continuous vertical scrolling (default), continuous horizontal scrolling, single page, or two pages. The left navigation buttons show left/right arrows in horizontal mode and up/down arrows otherwise. The gear contains dark reading, which also inverts images; disable it to inspect original colours.',
         'While the PDF has focus, the mouse wheel and Up/Down scroll vertically; Shift+wheel and Left/Right scroll horizontally, moving along the pages in horizontal continuous mode. In single/two-page mode, vertical scrolling at an edge turns to the previous/next page or spread; going back enters at the bottom. PageUp/PageDown or h/l turn pages or spreads directly; j/k also scroll vertically. Cmd/Ctrl + mouse wheel and Cmd/Ctrl +/-/0 zoom.',
         'Only nearby pages render. Page, zoom, and browsing preferences are remembered per workspace. A rebuilt PDF refreshes automatically; incomplete output leaves the last valid preview visible. Links work: contents, cross-references and citations jump to their destination, and web links open in your browser.',
-        'Opening .tex locates an existing compiled PDF using root comments, LaTeX Workshop output-directory settings, and common output folders. If several match, choose one. If none exists, compile first or select a PDF. This extension does not run a compiler or project build scripts.',
+        'Opening .tex locates an existing compiled PDF using root comments, LaTeX Workshop output-directory settings, and common output folders. If several match, choose one. If none exists, compile first or select a PDF. This extension does not run a LaTeX compiler or project build scripts.',
         'Double-click a PDF location to return to LaTeX source through SyncTeX. Build with `-synctex=1`, keep the matching `.synctex` or `.synctex.gz`, and install `synctex` on the extension host. `latex-workshop.synctex.path` can specify its executable. The compiler mapping may resolve to the nearest source line.',
       ] },
       { id: 'startup', title: 'Startup configuration', paragraphs: [
@@ -122,7 +127,7 @@ export const usage_guides: Record<usage_language, usage_guide> = {
         '在终端 Cmd+点击／Ctrl+点击可打开 HTTP(S) 链接及支持的文件位置，例如 `src/app.ts:12:3`。相对路径以最后获知的工作目录为基准，并非所有报错格式都能识别。',
       ] },
       { id: 'documents', title: '打开与阅读文稿', paragraphs: [
-        '使用编辑器标题的预览按钮、文件右键菜单，或命令 “Terminal Sidebar: Preview in Sidebar Terminal”。支持 PDF、Markdown、LaTeX、HTML/HTM、CSS、JSON、JSONC。预览与终端共用排序和标识，不会创建启动终端配置。工具栏悬浮在文档上方，文档从它下方滚过；目录悬浮在左侧，再次点击目录按钮或按 Esc 才会关闭。',
+        '使用编辑器标题的预览按钮、文件右键菜单，或命令 “Terminal Sidebar: Preview in Sidebar Terminal”。支持 SVG、EPS、PostScript、PDF、Markdown、LaTeX、HTML/HTM、CSS、JSON、JSONC。预览与终端共用排序和标识，不会创建启动终端配置。工具栏悬浮在文档上方，文档从它下方滚过；目录悬浮在左侧，再次点击目录按钮或按 Esc 才会关闭。',
         '文字预览提供按一屏滚动、放大／100%／缩小、倍率选择、打开源文件与刷新。Markdown 和 HTML 还有标题目录。Cmd/Ctrl+滚轮或 Cmd/Ctrl +/-/0 控制缩放；预览获得焦点时，j/k 滚动，g/G 跳转开头／末尾。',
         '保存源文件会刷新预览，包括 Vim、Neovim 的保存。文字文件需使用 UTF-8，大小不超过 4 MiB；本地资源必须位于源文件所在目录或其子目录。阅读位置会被记住。',
       ] },
@@ -131,11 +136,16 @@ export const usage_guides: Record<usage_language, usage_guide> = {
         'Change preview font 修改 Markdown 阅读字体。Default 跟随 VS Code，Editor font 跟随编辑器字体。用户设置 `terminalSidebar.markdownFontFamily` 在启用 Settings Sync 时同步；自定义字体仍需在每台设备安装。',
         'HTML 是带本地图片与样式表的静态预览；脚本、表单、嵌入框架及远程资源不会执行或加载。CSS、JSON、JSONC 显示格式化源码，并保留 JSONC 注释。语法无效或格式化耗时过长时显示原文，不改写源文件。',
       ] },
+      { id: 'vectors', title: 'SVG、EPS 与 PostScript', paragraphs: [
+        'SVG（.svg）直接以矢量图显示，支持滚动、缩放及保存后自动刷新，无需额外软件。SVG 中的文字属于图像内容，不参与文档文字搜索。',
+        'EPS（.eps）和 PostScript（.ps）由 Ghostscript 转换后使用 PDF 阅读器显示。请在扩展宿主安装 Ghostscript：本地窗口安装在本机；SSH、容器或 WSL 则安装在远程环境。自动检测不到时，在用户或远程设置中将 `terminalSidebar.ghostscriptPath` 设为可执行程序的绝对路径，不要包含参数。此设置按机器保存。',
+        '转换需要受信任的工作区，保存源文件后会刷新预览。原始 EPS 或 PostScript 文件保持不变；Save a copy… 复制原始文件。转换后的预览沿用 PDF 控件，包含文字时也可搜索。',
+      ] },
       { id: 'pdf', title: 'PDF 与 LaTeX', paragraphs: [
         'PDF 工具栏提供目录、导航、缩放、页码与刷新。缩放旁的下拉菜单选择连续垂直滚动（默认）、连续水平滚动、单页或双页。左侧导航按钮在水平模式显示左右箭头，其余模式显示上下箭头。齿轮菜单提供深色阅读，也会反转图片颜色；查看原始颜色时请关闭。',
         'PDF 获得焦点后，滚轮和上下键控制垂直滚动；Shift+滚轮和左右键控制水平滚动，在连续水平模式中沿页面移动。单页／双页模式下，垂直滚动到边界后翻至上一页／下一页或上一组／下一组双页，返回上一页或上一组时从底部开始。PageUp/PageDown 或 h/l 直接翻页或翻双页组；j/k 也可垂直滚动。Cmd/Ctrl+滚轮及 Cmd/Ctrl +/-/0 调整缩放。',
         '仅渲染附近页面。页码、倍率和浏览偏好按工作区记忆。重新编译 PDF 会自动刷新；输出暂时不完整时保留上一份有效预览。PDF 中的链接可以点击：目录、交叉引用和文献引用会跳到目标位置，网址在浏览器中打开。',
-        '打开 .tex 会根据根文档注释、LaTeX Workshop 输出目录及常见目录查找已编译 PDF。找到多个时供你选择；尚未生成时请先编译或手动选择 PDF。本扩展不会运行编译器或项目构建脚本。',
+        '打开 .tex 会根据根文档注释、LaTeX Workshop 输出目录及常见目录查找已编译 PDF。找到多个时供你选择；尚未生成时请先编译或手动选择 PDF。本扩展不会运行 LaTeX 编译器或项目构建脚本。',
         '双击 PDF 中的位置可通过 SyncTeX 返回 LaTeX 源码。编译时使用 `-synctex=1`，保留配套 `.synctex` 或 `.synctex.gz`，并在扩展宿主安装 synctex。可用 `latex-workshop.synctex.path` 指定程序。定位取决于编译器映射，可能落在最近的源码行。',
       ] },
       { id: 'startup', title: '启动配置', paragraphs: [
@@ -191,7 +201,7 @@ export const usage_guides: Record<usage_language, usage_guide> = {
         'ターミナルで Cmd+クリック／Ctrl+クリックすると HTTP(S) リンクや `src/app.ts:12:3` などの対応するファイル位置を開きます。相対パスは最後に取得した作業ディレクトリを使います。すべての診断形式を認識するわけではありません。',
       ] },
       { id: 'documents', title: '文書を開いて読む', paragraphs: [
-        'エディターのプレビューアイコン、ファイルのコンテキストメニュー、または “Terminal Sidebar: Preview in Sidebar Terminal” を使います。PDF、Markdown、LaTeX、HTML/HTM、CSS、JSON、JSONC に対応します。プレビューは並べ替えやマーカーを共有し、起動プロファイルは作成しません。ツールバーは文書の上に浮かび、文書はその下をスクロールします。目次は左側に浮かび、目次ボタンをもう一度選ぶか Esc を押すまで開いたままです。',
+        'エディターのプレビューアイコン、ファイルのコンテキストメニュー、または “Terminal Sidebar: Preview in Sidebar Terminal” を使います。SVG、EPS、PostScript、PDF、Markdown、LaTeX、HTML/HTM、CSS、JSON、JSONC に対応します。プレビューは並べ替えやマーカーを共有し、起動プロファイルは作成しません。ツールバーは文書の上に浮かび、文書はその下をスクロールします。目次は左側に浮かび、目次ボタンをもう一度選ぶか Esc を押すまで開いたままです。',
         'テキストプレビューには画面単位のスクロール、拡大／100%／縮小、倍率選択、ソースを開く、再読み込みがあります。Markdown と HTML には見出しの目次もあります。Cmd/Ctrl+ホイールまたは Cmd/Ctrl +/-/0 でズームします。フォーカス時は j/k でスクロール、g/G で先頭／末尾へ移動します。',
         'Vim や Neovim を含め、ソースを保存するとプレビューを更新します。テキストは UTF-8、4 MiB 以下が必要です。ローカル素材は文書と同じディレクトリか、その配下に置きます。閲覧位置は保存されます。',
       ] },
@@ -200,11 +210,16 @@ export const usage_guides: Record<usage_language, usage_guide> = {
         'Change preview font で Markdown の表示フォントを選択します。Default は VS Code、Editor font はエディター設定に従います。ユーザー設定 `terminalSidebar.markdownFontFamily` は Settings Sync が有効なら同期されます。独自フォントは各端末にインストールしてください。',
         'HTML はローカル画像とスタイルシートを使う静的表示です。スクリプト、フォーム、埋め込みフレーム、リモート素材は動作・読み込みしません。CSS・JSON・JSONC は整形して表示し、JSONC のコメントも保持します。無効な構文や時間のかかる整形では原文に戻り、ソース自体は変更しません。',
       ] },
+      { id: 'vectors', title: 'SVG・EPS・PostScript', paragraphs: [
+        'SVG（.svg）はベクター画像として直接表示し、スクロール、ズーム、保存後の自動更新に対応します。追加ソフトは不要です。SVG 内の文字は画像の一部として扱い、文書のテキスト検索には含めません。',
+        'EPS（.eps）と PostScript（.ps）は Ghostscript で変換し、PDF ビューアーで表示します。Ghostscript は拡張機能ホストにインストールしてください。ローカルのウィンドウなら本機、SSH・コンテナー・WSL ならリモート環境です。自動検出できない場合は、ユーザーまたはリモートの設定で `terminalSidebar.ghostscriptPath` に実行ファイルの絶対パスを指定します。引数は含めません。この設定はマシンごとに保存します。',
+        '変換には信頼済みワークスペースが必要で、ソースの保存後に表示を更新します。元の EPS・PostScript ファイルは変更しません。Save a copy… は元のファイルをコピーします。変換したプレビューでは PDF の操作が使え、テキストが含まれていれば検索もできます。',
+      ] },
       { id: 'pdf', title: 'PDF と LaTeX', paragraphs: [
         'PDF には目次、移動、ズーム、ページ番号、再読み込みがあります。ズーム横のドロップダウンで縦の連続スクロール（既定）、横の連続スクロール、単ページ、見開きを選びます。左側の移動ボタンは横モードでは左右矢印、それ以外では上下矢印です。歯車にはダーク表示があり、画像も反転するため、元の色を確認するときは無効にしてください。',
         'PDF にフォーカスがあるとき、ホイールと上下キーで縦に、Shift+ホイールと左右キーで横にスクロールします。横の連続モードでは横スクロールでページ間を移動します。単ページ／見開きでは、上下端で縦にスクロールすると前後のページまたは見開きへ移り、戻るときは下端から表示します。PageUp/PageDown または h/l で直接ページや見開きを切り替え、j/k でも縦にスクロールできます。Cmd/Ctrl+ホイールと Cmd/Ctrl +/-/0 でズームします。',
         '近くのページだけを描画します。ページ・倍率・表示設定はワークスペース単位で記憶します。再ビルド時は自動更新し、出力が不完全な間は前の有効な表示を保持します。PDF 内のリンクは使えます。目次・相互参照・引用は移動先へジャンプし、Web リンクはブラウザーで開きます。',
-        '.tex を開くと、ルート文書コメント、LaTeX Workshop の出力先、一般的なフォルダーから既存の PDF を探します。複数あれば選択し、なければ先にコンパイルするか PDF を指定します。本拡張機能はコンパイラーやプロジェクトのビルドスクリプトを実行しません。',
+        '.tex を開くと、ルート文書コメント、LaTeX Workshop の出力先、一般的なフォルダーから既存の PDF を探します。複数あれば選択し、なければ先にコンパイルするか PDF を指定します。本拡張機能は LaTeX コンパイラーやプロジェクトのビルドスクリプトを実行しません。',
         'PDF 内をダブルクリックすると SyncTeX で LaTeX ソースに戻れます。`-synctex=1` でコンパイルし、対応する `.synctex`／`.synctex.gz` を残して、拡張機能ホストに synctex をインストールしてください。`latex-workshop.synctex.path` で実行ファイルを指定できます。コンパイラーの対応付けにより、近いソース行へ移動する場合があります。',
       ] },
       { id: 'startup', title: '起動設定', paragraphs: [

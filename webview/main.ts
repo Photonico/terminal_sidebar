@@ -201,6 +201,7 @@ const find_widget = new terminal_search({
   before: terminal_host,
   target: () => {
     if (global_find_mode && trusted && !configuring) return { id: 'all_open_tabs', search: all_tabs_search };
+    if (active_id && document_views.get(active_id)?.tab.format === 'svg') return undefined;
     const view = active_id && trusted && !configuring
       ? terminal_views.get(active_id) ?? pdf_views.get(active_id) ?? markdown_views.get(active_id) ?? document_views.get(active_id) : undefined;
     return view && active_id ? { id: active_id, search: view.search } : undefined;
@@ -554,7 +555,7 @@ function show_tab_menu(id: string, x: number, y: number): void {
       const tab = open_tabs.find(tab => tab.id === id);
       if (tab) marker_picker.open(id, tab.name, tab.marker);
     } },
-    { label: 'Find in this tab', action: () => { select_tab(id); run_action('find'); } },
+    { label: 'Find in this tab', disabled: document_views.get(id)?.tab.format === 'svg', action: () => { select_tab(id); run_action('find'); } },
     { label: 'Find in all open tabs', action: () => { void open_global_find(); } },
     { label: is_terminal ? 'Restart' : 'Reload preview', disabled: !trusted, action: () => restart_tab(id) },
     { label: is_terminal ? 'Export…' : 'Save a copy…', disabled: !trusted, action: () => {

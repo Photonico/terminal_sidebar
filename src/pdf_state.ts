@@ -1,3 +1,5 @@
+import { postscript_format_for_uri } from './vector_state';
+
 /** PDF paths and reading positions belong to this workspace, never shell profiles. */
 export type pdf_mode = 'continuous' | 'horizontal' | 'single' | 'spread';
 export type pdf_zoom = 'page-width' | 'page-fit' | number;
@@ -18,6 +20,11 @@ export function is_pdf_uri(value: unknown): value is string {
       && !uri.username && !uri.password && !uri.search && !uri.hash
       && !/[\x00-\x1f\x7f]/.test(pathname) && /\.pdf$/i.test(pathname);
   } catch { return false; }
+}
+
+/** PostScript uses the PDF reader after host-side conversion. */
+export function is_pdf_preview_uri(value: unknown): value is string {
+  return is_pdf_uri(value) || postscript_format_for_uri(value) !== undefined;
 }
 
 /** A PDF may remember its TeX root only on the same local or remote filesystem. */

@@ -10,15 +10,16 @@ test('preview routing supports local and remote documents, Markdown aliases and 
     assert.equal(preview_kind(`${scheme}/project/paper.PDF`), 'pdf');
     assert.equal(preview_kind(`${scheme}/project/paper.TEX`), 'latex');
     assert.equal(preview_kind(`${scheme}/project/paper.%74ex`), 'latex');
-    for (const extension of ['html', 'htm', 'css', 'json', 'jsonc']) {
+    for (const extension of ['html', 'htm', 'css', 'json', 'jsonc', 'svg', 'eps', 'ps']) {
       assert.equal(preview_kind(`${scheme}/project/example.${extension}`), extension === 'htm' ? 'html' : extension);
+      assert.equal(preview_kind(`${scheme}/project/example.${extension.toUpperCase()}`), extension === 'htm' ? 'html' : extension);
     }
   }
   assert.equal(new Set(preview_extensions).size, preview_extensions.length);
 });
 
 test('preview routing refuses unsupported formats, virtual documents and ambiguous URI targets', () => {
-  for (const extension of ['pdf', 'md', 'tex', 'html', 'css', 'json', 'jsonc']) {
+  for (const extension of ['pdf', 'md', 'tex', 'html', 'css', 'json', 'jsonc', 'svg', 'eps', 'ps']) {
     for (const uri of [
       `https://example.com/document.${extension}`,
       `untitled:/document.${extension}`,

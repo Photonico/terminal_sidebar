@@ -7,6 +7,7 @@ import { source_formatter } from './document_render';
 import { hydrate_html_resources } from './html_resources';
 import { document_highlights, document_search_text } from './document_highlights';
 import { document_search, type document_match } from './document_search';
+import { svg_preview } from './svg_preview';
 import './document_view.css';
 
 /** Scriptless web pages and source documents share search and workspace reading state. */
@@ -24,6 +25,8 @@ export class document_view {
   private content?: HTMLElement;
   private frame?: HTMLIFrameElement;
   private pending_frame?: { frame: HTMLIFrameElement; cancel(): void };
+  private svg?: svg_preview;
+  private pending_svg?: svg_preview;
   private resource_load?: AbortController;
   private events?: AbortController;
   private highlights?: document_highlights;
@@ -41,7 +44,7 @@ export class document_view {
     private readonly find: () => void) {
     this.scroll = this.sent_scroll = tab.scroll;
     this.search = new document_search({ page_count: () => 1,
-      read_page: async () => this.content ? document_search_text(this.content) : '',
+      read_page: async () => this.content && tab.format !== 'svg' ? document_search_text(this.content) : '',
       select_match: (match, matches, reveal) => this.highlights?.select(match, matches, reveal && !this.pane.hidden),
     });
     this.pane.id = `terminal-${tab.id}`;
@@ -54,7 +57,13 @@ export class document_view {
       }),
       height: () => this.frame?.clientHeight ?? this.viewport.clientHeight,
       zoom: (value, previous) => {
-        if (this.frame) {
+        if (this.svg) {
+          const image = this.svg.image;
+          image.style.width = `${image.naturalWidth * value}px`;
+          image.style.height = `${image.naturalHeight * value}px`;
+          this.viewport.scrollTop *= value / previous;
+          this.viewport.scrollLeft *= value / previous;
+        } else if (this.frame) {
           const root = this.frame.contentDocument?.documentElement;
           const win = this.frame.contentWindow;
           if (root && win) {
@@ -68,6 +77,7 @@ export class document_view {
         }
       },
     }, [
+      ...(tab.format === 'svg' ? [{ label: 'Fit image', icon: 'screen-full', run: () => this.fit_svg() }] : []),
       { label: 'Open source file', icon: 'go-to-file', run: () => this.send({ type: 'open_document_link', id: tab.id, href: tab.uri }) },
       { label: 'Reload preview', icon: 'refresh', run: () => this.refresh() },
     ]);
@@ -78,7 +88,7 @@ export class document_view {
     this.viewport.setAttribute('aria-label', `${tab.format.toUpperCase()} document`);
     this.viewport.addEventListener('scroll', () => this.scrolled(this.viewport.scrollTop));
     this.viewport.addEventListener('keydown', event => this.keydown(event));
-    this.viewport.addEventListener('wheel', event => this.toolbar.wheel(event), { passive: false });
+    this.viewport.addEventListener('wheel', event => this.wheel(event), { passive: false });
     const body = document.createElement('div');
     body.className = 'reading-body';
     body.append(this.toolbar.outline, this.viewport);
@@ -92,6 +102,7 @@ export class document_view {
       this.remember();
       ++this.revision;
       this.pending_frame?.cancel();
+      this.pending_svg?.dispose();
       this.resource_load?.abort();
       this.rendering_source = undefined;
     }
@@ -113,9 +124,15 @@ export class document_view {
     if (this.disposed || this.pane.hidden || !this.source) return;
     const revision = ++this.revision;
     this.pending_frame?.cancel();
+    this.pending_svg?.dispose();
     this.resource_load?.abort();
     const source = this.source;
     this.rendering_source = source;
+    if (this.tab.format === 'svg') {
+      await this.render_svg(source, revision);
+      if (revision === this.revision) this.rendering_source = undefined;
+      return;
+    }
     if (this.tab.format === 'html') {
       const controller = new AbortController();
       this.resource_load = controller;
@@ -143,6 +160,58 @@ export class document_view {
     this.notice.hidden = !result.error;
     this.notice.textContent = result.error ?? '';
     this.viewport.scrollTop = this.scroll;
+  }
+
+  private async render_svg(source: document_source, revision: number): Promise<void> {
+    let preview: svg_preview;
+    try { preview = new svg_preview(source.text, this.tab.name); }
+    catch (error) {
+      this.error(error instanceof Error ? error.message : 'SVG could not be rendered. Reload to retry.');
+      return;
+    }
+    this.pending_svg = preview;
+    this.viewport.append(preview.image);
+    const loaded = await preview.loaded;
+    if (this.pending_svg === preview) this.pending_svg = undefined;
+    if (this.disposed || this.pane.hidden || revision !== this.revision) { preview.dispose(); return; }
+    if (!loaded) {
+      preview.dispose();
+      this.error('SVG could not be rendered. Check the source file and reload.');
+      return;
+    }
+    const first = !this.svg;
+    this.svg?.dispose();
+    this.svg = preview;
+    const surface = document.createElement('div');
+    surface.className = 'document-svg-surface';
+    preview.image.hidden = false;
+    surface.append(preview.image);
+    this.viewport.replaceChildren(surface);
+    this.ready(surface, source);
+    this.notice.hidden = true;
+    this.notice.textContent = '';
+    if (first) this.fit_svg();
+    this.viewport.scrollTop = this.scroll;
+  }
+
+  private fit_svg(): void {
+    const image = this.svg?.image;
+    if (!image?.naturalWidth || !image.naturalHeight || !this.viewport.clientWidth || !this.viewport.clientHeight) return;
+    this.toolbar.set_zoom(Math.min(1, Math.max(1, this.viewport.clientWidth - 24) / image.naturalWidth,
+      Math.max(1, this.viewport.clientHeight - this.overlay.space - 24) / image.naturalHeight));
+  }
+
+  private wheel(event: WheelEvent): void {
+    this.toolbar.wheel(event);
+    if (this.tab.format !== 'svg' || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey
+      || !Number.isFinite(event.deltaY)) return;
+    const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? this.viewport.clientHeight : 1;
+    const horizontal_unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? this.viewport.clientWidth : 1;
+    const delta_x = Number.isFinite(event.deltaX) ? event.deltaX : 0;
+    this.viewport.scrollBy(event.shiftKey
+      ? { left: (event.deltaY || delta_x) * horizontal_unit }
+      : { left: delta_x * horizontal_unit, top: event.deltaY * unit });
+    event.preventDefault(); event.stopPropagation();
   }
 
   private render_html(source: document_source, revision: number, html: string, warnings: string[]): Promise<void> {
@@ -238,10 +307,30 @@ export class document_view {
     if (this.toolbar.keydown(event)) return;
     if (event.isComposing || event.altKey) return;
     if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === 'f') {
-      event.preventDefault(); event.stopPropagation(); this.find(); return;
+      event.preventDefault(); event.stopPropagation();
+      if (this.tab.format !== 'svg') this.find();
+      return;
     }
     if (event.metaKey || event.ctrlKey) return;
     const target = this.frame?.contentWindow ?? this.viewport;
+    if (this.tab.format === 'svg') {
+      const step = 48;
+      const page = Math.max(1, this.viewport.clientHeight - this.overlay.space);
+      if (event.key === 'ArrowUp') target.scrollBy({ top: -step });
+      else if (event.key === 'ArrowDown') target.scrollBy({ top: step });
+      else if (event.key === 'ArrowLeft') target.scrollBy({ left: -step });
+      else if (event.key === 'ArrowRight') target.scrollBy({ left: step });
+      else if (event.key === 'PageUp') target.scrollBy({ top: -page });
+      else if (event.key === 'PageDown') target.scrollBy({ top: page });
+      else if (event.key === 'Home') target.scrollTo({ top: 0, left: 0 });
+      else if (event.key === 'End') target.scrollTo({ top: this.viewport.scrollHeight });
+      else return this.reading_keydown(event, target);
+      event.preventDefault(); event.stopPropagation();
+      return;
+    }
+    this.reading_keydown(event, target);
+  }
+  private reading_keydown(event: KeyboardEvent, target: HTMLElement | Window): void {
     if (event.key === 'j') target.scrollBy({ top: 48 });
     else if (event.key === 'k') target.scrollBy({ top: -48 });
     else if (event.key === 'g') target.scrollTo({ top: 0 });
@@ -265,6 +354,7 @@ export class document_view {
   dispose(): void {
     this.remember(); this.disposed = true; ++this.revision;
     this.pending_frame?.cancel(); this.events?.abort(); this.formatter.dispose();
+    this.pending_svg?.dispose(); this.svg?.dispose();
     this.resource_load?.abort();
     this.toolbar.dispose(); this.overlay.dispose();
     this.highlights?.clear(); this.search.dispose(); this.pane.remove();
