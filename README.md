@@ -6,16 +6,52 @@
 
 Independent terminals and document previews in VS Code. The **Primary Side Bar** uses collapsible sections; the **Secondary Side Bar** uses a compact tab strip. Keep Vim, Neovim, or another command-line tool beside its output and preview.
 
-Requires VS Code **1.106+** on desktop or a remote extension host. No separate Node.js installation is needed to use the extension.
+Version **1.0.0** is a stable release. Requires VS Code **1.106+** on desktop or a remote extension host. No separate Node.js installation is needed to use the extension.
+
+The screenshots show the extension running in VS Code with the [Photonico Code](https://github.com/Photonico/Photonico_Code) font and the [Photonica](https://marketplace.visualstudio.com/items?itemName=ConAntares.photonica) theme.
+
+![Terminal Sidebar alongside the VS Code editor, with terminals and document previews](docs/screenshots/overview.png)
 
 ## Get started
 
-1. Install a matching VSIX through **Extensions: Install from VSIX…**. [Marketplace](https://marketplace.visualstudio.com/items?itemName=ConAntares.terminal-sidebar) also lists published versions.
+1. Install **Terminal Sidebar** from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=ConAntares.terminal-sidebar), or install a platform-matched VSIX from [GitHub Releases](https://github.com/Photonico/terminal_sidebar/releases) through **Extensions: Install from VSIX…**.
 2. Open **Side Terminals** and select **+** for a shell. The arrow button opens the other side bar.
 3. Select the gear to configure startup terminals. Closing a terminal keeps its startup profile.
 4. Use **Preview in Sidebar Terminal** in the editor title bar for SVG, EPS, PostScript, PDF, Markdown, LaTeX, HTML, CSS, JSON, or JSONC. LaTeX opens an existing compiled PDF; build with your usual tools first.
 
-## Work beside your editor
+## Screenshots and everyday workflows
+
+### Terminals and search
+
+Run independent shells beside your editor. Use **Cmd+F / Ctrl+F** to search retained terminal output without sending the search text to the shell. The find controls support case-sensitive, whole-word, and regular-expression searches.
+
+![Terminal output and the find controls in Side Terminals](docs/screenshots/terminals-search.png)
+
+### Startup profiles
+
+Use the configuration gear to choose the terminals opened on each side. Give a profile a name, command, shell, optional arguments, and environment values; closing a running tab keeps its startup profile for the next session.
+
+![Startup terminal profiles configured inside VS Code](docs/screenshots/startup-profiles.png)
+
+### PDF and LaTeX reading
+
+Keep a PDF beside its source. The toolbar offers vertical and horizontal continuous scrolling, single-page and two-page modes, zoom, page navigation, and dark reading. Saved PDFs refresh automatically; LaTeX opens your existing compiled PDF.
+
+![PDF preview with reading and navigation controls](docs/screenshots/pdf-reader.png)
+
+### Markdown with math
+
+Read rendered headings, task lists, footnotes, and KaTeX formulas while editing Markdown. The preview has an outline, text search, zoom, and a font selector whose preference follows Settings Sync.
+
+![Rendered Markdown with mathematical formulas in a sidebar preview](docs/screenshots/markdown-preview.png)
+
+### SVG, EPS, and PostScript figures
+
+View SVG as a vector image, zoom in for detail, or fit the image to the sidebar. EPS and PostScript use the PDF reader after conversion by Ghostscript. Saving the source refreshes the preview; **Save a copy…** keeps its original format.
+
+![Vector artwork displayed by the SVG preview in VS Code](docs/screenshots/vector-preview.png)
+
+## More features
 
 - Saving a document refreshes its preview, including saves from Vim/NeoVim. PDFs offer vertical/horizontal continuous scrolling and single/two-page layouts beside the zoom menu, with arrow-key navigation and remembered reading positions.
 - SVG previews retain vector detail when zooming and need no extra software. EPS (`.eps`) and PostScript (`.ps`) use the PDF viewer after conversion by **Ghostscript**, installed on the local or remote extension host. Set `terminalSidebar.ghostscriptPath` to its absolute executable path if automatic discovery fails. Conversion requires a trusted workspace and leaves the source unchanged.

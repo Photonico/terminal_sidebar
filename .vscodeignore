@@ -23,3 +23,5 @@
 !dist/*.woff2
 !dist/*.ttf
 !dist/document_format_worker.js
+
+!docs/screenshots/**

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.0 — 2026-11-05
+
+- First stable release of Terminal Sidebar, following the 0.x preview releases.
+- Include SVG, EPS and PostScript previews alongside PDF, Markdown, LaTeX, HTML and formatted-source documents.
+- Add a screenshot walkthrough of the running extension, with links to Photonico Code and Photonica.
+
 ## 0.13.0 — Development
 
 - Preview SVG files as vector images with zoom, scrolling, and automatic refresh after saving.

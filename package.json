@@ -2,7 +2,7 @@
   "name": "terminal-sidebar",
   "displayName": "Terminal Sidebar",
   "description": "Sidebar terminals with SVG, EPS, PostScript, Markdown, PDF, LaTeX, HTML, and formatted-source previews.",
-  "version": "0.13.0",
+  "version": "1.0.0",
   "publisher": "ConAntares",
   "author": "Lu Niu (Photonico)",
   "contributors": [
@@ -761,7 +761,7 @@
     "test": "node --import tsx --test test/*.test.ts",
     "check": "npm run typecheck && npm test && npm run build",
     "vscode:prepublish": "npm run check",
-    "package": "node scripts/package.mjs --pre-release"
+    "package": "node scripts/package.mjs"
   },
   "dependencies": {
     "@mdit/plugin-footnote": "1.1.1",
