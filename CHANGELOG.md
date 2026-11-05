@@ -3,7 +3,7 @@
 ## 1.1.0 — Development
 
 - Use Preview-style magnifiers for Zoom out, Actual size (100%), and Zoom in across all document formats, with larger symbols and shorter handles.
-- Enlarge preview toolbar buttons and icons, and add spacing while keeping narrow sidebars able to wrap their controls.
+- Balance preview toolbar sizing with 26px buttons, 17px general icons, and larger 19px page-navigation icons; align ring centres vertically and keep narrow sidebars able to wrap their controls.
 
 ## 1.0.0 — 2026-11-05
 

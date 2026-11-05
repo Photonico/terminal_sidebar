@@ -1,10 +1,10 @@
 import './preview_controls.css';
 
-/** A short handle leaves most of the 22px box for the lens and its large vector mark. */
+/** Keep the 17px lens vertically centred, with a handle that remains clearly visible. */
 export function preview_zoom_symbol(direction: -1 | 0 | 1): string {
-  const path = direction === 0 ? 'M8.3 6.5 10.2 5.5V14.5M8 14.5h4.4'
-    : direction === 1 ? 'M5.5 10h9M10 5.5v9' : 'M5.5 10h9';
-  return `<svg class="preview-zoom-symbol" viewBox="0 0 22 22" aria-hidden="true"><circle cx="10" cy="10" r="8"/><path d="M15.7 15.7l3.2 3.2"/><path d="${path}"/></svg>`;
+  const path = direction === 0 ? 'M6.6 5.2 8.1 4.3V11.7M6.4 11.7H10'
+    : direction === 1 ? 'M4.25 8h7.5M8 4.25v7.5' : 'M4.25 8h7.5';
+  return `<svg class="preview-zoom-symbol" viewBox="0 0 20 20" aria-hidden="true"><g transform="translate(0.5 1.5) scale(1.0625)"><circle cx="8" cy="8" r="6.5"/><path d="M12.6 12.6l3 3"/><path d="${path}"/></g></svg>`;
 }
 
 export function preview_button(label: string, symbol: string | undefined, action: () => void,
