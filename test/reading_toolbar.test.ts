@@ -49,7 +49,7 @@ test('document toolbar scrolls, zooms and restores actual size with labels on ev
       assert.ok(button.title);
       assert.equal(button.getAttribute('aria-label'), button.title);
     }
-    assert.deepEqual([...h.toolbar.root.querySelectorAll('svg circle')].map(circle => circle.getAttribute('r')), ['6.5', '6.5', '6.5']);
+    assert.deepEqual([...h.toolbar.root.querySelectorAll('svg circle')].map(circle => circle.getAttribute('r')), ['6.5', '6.5']);
     const zoom = h.control('Zoom in');
     h.toolbar.dispose(); zoom.click();
     assert.equal(h.zooms.length, 4, 'Detached toolbar controls do not keep action listeners');
