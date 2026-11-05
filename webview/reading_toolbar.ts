@@ -37,7 +37,7 @@ export class reading_toolbar {
     }
     left.append(this.button('Scroll up one page', 'arrow-circle-up', () => callbacks.move(-1)),
       this.button('Scroll down one page', 'arrow-circle-down', () => callbacks.move(1)));
-    for (const [direction, label] of [[1, 'Zoom in'], [0, 'Actual size (100%)'], [-1, 'Zoom out']] as const) {
+    for (const [direction, label] of [[-1, 'Zoom out'], [0, 'Actual size (100%)'], [1, 'Zoom in']] as const) {
       const button = this.button(label, undefined, () => this.change_zoom(direction));
       button.innerHTML = preview_zoom_symbol(direction);
       left.append(button);

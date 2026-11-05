@@ -63,8 +63,8 @@ export class pdf_toolbar {
     this.previous = this.button('Previous page', 'arrow-circle-up', () => callbacks.move(-1));
     this.next = this.button('Next page', 'arrow-circle-down', () => callbacks.move(1));
     left.append(create_document_badge(format), this.outline, this.previous, this.next,
-      this.zoom_button('Zoom in', 1), this.zoom_button('Actual size (100%)', 0),
-      this.zoom_button('Zoom out', -1));
+      this.zoom_button('Zoom out', -1), this.zoom_button('Actual size (100%)', 0),
+      this.zoom_button('Zoom in', 1));
 
     const right = document.createElement('div');
     right.className = 'pdf-toolbar-right preview-toolbar-right';

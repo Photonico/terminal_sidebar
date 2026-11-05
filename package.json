@@ -2,7 +2,7 @@
   "name": "terminal-sidebar",
   "displayName": "Terminal Sidebar",
   "description": "Sidebar terminals with SVG, EPS, PostScript, Markdown, PDF, LaTeX, HTML, and formatted-source previews.",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "publisher": "ConAntares",
   "author": "Lu Niu (Photonico)",
   "contributors": [

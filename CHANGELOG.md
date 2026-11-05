@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.0 — Development
+
+- Arrange preview zoom buttons as Zoom out, Actual size (100%), and Zoom in across all document formats.
+
 ## 1.0.0 — 2026-11-05
 
 - First stable release of Terminal Sidebar, following the 0.x preview releases.
