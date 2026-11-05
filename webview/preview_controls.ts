@@ -1,12 +1,10 @@
 import './preview_controls.css';
 
-/** The 14px rings and capsule share the arrow-circle Codicons' height and stroke. */
+/** A short handle leaves most of the 22px box for the lens and its large vector mark. */
 export function preview_zoom_symbol(direction: -1 | 0 | 1): string {
-  if (direction === 0) {
-    return '<svg class="preview-zoom-symbol preview-zoom-actual-symbol" viewBox="0 0 36 16" aria-hidden="true"><rect x="1.5" y="1.5" width="33" height="13" rx="6.5"/><text x="18" y="8" text-anchor="middle" dominant-baseline="central">100%</text></svg>';
-  }
-  const path = direction === 1 ? 'M5 8h6M8 5v6' : 'M5 8h6';
-  return `<svg class="preview-zoom-symbol" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/><path d="${path}"/></svg>`;
+  const path = direction === 0 ? 'M8.3 6.5 10.2 5.5V14.5M8 14.5h4.4'
+    : direction === 1 ? 'M5.5 10h9M10 5.5v9' : 'M5.5 10h9';
+  return `<svg class="preview-zoom-symbol" viewBox="0 0 22 22" aria-hidden="true"><circle cx="10" cy="10" r="8"/><path d="M15.7 15.7l3.2 3.2"/><path d="${path}"/></svg>`;
 }
 
 export function preview_button(label: string, symbol: string | undefined, action: () => void,

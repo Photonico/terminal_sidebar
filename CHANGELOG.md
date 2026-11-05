@@ -2,7 +2,8 @@
 
 ## 1.1.0 — Development
 
-- Arrange preview zoom buttons as Zoom out, Zoom in, and Actual size (100%) across all document formats; keep minus and plus circled and place 100% inside a matching capsule.
+- Use Preview-style magnifiers for Zoom out, Actual size (100%), and Zoom in across all document formats, with larger symbols and shorter handles.
+- Enlarge preview toolbar buttons and icons, and add spacing while keeping narrow sidebars able to wrap their controls.
 
 ## 1.0.0 — 2026-11-05
 
